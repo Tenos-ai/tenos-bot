@@ -1,0 +1,36 @@
+{
+  "providers": {
+    "gemini": {
+      "display_name": "Google Gemini API",
+      "models": [
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-8b",
+        "gemini-1.5-pro"
+      ]
+    },
+    "groq": {
+      "display_name": "Groq API",
+      "models": [
+        "llama3-8b-8192",
+        "llama3-70b-8192",
+        "llama-guard-3-8b",
+        "llama-3.1-8b-instant",
+        "gemma2-9b-it"
+      ]
+    },
+    "openai": {
+      "display_name": "OpenAI API",
+      "models": [
+        "o3-2025-04-16",
+        "o4-mini-2025-04-16",
+        "o3-mini-2025-01-31",
+        "o1-mini-2024-09-12",
+        "gpt-4o-mini",
+        "gpt-4.1",
+        "o1-2024-12-17"
+      ]
+    }
+  }
+}

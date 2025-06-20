@@ -1,0 +1,38 @@
+{
+  "MODELNODES": {
+    "GGUF_GENERATION": {
+      "NODE_NUMBER": {
+        "inputs": {
+          "unet_name": "model_file_name"
+        },
+        "class_type": "UnetLoaderGGUF",
+        "_meta": {
+          "title": "Unet Loader (GGUF)"
+        }
+      }
+    },
+    "SAFETENSORS_GENERATION": {
+      "NODE_NUMBER": {
+        "inputs": {
+          "unet_name": "model_file_name",
+          "weight_dtype": "default"
+        },
+        "class_type": "UNETLoader",
+        "_meta": {
+          "title": "Load Diffusion Model"
+        }
+      }
+    },
+    "SDXL_CHECKPOINT_GENERATION": {
+      "NODE_NUMBER": {
+        "inputs": {
+          "ckpt_name": "model_file_name"
+        },
+        "class_type": "CheckpointLoaderSimple",
+        "_meta": {
+          "title": "Load Checkpoint"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "OUTPUTS": {
+    "UPSCALES": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/output/TENOSAI-BOT/UPSCALES",
+    "VARIATIONS": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/output/TENOSAI-BOT/VARIATIONS",
+    "GENERATIONS": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/output/TENOSAI-BOT/GENERATIONS"
+  },
+  "MODELS": {
+    "MODEL_FILES": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/models/unet",
+    "CHECKPOINTS_FOLDER": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/models/checkpoints",
+    "UPSCALE_MODELS": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/models/upscale_models",
+    "VAE_MODELS": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/models/vae"
+  },
+  "CLIP": {
+    "CLIP_FILES": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/models/clip"
+  },
+  "LORAS": {
+    "LORA_FILES": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/models/loras"
+  },
+  "NODES": {
+    "CUSTOM_NODES": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/custom_nodes"
+  },
+  "COMFYUI_API": {
+    "HOST": "127.0.0.1",
+    "PORT": 8188
+  },
+  "BOT_INTERNAL_API": {
+    "HOST": "127.0.0.1",
+    "PORT": 8189
+  },
+  "BOT_API": {
+    "KEY": "YOUR DISCORD API KEY"
+  },
+  "ADMIN": {
+    "USERNAME": "YOUR DISCORD USERNAME",
+    "ID": "YOUR DISCORD ID"
+  },
+  "ALLOWED_USERS": {},
+  "LLM_ENHANCER": {
+    "OPENAI_API_KEY": "OPENAI_API_KEY",
+    "GEMINI_API_KEY": "GEMINI_API_KEY",
+    "GROQ_API_KEY": "GROQ_API_KEY"
+  }
+}
