@@ -123,4 +123,4 @@ The Configurator Tool (`TENOSAI-BOT.bat` or `python config-editor-script.py`) al
 - LoRA Styles (`--style [name]`) apply predefined LoRA configurations. Manage them in the Configurator's "LoRA Styles" tab.
 - The bot distinguishes between Flux and SDXL workflows based on the selected model in `/settings` (or via `model_type_override` in certain actions). Ensure your selected model prefix (e.g., "Flux: model.gguf" or "SDXL: checkpoint.safetensors") is correct.
 
-Enjoy creating!
+Enjoy creating! ❤️ BobsBlazed @Tenos.ai
