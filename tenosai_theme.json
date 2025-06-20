@@ -1,0 +1,13 @@
+{
+  "name": "tenosai",
+  "colors": {
+    "accent": ["#0487D9", "#0487D9"],          // Tenos.ai‑2
+    "secondary": ["#7FB2F0", "#7FB2F0"],       // Tenos.ai‑3
+    "primary_fg": ["#FFFFFF", "#FFFFFF"],      // text on dark bg
+    "primary_bg": ["#023373", "#023373"],      // Tenos.ai‑1
+    "secondary_fg": ["#000000", "#000000"]     // text on light bg
+  },
+  "fonts": {
+    "CTkFont": ["Filson Pro", 13]
+  }
+}
