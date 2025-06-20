@@ -23,7 +23,7 @@ Before using Tenosai-Bot, you **MUST** run the configurator (`TENOSAI-BOT.bat` o
 
 This step is crucial for the bot to function correctly. After initial setup, use the "Bot Control" tab in the configurator to start the bot. The bot uses the model selected via `/settings` or the Configurator as the default for new generations.
 
-OPTIONAL: download the Tenos Official FLux Dev Finetune from Huggingface [`https://huggingface.co/Tenos-ai/Tenos`](https://huggingface.co/Tenos-ai/Tenos)
+OPTIONAL: download the Tenos Official Flux Dev Finetune from Huggingface [`https://huggingface.co/Tenos-ai/Tenos`](https://huggingface.co/Tenos-ai/Tenos)
 
 ## Commands and Features
 
