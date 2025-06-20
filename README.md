@@ -11,6 +11,8 @@ Make sure you already have ComfyUI installed.
       3. `https://github.com/jamesWalker55/comfyui-various.git`
       4. `https://github.com/city96/ComfyUI-GGUF.git`
       5. `https://github.com/tsogzark/ComfyUI-load-image-from-url.git`
+      6. `https://github.com/BobsBlazed/Bobs_Latent_Optimizer.git`
+      7. `https://github.com/Tenos-ai/Tenos-Resize-to-1-M-Pixels.git`
 
 Before using Tenosai-Bot, you **MUST** run the configurator (`TENOSAI-BOT.bat` or by executing `python config-editor-script.py`) to:
 
