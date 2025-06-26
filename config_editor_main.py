@@ -1,4 +1,3 @@
-# --- START OF FILE config_editor_main.py ---
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext 
 import os
@@ -540,7 +539,7 @@ class ConfigEditor:
         self.lora_styles_tab_manager.save_current_styles_config()
         self.favorites_tab_manager.save_all_favorites_data()
         self.config_manager.save_bot_settings_data()
-        self.admin_control_tab_manager._save_blocklist() # <-- Use specific save method
+        self.admin_control_tab_manager._save_blocklist() 
         silent_showinfo("Save All Triggered", "All save operations triggered. Check console/messages for status.", parent=self.master)
 
     def on_closing_main_window(self):
