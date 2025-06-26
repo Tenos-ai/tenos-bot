@@ -1,7 +1,3 @@
-# --- START OF FILE prompt_templates.py ---
-# style_prompt_templates.py
-
-# FLUX Workflow Node IDs
 GENERATION_MODEL_NODE = "1"
 VARIATION_MODEL_NODE = "1"
 UPSCALE_MODEL_NODE = "8:0"
@@ -21,7 +17,7 @@ VARY_LORA_NODE = "35"
 GENERATION_LATENT_NODE = "99"
 UPSCALE_HELPER_LATENT_NODE = "98"
 
-# SDXL Workflow Node IDs
+
 SDXL_CHECKPOINT_LOADER_NODE = "sdxl_1"
 SDXL_LORA_NODE = "sdxl_lora"
 SDXL_CLIP_SKIP_NODE = "sdxl_2"
@@ -32,7 +28,7 @@ SDXL_VAE_DECODE_NODE = "sdxl_6"
 SDXL_SAVE_IMAGE_NODE = "sdxl_7"
 SDXL_LATENT_NODE = "sdxl_8"
 
-# SDXL Img2Img specific node IDs (New)
+
 SDXL_IMG2IMG_LOAD_IMAGE_NODE = "sdxl_i2i_load"
 SDXL_IMG2IMG_RESIZE_NODE = "sdxl_i2i_resize"
 SDXL_IMG2IMG_VAE_ENCODE_NODE = "sdxl_i2i_vae_encode"
@@ -41,7 +37,7 @@ SDXL_VAR_LOAD_IMAGE_NODE = "sdxl_var_load"
 SDXL_VAR_RESIZE_NODE = "sdxl_var_resize"
 SDXL_VAR_VAE_ENCODE_NODE = "sdxl_var_vae_encode"
 SDXL_VAR_CLIP_SKIP_NODE = "sdxl_var_clip_skip"
-SDXL_VAR_LORA_NODE = SDXL_LORA_NODE # Reusing
+SDXL_VAR_LORA_NODE = SDXL_LORA_NODE
 SDXL_VAR_POS_PROMPT_NODE = "sdxl_var_pos_prompt"
 SDXL_VAR_NEG_PROMPT_NODE = "sdxl_var_neg_prompt"
 SDXL_VAR_KSAMPLER_NODE = "sdxl_var_ksampler"
@@ -53,7 +49,7 @@ SDXL_UPSCALE_MODEL_LOADER_NODE = "sdxl_up_model_loader"
 SDXL_UPSCALE_ULTIMATE_NODE = "sdxl_up_ultimate"
 SDXL_UPSCALE_HELPER_LATENT_NODE = "sdxl_up_helper_latent"
 SDXL_UPSCALE_SAVE_IMAGE_NODE = "sdxl_up_save"
-SDXL_UPSCALE_LORA_NODE = SDXL_LORA_NODE # Reusing
+SDXL_UPSCALE_LORA_NODE = SDXL_LORA_NODE
 SDXL_UPSCALE_CLIP_SKIP_NODE = "sdxl_upscale_clip_skip"
 SDXL_UPSCALE_POS_PROMPT_NODE = "sdxl_upscale_pos_prompt"
 SDXL_UPSCALE_NEG_PROMPT_NODE = "sdxl_upscale_neg_prompt"
@@ -152,7 +148,7 @@ sdxl_prompt = {
   str(SDXL_LATENT_NODE): {"inputs": {"aspect_ratio": "1:1", "mp_size_float": "1", "upscale_by": 1.0, "model_type": "SDXL", "batch_size": 1}, "class_type": "BobsLatentNodeAdvanced", "_meta": {"title": "Bobs Latent Optimizer (SDXL)"}}
 }
 
-# --- SDXL Img2Img Template (New) ---
+# --- SDXL Img2Img Template ---
 sdxl_img2img_prompt = {
   str(SDXL_CHECKPOINT_LOADER_NODE): {"inputs": {"ckpt_name": "sdxl_model.safetensors"}, "class_type": "CheckpointLoaderSimple", "_meta": {"title": "Load SDXL Checkpoint"}},
   str(SDXL_IMG2IMG_LOAD_IMAGE_NODE): {"inputs": {"url_or_path": "IMAGE_URL_HERE"}, "class_type": "LoadImageFromUrlOrPath", "_meta": {"title": "Load Image for Img2Img"}},
@@ -173,7 +169,7 @@ sdxl_img2img_prompt = {
 }
 
 
-# --- SDXL Variation Template (with LoRA and denoise placeholder) ---
+# --- SDXL Variation Template ---
 sdxl_variation_prompt = {
   str(SDXL_CHECKPOINT_LOADER_NODE): {"inputs": {"ckpt_name": "sdxl_model.safetensors"}, "class_type": "CheckpointLoaderSimple", "_meta": {"title": "Load SDXL Checkpoint"}},
   str(SDXL_VAR_LOAD_IMAGE_NODE): {"inputs": {"url_or_path": "IMAGE_URL_HERE"}, "class_type": "LoadImageFromUrlOrPath", "_meta": {"title": "Load Image for Variation"}},
@@ -189,7 +185,7 @@ sdxl_variation_prompt = {
 }
 
 
-# --- SDXL Upscale Template (with LoRA) ---
+# --- SDXL Upscale Template ---
 sdxl_upscale_prompt = {
   str(SDXL_CHECKPOINT_LOADER_NODE): {"inputs": {"ckpt_name": "sdxl_model.safetensors"}, "class_type": "CheckpointLoaderSimple", "_meta": {"title": "Load SDXL Checkpoint"}},
   str(SDXL_UPSCALE_LORA_NODE): {"inputs": {"PowerLoraLoaderHeaderWidget": {"type": "PowerLoraLoaderHeaderWidget"}, "lora_1": {"on": False, "lora": "None", "strength": 0}, "lora_2": {"on": False, "lora": "None", "strength": 0}, "lora_3": {"on": False, "lora": "None", "strength": 0}, "lora_4": {"on": False, "lora": "None", "strength": 0}, "lora_5": {"on": False, "lora": "None", "strength": 0}, "➕ Add Lora": "", "model": [str(SDXL_CHECKPOINT_LOADER_NODE), 0], "clip": [str(SDXL_CHECKPOINT_LOADER_NODE), 1]}, "class_type": "Power Lora Loader (rgthree)", "_meta": {"title": "Power Lora Loader (SDXL Upscale)"}},
@@ -202,5 +198,3 @@ sdxl_upscale_prompt = {
   str(SDXL_UPSCALE_HELPER_LATENT_NODE): {"inputs": {"aspect_ratio": "1:1", "mp_size_float": "1", "upscale_by": 1.85, "model_type": "SDXL", "batch_size": 1}, "class_type": "BobsLatentNodeAdvanced", "_meta": {"title": "Bobs Upscale Param Calculator (SDXL)"}},
   str(SDXL_UPSCALE_SAVE_IMAGE_NODE): {"inputs": {"filename_prefix": "sdxlbot/UPSCALES", "images": [str(SDXL_UPSCALE_ULTIMATE_NODE), 0]}, "class_type": "SaveImage", "_meta": {"title": "Save Upscaled Image (SDXL)"}}
 }
-
-# --- END OF FILE prompt_templates.py ---
