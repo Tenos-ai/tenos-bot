@@ -1,4 +1,3 @@
-# --- START OF FILE modelnodes.py ---
 import json
 import os
 import traceback
@@ -129,4 +128,3 @@ def get_model_node(model_name_with_prefix: str, node_number_str: str):
         print(f"Unexpected error in get_model_node for model '{model_name_with_prefix}': {e}")
         traceback.print_exc()
         raise
-# --- END OF FILE modelnodes.py ---
