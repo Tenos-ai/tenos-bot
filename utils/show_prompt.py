@@ -1,4 +1,3 @@
-# --- START OF FILE utils/show_prompt.py ---
 import json
 from datetime import datetime, timedelta
 import os
@@ -11,10 +10,10 @@ def reconstruct_full_prompt_string(job_data):
     base_prompt = job_data.get('enhanced_prompt') or job_data.get('prompt') or job_data.get('original_prompt', '')
     full_prompt = base_prompt
 
-    # Handle SDXL negative prompt if present
-    negative_prompt = job_data.get('negative_prompt') # This key needs to be added to job_details
+    
+    negative_prompt = job_data.get('negative_prompt')
     if negative_prompt:
-        full_prompt += f" --no \"{negative_prompt}\"" # Add --no "negative text"
+        full_prompt += f" --no \"{negative_prompt}\""
 
     params = job_data.get('parameters_used')
 
@@ -22,25 +21,25 @@ def reconstruct_full_prompt_string(job_data):
         if 'seed' in params and params['seed'] is not None:
             full_prompt += f" --seed {params['seed']}"
 
-        # Guidance - check for both flux and sdxl guidance
+        
         flux_guidance_used = False
-        if 'guidance' in job_data and job_data['guidance'] is not None: # Flux guidance from top level
+        if 'guidance' in job_data and job_data['guidance'] is not None:
             try:
                 full_prompt += f" --g {float(job_data['guidance']):.1f}"
                 flux_guidance_used = True
             except (ValueError, TypeError): pass
-        elif 'g' in params and params['g']: # Fallback to original 'g' param for Flux
+        elif 'g' in params and params['g']:
             full_prompt += f" --g {params['g']}"
             flux_guidance_used = True
         
-        # Add SDXL guidance if it was used and different from Flux guidance (or Flux wasn't used)
-        sdxl_guidance_param = params.get('g_sdxl') # Check for explicit --g_sdxl
+        
+        sdxl_guidance_param = params.get('g_sdxl')
         if sdxl_guidance_param:
             full_prompt += f" --g_sdxl {sdxl_guidance_param}"
-        elif 'guidance_sdxl' in job_data and job_data['guidance_sdxl'] is not None: # SDXL guidance from top level
+        elif 'guidance_sdxl' in job_data and job_data['guidance_sdxl'] is not None:
             try:
                 sdxl_g_val = float(job_data['guidance_sdxl'])
-                # Only add if it's different from flux guidance or flux guidance wasn't added
+                
                 if not flux_guidance_used or (flux_guidance_used and abs(sdxl_g_val - float(job_data.get('guidance', sdxl_g_val + 1))) > 0.01):
                      full_prompt += f" --g_sdxl {sdxl_g_val:.1f}"
             except (ValueError, TypeError): pass
@@ -67,13 +66,13 @@ def reconstruct_full_prompt_string(job_data):
         if 'run_times' in job_data and job_data['run_times'] > 1:
             full_prompt += f" --r {job_data['run_times']}"
     else:
-        # Fallback for older job data without 'parameters_used'
+        
         if 'seed' in job_data and job_data['seed'] is not None:
             full_prompt += f" --seed {job_data['seed']}"
         if 'guidance' in job_data and job_data['guidance'] is not None:
             try: full_prompt += f" --g {float(job_data['guidance']):.1f}"
             except (ValueError, TypeError): pass
-        # Add SDXL guidance fallback if applicable
+        
         if 'guidance_sdxl' in job_data and job_data['guidance_sdxl'] is not None:
              try: full_prompt += f" --g_sdxl {float(job_data['guidance_sdxl']):.1f}"
              except (ValueError, TypeError): pass
@@ -102,5 +101,3 @@ def show_prompt(message_id, channel_id, queue_manager):
     else:
         print(f"show_prompt: Job data not found for message {message_id} / channel {channel_id}")
         return "Prompt data not found"
-
-# --- END OF FILE utils/show_prompt.py ---
