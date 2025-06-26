@@ -1,4 +1,3 @@
-# --- START OF FILE editor_config_manager.py ---
 import json
 import os
 import traceback
@@ -20,8 +19,6 @@ class EditorConfigManager:
         
         self.settings_last_mtime = 0
 
-        # This template defines the structure of config.json.
-        # The UI will organize these into sub-tabs, but the file structure remains the same.
         self.config_template_definition = {
             "OUTPUTS": {"UPSCALES": "", "VARIATIONS": "", "GENERATIONS": ""},
             "MODELS": {"MODEL_FILES": "", "CHECKPOINTS_FOLDER": "", "UPSCALE_MODELS": "", "VAE_MODELS": ""},
