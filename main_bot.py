@@ -1,4 +1,3 @@
-# --- START OF FILE main_bot.py ---
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -7,25 +6,25 @@ import os
 import traceback
 from aiohttp import web
 
-# --- Configuration Loading ---
+
 from bot_config_loader import (
     BOT_TOKEN, ADMIN_USERNAME, print_startup_info,
     BOT_INTERNAL_API_HOST, BOT_INTERNAL_API_PORT
 )
 
-# --- Core Bot Logic and Components ---
+
 from file_management import extract_job_id
 from queue_manager import queue_manager
 from settings_manager import load_settings
 
-# --- New Modular Imports ---
+
 from bot_events import on_bot_ready, on_bot_message, on_bot_reaction_add
 from bot_slash_commands import setup_slash_commands
 from bot_commands import setup_bot_commands, register_bot_instance as register_bot_for_commands
 from bot_core_logic import check_output_folders, update_job_progress
 from websocket_client import WebsocketClient
 
-# --- Bot Intents and Initialization ---
+
 intents = discord.Intents.default()
 intents.message_content = True
 intents.dm_messages = True
@@ -51,10 +50,10 @@ class TenosBot(commands.Bot):
 
 bot = TenosBot(command_prefix='/', intents=intents)
 
-# --- Register bot instance with modules that need it ---
+
 register_bot_for_commands(bot)
 
-# --- Internal API Server for Config Editor ---
+
 async def handle_get_guilds(request):
     bot_instance = request.app['bot']
     guilds_data = [{"id": str(g.id), "name": g.name} for g in sorted(bot_instance.guilds, key=lambda g: g.name.lower())]
@@ -149,7 +148,7 @@ async def setup_internal_api(bot_instance):
         print(f"CRITICAL ERROR: Failed to start internal API server: {e}")
         traceback.print_exc()
 
-# --- Event Handlers ---
+
 @bot.event
 async def on_ready():
     await on_bot_ready(bot)
@@ -172,13 +171,13 @@ async def on_message(message: discord.Message):
 async def on_reaction_add(reaction: discord.Reaction, user: discord.User | discord.Member):
     await on_bot_reaction_add(bot, reaction, user)
 
-# --- Setup Slash Commands ---
+
 setup_slash_commands(bot.tree, bot)
 
-# --- Setup Bot Commands (for reply-based interactions) ---
+
 bot.commands_module = setup_bot_commands(bot)
 
-# --- Main Execution Guard ---
+
 if __name__ == "__main__":
     if not BOT_TOKEN:
         print("\n" + "=" * 40 + "\n CRITICAL ERROR: BOT_API KEY not found in config.json! \n" + "=" * 40 + "\n")
