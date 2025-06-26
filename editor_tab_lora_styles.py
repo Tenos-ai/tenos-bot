@@ -1,4 +1,3 @@
-# --- START OF FILE editor_tab_lora_styles.py ---
 import tkinter as tk
 from tkinter import ttk, scrolledtext, simpledialog, messagebox
 import json
@@ -8,18 +7,18 @@ from editor_utils import silent_showinfo, silent_showerror, silent_askyesno, sil
 from editor_constants import (
     STYLES_CONFIG_FILE_NAME, CANVAS_BG_COLOR, FRAME_BG_COLOR, TEXT_COLOR_NORMAL,
     LISTBOX_BG, LISTBOX_FG, LISTBOX_SELECT_BG, LISTBOX_SELECT_FG,
-    ENTRY_BG_COLOR, BOLD_TLABEL_STYLE, ACCENT_TLABEL_STYLE # Assuming these are defined if used
+    ENTRY_BG_COLOR, BOLD_TLABEL_STYLE, ACCENT_TLABEL_STYLE
 )
 
 class LoraStylesTab:
     def __init__(self, editor_app_ref, parent_notebook):
-        self.editor_app = editor_app_ref # Reference to the main ConfigEditor application
+        self.editor_app = editor_app_ref
         self.notebook = parent_notebook
 
         self.lora_styles_tab_frame = ttk.Frame(self.notebook, padding="10", style="Tenos.TFrame")
         self.notebook.add(self.lora_styles_tab_frame, text=' LoRA Styles ')
 
-        # Left frame for listbox and its buttons
+        
         left_frame = ttk.Frame(self.lora_styles_tab_frame, style="Tenos.TFrame")
         left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
 
@@ -44,15 +43,15 @@ class LoraStylesTab:
         ttk.Button(style_buttons_frame, text="Add New Style", command=self.add_new_style_entry).pack(pady=2)
         ttk.Button(style_buttons_frame, text="Delete Selected Style", command=self.delete_selected_style_entry).pack(pady=2)
 
-        # Right frame for style details (scrollable)
+        
         self.style_details_outer_frame = ttk.Frame(self.lora_styles_tab_frame, style="Tenos.TFrame")
         self.style_details_outer_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
         detail_canvas_widget = tk.Canvas(self.style_details_outer_frame, bg=CANVAS_BG_COLOR, highlightthickness=0)
         detail_scrollbar_widget = ttk.Scrollbar(self.style_details_outer_frame, orient="vertical", command=detail_canvas_widget.yview, style="Tenos.Vertical.TScrollbar")
-        detail_canvas_widget.associated_scrollbar = detail_scrollbar_widget # For dynamic hide/show
+        detail_canvas_widget.associated_scrollbar = detail_scrollbar_widget
 
-        self.style_details_scrollable_frame = ttk.Frame(detail_canvas_widget, style="Tenos.TFrame") # This frame will contain the actual details
+        self.style_details_scrollable_frame = ttk.Frame(detail_canvas_widget, style="Tenos.TFrame")
         self.style_details_scrollable_frame.bind(
             "<Configure>", lambda event, c=detail_canvas_widget: self.editor_app._debounce_canvas_configure(c, event)
         )
@@ -60,7 +59,7 @@ class LoraStylesTab:
         detail_canvas_widget.configure(yscrollcommand=detail_scrollbar_widget.set)
 
         detail_canvas_widget.pack(side="top", fill="both", expand=True)
-        # Scrollbar is packed by _debounce_canvas_configure when needed
+        
 
         ttk.Button(self.style_details_outer_frame, text="Save LoRA Styles Config", command=self.save_current_styles_config).pack(side=tk.BOTTOM, pady=10)
 
@@ -77,15 +76,15 @@ class LoraStylesTab:
         selected_style_name_before_reload = None
         if current_selection_indices:
             try: selected_style_name_before_reload = self.style_listbox_widget.get(current_selection_indices[0])
-            except tk.TclError: pass # Listbox might be empty or selection invalid
+            except tk.TclError: pass
 
         self.style_listbox_widget.delete(0, tk.END)
-        # self.editor_app.styles_config is the source of truth loaded by ConfigEditor
+        
         style_keys_for_listbox = sorted([str(k) for k in self.editor_app.styles_config.keys() if k != 'off'])
         for style_name_iter in style_keys_for_listbox:
             self.style_listbox_widget.insert(tk.END, style_name_iter)
 
-        # Clear details frame initially
+        
         for widget_iter in self.style_details_scrollable_frame.winfo_children():
             widget_iter.destroy()
 
@@ -93,23 +92,23 @@ class LoraStylesTab:
         if selected_style_name_before_reload and selected_style_name_before_reload in style_keys_for_listbox:
             new_selection_index = style_keys_for_listbox.index(selected_style_name_before_reload)
         elif style_keys_for_listbox:
-            new_selection_index = 0 # Select first if previous is gone or none was selected
+            new_selection_index = 0
 
         if new_selection_index != -1:
             self.style_listbox_widget.selection_set(new_selection_index)
             self.style_listbox_widget.activate(new_selection_index)
             self.style_listbox_widget.see(new_selection_index)
-            self.display_style_details(style_keys_for_listbox[new_selection_index]) # Display details for selection
+            self.display_style_details(style_keys_for_listbox[new_selection_index])
         else:
             ttk.Label(self.style_details_scrollable_frame, text="Select a style or add a new one.", style="Tenos.TLabel").pack(padx=10, pady=10)
         self.style_details_scrollable_frame.event_generate("<Configure>")
 
 
-    def on_style_selected_in_listbox(self, event=None): # event might not be passed if called manually
+    def on_style_selected_in_listbox(self, event=None):
         """Handles selection change in the style listbox."""
         selection_indices = self.style_listbox_widget.curselection()
         if not selection_indices:
-            # Clear details if nothing is selected (e.g., after deleting the last item)
+            
             for widget_iter in self.style_details_scrollable_frame.winfo_children():
                 widget_iter.destroy()
             ttk.Label(self.style_details_scrollable_frame, text="Select a style or add a new one.", style="Tenos.TLabel").pack(padx=10, pady=10)
@@ -118,7 +117,7 @@ class LoraStylesTab:
         try:
             selected_style_name = self.style_listbox_widget.get(selection_indices[0])
             self.display_style_details(selected_style_name)
-        except tk.TclError: # If listbox is manipulated during selection
+        except tk.TclError:
              pass
         except Exception as e:
             print(f"EditorLoraStyles: Unexpected error in on_style_selected_in_listbox: {e}")
@@ -126,10 +125,10 @@ class LoraStylesTab:
 
     def display_style_details(self, style_name_to_display):
         """Displays the LoRA slots and controls for the given style name."""
-        # Clear previous details and reset Tkinter vars for the current style
+        
         for widget_iter in self.style_details_scrollable_frame.winfo_children():
             widget_iter.destroy()
-        self.current_style_vars = {} # Reset for the new style
+        self.current_style_vars = {}
 
         if style_name_to_display == "off":
             ttk.Label(self.style_details_scrollable_frame, text="'off' style cannot be modified.", style="Tenos.TLabel").pack(padx=10, pady=10)
@@ -137,16 +136,16 @@ class LoraStylesTab:
             return
 
         current_style_data = self.editor_app.styles_config.get(style_name_to_display)
-        if not isinstance(current_style_data, dict): # Should not happen if loaded correctly
-            current_style_data = {"favorite": False, "model_type": "all"} # Create a default structure
+        if not isinstance(current_style_data, dict):
+            current_style_data = {"favorite": False, "model_type": "all"}
             self.editor_app.styles_config[style_name_to_display] = current_style_data
 
-        # --- Header with style name and model type ---
+        
         header_frame = ttk.Frame(self.style_details_scrollable_frame, style="Tenos.TFrame")
         header_frame.pack(fill=tk.X, pady=(5,15), padx=5)
         ttk.Label(header_frame, text=f"Editing Style: {style_name_to_display}", style="Bold.TLabel").pack(side=tk.LEFT, anchor='w')
         
-        # Model Type selector
+        
         model_type_frame = ttk.Frame(header_frame, style="Tenos.TFrame")
         model_type_frame.pack(side=tk.RIGHT)
         ttk.Label(model_type_frame, text="Model Type:", style="Tenos.TLabel").pack(side=tk.LEFT, padx=(0,5))
@@ -155,12 +154,12 @@ class LoraStylesTab:
         model_type_combo.pack(side=tk.LEFT)
         model_type_var.trace_add("write", lambda *args, s=style_name_to_display: self._update_style_model_type(s))
 
-        self.current_style_vars[style_name_to_display] = {'__model_type_var': model_type_var} # Store the var
+        self.current_style_vars[style_name_to_display] = {'__model_type_var': model_type_var}
 
-        # --- Helper to get slot number for sorting ---
+        
         def get_lora_slot_number(lora_key_str):
             try: return int(lora_key_str.split('_')[1])
-            except (IndexError, ValueError): return float('inf') # Sort invalid keys last
+            except (IndexError, ValueError): return float('inf')
 
         lora_slots_for_ui = {k: v for k, v in current_style_data.items() if k.startswith("lora_") and isinstance(v, dict)}
         sorted_lora_keys_for_display = sorted(lora_slots_for_ui.keys(), key=get_lora_slot_number)
@@ -352,4 +351,3 @@ class LoraStylesTab:
             self.editor_app.config_manager.load_bot_settings_data(self.editor_app.llm_models_config)
             self.editor_app.populate_bot_settings_tab()
             self.editor_app.favorites_tab_manager.populate_all_favorites_sub_tabs()
-# --- END OF FILE editor_tab_lora_styles.py ---
