@@ -1,6 +1,3 @@
-# --- START OF FILE utils/prompt_utils.py ---
-# utils/prompt_utils.py
-
 import discord
 from discord.ui import Button, View
 import io
@@ -63,4 +60,3 @@ def create_truncated_response(user_mention, prompt, additional_info=""):
     if additional_info:
         response += f" {additional_info}"
     return response, view
-# --- END OF FILE utils/prompt_utils.py ---
