@@ -1,6 +1,5 @@
-# --- START OF FILE bot_commands.py ---
 import discord
-from discord import app_commands # type: ignore
+from discord import app_commands
 import textwrap
 
 from bot_core_logic import (
@@ -12,8 +11,8 @@ from bot_core_logic import (
 from bot_ui_components import QueuedJobView
 from queue_manager import queue_manager
 from utils.message_utils import safe_interaction_response
-from websocket_client import WebsocketClient # Import the websocket client
-from settings_manager import load_settings # For getting current model type
+from websocket_client import WebsocketClient
+from settings_manager import load_settings
 
 _bot_instance_commands = None
 def register_bot_instance(bot_instance):
@@ -33,7 +32,7 @@ async def handle_gen_command(
     context: discord.Interaction | discord.Message,
     prompt: str,
     is_modal_submission: bool = False,
-    model_type_override: str = None, # This will be the CURRENTLY selected model for derivative actions
+    model_type_override: str = None,
     is_derivative_action: bool = False
 ):
     user_obj_ctx: discord.User | discord.Member
@@ -44,12 +43,12 @@ async def handle_gen_command(
     first_message_sent_this_command = False
 
     if is_interaction_ctx:
-        interaction_context: discord.Interaction = context # type: ignore
+        interaction_context: discord.Interaction = context
         user_obj_ctx = interaction_context.user
         if interaction_context.channel is None:
             if interaction_context.type == discord.InteractionType.application_command and interaction_context.guild_id is None:
                  if user_obj_ctx.dm_channel is None: await user_obj_ctx.create_dm()
-                 channel_obj_ctx = user_obj_ctx.dm_channel # type: ignore
+                 channel_obj_ctx = user_obj_ctx.dm_channel
                  if channel_obj_ctx is None:
                     print(f"Critical Error: Could not establish DM channel for interaction by {user_obj_ctx.id}.")
                     if not interaction_context.response.is_done(): await interaction_context.response.send_message("Error: Could not determine channel (DM creation failed).", ephemeral=True)
@@ -75,29 +74,21 @@ async def handle_gen_command(
                 except: pass 
                 return
     else: 
-        message_context: discord.Message = context # type: ignore
+        message_context: discord.Message = context
         user_obj_ctx = message_context.author
         channel_obj_ctx = message_context.channel
         initial_interaction_ctx_obj = None
 
     effective_is_derivative = is_derivative_action or is_modal_submission
     
-    # If it's a derivative action OR a modal submission (which often implies a derivative like edit/remix),
-    # model_type_override should already be set to the current model type by the caller.
-    # If it's a brand new /gen command (not derivative, not modal), model_type_override will be None,
-    # and execute_generation_logic will use the default from settings.
     
-    # No change needed here for model_type_override itself, as it's passed in.
-    # The CALLERS of handle_gen_command (e.g., for reruns, edits from modals)
-    # need to ensure they pass the correct CURRENT model type.
-
     job_results_list = await execute_generation_logic(
         context_user=user_obj_ctx,
         context_channel=channel_obj_ctx, 
         prompt=prompt,
         is_interaction_context=is_interaction_ctx, 
         initial_interaction_object=initial_interaction_ctx_obj, 
-        model_type_override=model_type_override, # Pass it through
+        model_type_override=model_type_override,
         is_derivative_action=effective_is_derivative
     )
 
@@ -169,7 +160,7 @@ async def handle_gen_command(
             await channel_obj_ctx.send(f"{user_obj_ctx.mention} {summary_text}")
 
 async def handle_reply_upscale(message: discord.Message, referenced_message: discord.Message):
-    # core_process_upscale now uses the CURRENTLY selected model from settings.
+    
     results = await core_process_upscale( 
         context_user=message.author,
         context_channel=message.channel,
@@ -181,7 +172,7 @@ async def handle_reply_upscale(message: discord.Message, referenced_message: dis
     for result in results:
         if result["status"] == "success":
             msg_details = result["message_content_details"]
-            content = (f"{msg_details['user_mention']}: Upscaling image #{msg_details['image_index']} from job `{msg_details['original_job_id']}` (Workflow: {msg_details['model_type']})\n" # model_type IS the current model
+            content = (f"{msg_details['user_mention']}: Upscaling image #{msg_details['image_index']} from job `{msg_details['original_job_id']}` (Workflow: {msg_details['model_type']})\n"
                        f"> **Using Prompt:** `{textwrap.shorten(msg_details['prompt_to_display'], 70, placeholder='...')}`\n"
                        f"> **Seed:** `{msg_details['seed']}`, **Style:** `{msg_details['style']}`, **Orig AR:** `{msg_details['aspect_ratio']}`\n"
                        f"> **Factor:** `{msg_details['upscale_factor']}`, **Denoise:** `{msg_details['denoise']}`\n"
@@ -198,7 +189,7 @@ async def handle_reply_upscale(message: discord.Message, referenced_message: dis
             await message.channel.send(f"{message.author.mention} Error upscaling: {result.get('error_message_text', 'Unknown error.')}")
 
 async def handle_reply_vary(message: discord.Message, referenced_message: discord.Message, variation_type: str):
-    # core_process_variation now uses the CURRENTLY selected model from settings.
+    
     results = await core_process_variation(
         context_user=message.author,
         context_channel=message.channel,
@@ -211,7 +202,7 @@ async def handle_reply_vary(message: discord.Message, referenced_message: discor
     for result in results: 
         if result["status"] == "success":
             msg_details = result["message_content_details"]
-            content = (f"{msg_details['user_mention']}: `{textwrap.shorten(msg_details['prompt_to_display'], 50, placeholder='...')}` ({msg_details['description']} on img #{msg_details['image_index']} from `{msg_details['original_job_id']}` - {msg_details['model_type']})\n" # model_type IS the current model
+            content = (f"{msg_details['user_mention']}: `{textwrap.shorten(msg_details['prompt_to_display'], 50, placeholder='...')}` ({msg_details['description']} on img #{msg_details['image_index']} from `{msg_details['original_job_id']}` - {msg_details['model_type']})\n"
                        f"> **Seed:** `{msg_details['seed']}`, **AR:** `{msg_details['aspect_ratio']}`, **Steps:** `{msg_details['steps']}`, **Style:** `{msg_details['style']}`")
             if msg_details.get('is_remixed'): 
                 content += "\n> `(Remixed Prompt)`"
@@ -233,7 +224,7 @@ async def handle_reply_vary(message: discord.Message, referenced_message: discor
             await message.channel.send(f"{message.author.mention} Error varying: {result.get('error_message_text', 'Unknown error.')}")
 
 async def handle_reply_rerun(message: discord.Message, referenced_message: discord.Message, run_times: int):
-    # core_process_rerun now calls execute_generation_logic with model_type_override set to CURRENT model
+    
     job_results_list = await core_process_rerun(
         context_user=message.author,
         context_channel=message.channel,
@@ -248,7 +239,7 @@ async def handle_reply_rerun(message: discord.Message, referenced_message: disco
             msg_details = result["message_content_details"]
             content = (f"{msg_details['user_mention']}: `{textwrap.shorten(msg_details['prompt_to_display'], 1500, placeholder='...')}`")
             if msg_details['enhancer_used'] and msg_details['display_preference'] == 'enhanced': content += " ✨"
-            content += f" (Rerun {idx+1}/{run_times} - {msg_details['model_type'].upper()})" # model_type IS the current model
+            content += f" (Rerun {idx+1}/{run_times} - {msg_details['model_type'].upper()})"
             content += f"\n> **Seed:** `{msg_details['seed']}`"
             if msg_details['aspect_ratio']: content += f", **AR:** `{msg_details['aspect_ratio']}`"
             if msg_details['steps']: content += f", **Steps:** `{msg_details['steps']}`"
@@ -273,4 +264,3 @@ async def handle_reply_rerun(message: discord.Message, referenced_message: disco
 
     if error_summary_rerun:
         await message.channel.send(f"{message.author.mention} Rerun request processed with error(s):\n- " + "\n".join(error_summary_rerun))
-# --- END OF FILE bot_commands.py ---
