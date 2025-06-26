@@ -286,7 +286,7 @@ def modify_upscale_prompt(
 
     os.makedirs(UPSCALES_DIR, exist_ok=True)
     filename_suffix_detail_ups = f"_from_img{image_index}_srcID{source_job_id_for_tracking}"
-    # Standardized prefix for upscales
+    
     file_prefix_base_ups = "GEN_UP_" 
     final_filename_prefix_ups = normalize_path_for_comfyui(
         os.path.join(UPSCALES_DIR, f"{file_prefix_base_ups}{upscale_job_id}{filename_suffix_detail_ups}")
