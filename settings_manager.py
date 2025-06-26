@@ -17,17 +17,16 @@ def load_llm_models_config():
     try:
         if not os.path.exists('llm_models.json'):
             print("SettingsManager: llm_models.json not found. Using default.")
-            return default_config # Return immediately after creating/using default
+            return default_config
         with open('llm_models.json', 'r') as f:
             config = json.load(f)
         if not isinstance(config, dict) or "providers" not in config or not isinstance(config["providers"], dict):
             print("SettingsManager Error: llm_models.json has invalid structure. Using default.")
             return default_config
-        # Ensure OpenAI provider exists, add if not (for backward compatibility)
+        
         if "openai" not in config["providers"]:
             print("SettingsManager: Adding default OpenAI provider to llm_models.json")
             config["providers"]["openai"] = default_config["providers"]["openai"]
-            # Optionally save back the updated config
             # try:
             #     with open('llm_models.json', 'w') as f_write:
             #         json.dump(config, f_write, indent=2)
@@ -37,7 +36,6 @@ def load_llm_models_config():
         for key, data in config["providers"].items():
             if not isinstance(data, dict) or "display_name" not in data or "models" not in data or not isinstance(data["models"], list):
                 print(f"SettingsManager Warning: Invalid structure for provider '{key}'. Reverting to default for this provider.")
-                # Use .get for safer access to default_config in case a new provider was added manually but is malformed
                 config["providers"][key] = default_config["providers"].get(key, {"display_name": key, "models": []})
         return config
     except (OSError, json.JSONDecodeError) as e:
@@ -157,7 +155,7 @@ def load_settings():
                 updated = True
             else:
                 settings[mp_size_key] = current_mp_value
-        else: # Should be added by the loop above if missing
+        else:
             pass
 
         if display_prompt_key in settings:
@@ -168,7 +166,7 @@ def load_settings():
                 updated = True
             else:
                 settings[display_prompt_key] = current_display_pref
-        else: # Should be added by loop above if missing
+        else:
              pass
 
 
@@ -178,7 +176,7 @@ def load_settings():
                 if settings[key] is None or isinstance(settings[key], str):
                     if isinstance(settings[key], str):
                         stripped_val = settings[key].strip()
-                        if settings[key] != stripped_val: updated = True # If stripping changed it
+                        if settings[key] != stripped_val: updated = True
                         settings[key] = stripped_val
                     continue
                 else:
@@ -187,13 +185,13 @@ def load_settings():
                     updated = True
 
         allowed_providers = list(llm_models_config.get('providers', {}).keys())
-        if not allowed_providers: allowed_providers = ['gemini'] # Fallback
+        if not allowed_providers: allowed_providers = ['gemini']
         if settings.get('llm_provider') not in allowed_providers:
             print(f"Warning: Invalid 'llm_provider' value '{settings.get('llm_provider')}'. Resetting to default '{default_settings['llm_provider']}'.")
             settings['llm_provider'] = default_settings['llm_provider']
             updated = True
 
-        # --- Model and CLIP Validation with Normalization ---
+        
         available_flux_models_raw = []
         try:
             if os.path.exists('modelslist.json'):
@@ -203,7 +201,7 @@ def load_settings():
                          if isinstance(type_list, list): available_flux_models_raw.extend([m for m in type_list if isinstance(m, str)])
                      available_flux_models_raw = list(set(available_flux_models_raw))
         except Exception as e: print(f"Warning: Could not load modelslist.json for Flux model validation: {e}")
-        # Create a map of lowercase stripped name -> original stripped name for case-insensitive matching while preserving original casing
+        
         available_flux_models = {m.strip().lower(): m.strip() for m in available_flux_models_raw}
 
         available_sdxl_checkpoints_raw = []
@@ -213,7 +211,7 @@ def load_settings():
                  if isinstance(checkpoints_list_data, dict):
                      if isinstance(checkpoints_list_data.get('checkpoints'), list):
                          available_sdxl_checkpoints_raw.extend([c for c in checkpoints_list_data['checkpoints'] if isinstance(c, str)])
-                     else: # Fallback for other structures if 'checkpoints' key is not a list
+                     else:
                         for key_chk, value_chk in checkpoints_list_data.items():
                             if isinstance(value_chk, list) and key_chk != 'favorites':
                                 available_sdxl_checkpoints_raw.extend([c for c in value_chk if isinstance(c, str)])
@@ -229,12 +227,12 @@ def load_settings():
             if ":" in current_selected_model_setting_stripped:
                 model_type, model_name_from_setting = current_selected_model_setting_stripped.split(":", 1)
                 model_type = model_type.strip().lower()
-                model_name_from_setting = model_name_from_setting.strip() # Already stripped above, but good practice
+                model_name_from_setting = model_name_from_setting.strip()
 
             valid_current_model_found = False
             if model_type == "flux":
                 if model_name_from_setting.lower() in available_flux_models:
-                    # Ensure the stored value matches the original casing from the list
+                    
                     correctly_cased_name = available_flux_models[model_name_from_setting.lower()]
                     new_setting_val = f"Flux: {correctly_cased_name}"
                     if settings['selected_model'] != new_setting_val: updated = True
@@ -247,7 +245,7 @@ def load_settings():
                     if settings['selected_model'] != new_setting_val: updated = True
                     settings['selected_model'] = new_setting_val
                     valid_current_model_found = True
-            elif model_type is None : # Old format (no prefix), try to match and fix
+            elif model_type is None :
                 if model_name_from_setting.lower() in available_flux_models:
                     settings['selected_model'] = f"Flux: {available_flux_models[model_name_from_setting.lower()]}"
                     valid_current_model_found = True; updated = True
@@ -266,10 +264,10 @@ def load_settings():
                 else:
                     settings['selected_model'] = None
                 updated = True
-            elif current_selected_model_setting != settings['selected_model']: # If stripping or casing correction happened
+            elif current_selected_model_setting != settings['selected_model']:
                 updated = True
 
-        elif not current_selected_model_setting and (available_flux_models or available_sdxl_checkpoints): # If None but models exist
+        elif not current_selected_model_setting and (available_flux_models or available_sdxl_checkpoints):
             if available_flux_models: settings['selected_model'] = f"Flux: {next(iter(available_flux_models.values()))}"
             elif available_sdxl_checkpoints: settings['selected_model'] = f"SDXL: {next(iter(available_sdxl_checkpoints.values()))}"
             updated = True
@@ -294,7 +292,7 @@ def load_settings():
                 print(f"⚠️ Warning: Selected T5 CLIP '{current_t5_clip}' not found. Resetting.")
                 settings['selected_t5_clip'] = next(iter(available_clips_t5.values())) if available_clips_t5 else None
                 updated = True
-            elif current_t5_clip != available_clips_t5.get(current_t5_clip_norm.lower()): # Correct casing/spacing
+            elif current_t5_clip != available_clips_t5.get(current_t5_clip_norm.lower()):
                 settings['selected_t5_clip'] = available_clips_t5.get(current_t5_clip_norm.lower())
                 updated = True
         elif not current_t5_clip and available_clips_t5:
@@ -317,9 +315,9 @@ def load_settings():
             updated = True
 
 
-        selected_provider = settings.get('llm_provider', 'gemini') # Already stripped
+        selected_provider = settings.get('llm_provider', 'gemini')
         # valid_provider_models_raw = llm_models_config.get('providers', {}).get(selected_provider, {}).get('models', [])
-        # valid_provider_models = {m.strip().lower(): m.strip() for m in valid_provider_models_raw} # Normalized map for active provider
+        # valid_provider_models = {m.strip().lower(): m.strip() for m in valid_provider_models_raw}
 
         def validate_llm_model(provider_short_name):
             nonlocal updated
@@ -327,20 +325,20 @@ def load_settings():
             current_llm_model_setting = settings.get(model_key)
             current_llm_model = current_llm_model_setting.strip() if isinstance(current_llm_model_setting, str) else None
 
-            # Get models specifically for *this* provider_short_name being validated
+            
             specific_provider_models_raw = llm_models_config.get('providers', {}).get(provider_short_name, {}).get('models', [])
             specific_provider_models_map = {m.strip().lower(): m.strip() for m in specific_provider_models_raw}
 
 
-            if current_llm_model: # If a model is set for this provider type
+            if current_llm_model:
                 if current_llm_model.lower() not in specific_provider_models_map:
                     print(f"⚠️ Warning: Selected {provider_short_name.capitalize()} model '{current_llm_model_setting}' invalid for this provider. Resetting.")
                     settings[model_key] = next(iter(specific_provider_models_map.values())) if specific_provider_models_map else default_settings[model_key]
                     updated = True
-                elif current_llm_model_setting != specific_provider_models_map.get(current_llm_model.lower()): # Correct casing/spacing
+                elif current_llm_model_setting != specific_provider_models_map.get(current_llm_model.lower()):
                     settings[model_key] = specific_provider_models_map.get(current_llm_model.lower())
                     updated = True
-            elif not current_llm_model and specific_provider_models_map: # If None but models exist for this provider type
+            elif not current_llm_model and specific_provider_models_map:
                 settings[model_key] = next(iter(specific_provider_models_map.values()))
                 updated = True
 
@@ -348,10 +346,10 @@ def load_settings():
         validate_llm_model('groq')
         validate_llm_model('openai')
 
-        # Default SDXL Negative Prompt
+        
         if 'default_sdxl_negative_prompt' in settings and isinstance(settings['default_sdxl_negative_prompt'], str):
             settings['default_sdxl_negative_prompt'] = settings['default_sdxl_negative_prompt'].strip()
-        elif 'default_sdxl_negative_prompt' not in settings: # Ensure key exists
+        elif 'default_sdxl_negative_prompt' not in settings:
             settings['default_sdxl_negative_prompt'] = default_settings['default_sdxl_negative_prompt']
             updated = True
 
@@ -416,7 +414,7 @@ def _get_default_settings():
         "default_batch_size": 1,
         "default_guidance": 3.5,
         "default_guidance_sdxl": 7.0,
-        "default_sdxl_negative_prompt": "", # New default
+        "default_sdxl_negative_prompt": "",
         "default_mp_size": "1",
         "remix_mode": False,
         "upscale_factor": 1.85,
@@ -467,8 +465,8 @@ def save_settings(settings):
             if key in valid_settings and isinstance(valid_settings[key], str):
                 valid_settings[key] = valid_settings[key].strip()
             elif key in valid_settings and valid_settings[key] is None and key not in ['selected_model', 'selected_t5_clip', 'selected_clip_l', 'selected_upscale_model', 'selected_vae']: # Allow None for model selections
-                # If it's None for other string keys that expect a value, reset to default
-                if defaults[key] is not None: # Only reset if default is not None itself
+                
+                if defaults[key] is not None:
                     print(f"Warning: '{key}' is None but expects a string. Resetting to default.")
                     valid_settings[key] = defaults[key]
 
@@ -560,17 +558,17 @@ def get_model_choices():
     all_sdxl_checkpoints_raw = sorted(list(set(c for c in all_sdxl_checkpoints_raw if isinstance(c, str))))
     for model_raw in all_sdxl_checkpoints_raw: add_option(f"SDXL: {model_raw.strip()}", model_type_label="SDXL")
 
-    # Truncate and ensure default logic
+    
     final_choices = []
     if current_model_setting and any(opt.value == current_model_setting for opt in choices):
         current_opt = next(opt for opt in choices if opt.value == current_model_setting)
-        current_opt.default = True # Ensure it is default
+        current_opt.default = True
         final_choices.append(current_opt)
         final_choices.extend([opt for opt in choices if opt.value != current_model_setting])
     else:
         final_choices = choices
         if final_choices and not any(opt.default for opt in final_choices):
-            final_choices[0].default = True # Default to first if current not found or no choices had default
+            final_choices[0].default = True
 
     return final_choices[:25]
 
@@ -603,7 +601,7 @@ def get_clip_choices(clip_type):
                 clip = clip_raw.strip() if isinstance(clip_raw, str) else None
                 if clip and clip not in added_values: choices.append(discord.SelectOption(label=clip[:100], value=clip)); added_values.add(clip)
                 if len(choices) >= 25: break
-    # Truncation and default logic as in get_model_choices
+    
     final_choices = []
     if current_clip and any(opt.value == current_clip for opt in choices):
         current_opt = next(opt for opt in choices if opt.value == current_clip); current_opt.default = True
@@ -644,10 +642,10 @@ def get_style_choices():
     seen_values = set(); unique_choices = []
     for option in choices:
         if option.value not in seen_values: unique_choices.append(option); seen_values.add(option.value)
-    # Truncation and default logic
+    
     final_choices = []
     if current_option and any(opt.value == current_option.value for opt in unique_choices):
-        # Ensure current_option (if it exists and is in unique_choices) is first and default
+        
         current_opt_from_unique = next(opt for opt in unique_choices if opt.value == current_option.value)
         current_opt_from_unique.default = True
         final_choices.append(current_opt_from_unique)
@@ -665,11 +663,11 @@ def get_steps_choices():
     except (ValueError, TypeError): current_steps = 32
     steps_options = sorted(list(set([4, 8, 16, 24, 32, 40, 48, 56, 64] + [current_steps])))
     choices = [discord.SelectOption(label=f"{s} Steps", value=str(s), default=(s == current_steps)) for s in steps_options]
-    if choices and not any(o.default for o in choices) and current_steps in steps_options: # Try to set default again if missed
+    if choices and not any(o.default for o in choices) and current_steps in steps_options:
         for opt in choices:
             if int(opt.value) == current_steps: opt.default = True; break
     if choices and not any(o.default for o in choices): choices[0].default = True
-    return choices[:25] # Max 25 options
+    return choices[:25]
 
 def get_guidance_choices():
     settings = load_settings()
@@ -779,7 +777,7 @@ def get_mp_size_choices():
     return [discord.SelectOption(label=size_labels.get(s, f"{s} MP"), value=s, default=(s == current_size)) for s in allowed_sizes]
 
 def get_upscale_model_choices():
-    choices = []; models_data = {}; # Changed var name to avoid conflict
+    choices = []; models_data = {};
     try:
         from comfyui_api import get_available_comfyui_models
         models_data = get_available_comfyui_models()
@@ -807,7 +805,7 @@ def get_upscale_model_choices():
 
 
 def get_vae_choices():
-    choices = []; models_data = {} # Changed var name
+    choices = []; models_data = {}
     try:
         from comfyui_api import get_available_comfyui_models
         models_data = get_available_comfyui_models()
@@ -831,5 +829,3 @@ def get_vae_choices():
 def get_display_prompt_preference_choices():
     settings = load_settings(); current_preference = settings.get('display_prompt_preference', 'enhanced')
     return [discord.SelectOption(label="Show Enhanced Prompt ✨", value="enhanced", default=(current_preference == 'enhanced')), discord.SelectOption(label="Show Original Prompt ✍️", value="original", default=(current_preference == 'original'))]
-
-# END OF FILE settings_manager.py
