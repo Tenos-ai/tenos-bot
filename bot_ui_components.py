@@ -1,4 +1,3 @@
-# --- START OF FILE bot_ui_components.py ---
 import discord
 from discord.ui import Modal, TextInput, View, Button
 import textwrap
@@ -9,9 +8,9 @@ from queue_manager import queue_manager
 from file_management import extract_job_id, delete_job_files_and_message
 from utils.show_prompt import reconstruct_full_prompt_string
 from bot_config_loader import ADMIN_ID, ALLOWED_USERS
-from settings_manager import load_settings # For getting current model type
+from settings_manager import load_settings
 from utils.message_utils import safe_interaction_response
-from websocket_client import WebsocketClient # Import the websocket client
+from websocket_client import WebsocketClient
 
 from bot_core_logic import (
     process_upscale_request as core_process_upscale,
@@ -22,22 +21,22 @@ from bot_core_logic import (
 )
 
 class EditPromptModal(Modal, title='Edit Prompt'):
-    def __init__(self, original_prompt_full: str, job_id: str, view_ref: View, model_type: str = "flux"): # model_type here is original job's model_type for display
+    def __init__(self, original_prompt_full: str, job_id: str, view_ref: View, model_type: str = "flux"):
         super().__init__(timeout=600)
         self.original_prompt_full = original_prompt_full
         self.job_id_context = job_id
         self.view_ref = view_ref
         self.original_model_type_for_display = model_type 
-        # Shorten label if original_model_type_for_display is too long
+        
         label_context = f"({self.original_model_type_for_display.upper()} context)"
-        max_label_len = 45 - len("Edit Prompt ") - len(label_context) # Max length for the prompt part
+        max_label_len = 45 - len("Edit Prompt ") - len(label_context)
         
         prompt_field_label = f"Edit Prompt {label_context}"
-        if len(prompt_field_label) > 45: # Fallback if even the context makes it too long
+        if len(prompt_field_label) > 45:
             prompt_field_label = "Edit Prompt"
 
         self.prompt_input = TextInput(
-            label=prompt_field_label[:45], # Ensure label is within Discord limits
+            label=prompt_field_label[:45],
             style=discord.TextStyle.paragraph, 
             placeholder='Enter your new prompt here...', 
             default=original_prompt_full, 
@@ -101,7 +100,7 @@ class EditPromptModal(Modal, title='Edit Prompt'):
                     if sent_message and result["job_data_for_qm"]:
                         job_data_to_add = result["job_data_for_qm"]; job_data_to_add["message_id"] = sent_message.id
                         queue_manager.add_job(result["job_id"], job_data_to_add)
-                        # Register with websocket client for progress updates
+                        
                         ws_client = WebsocketClient()
                         if ws_client.is_connected and result.get("comfy_prompt_id"):
                             await ws_client.register_prompt(result["comfy_prompt_id"], sent_message.id, sent_message.channel.id)
@@ -136,9 +135,9 @@ class RemixEditPromptModal(Modal, title='Remix Prompt'):
         self.original_interaction_context_opener = original_interaction_context; self.referenced_message_for_variation = referenced_message_target
         self.target_image_url_for_variation = target_image_url_actual
 
-        # Shorten the label for the text input
+        
         base_label = f"Remix Prompt ({variation_type.capitalize()} #{image_index})"
-        # Max length for label is 45. Truncate if necessary.
+        
         self.prompt_input_remix_field = TextInput(
             label=base_label[:45], 
             style=discord.TextStyle.paragraph, 
@@ -149,10 +148,10 @@ class RemixEditPromptModal(Modal, title='Remix Prompt'):
         )
         self.add_item(self.prompt_input_remix_field)
 
-        if self.model_type_original_for_display == "sdxl": # Contextual display based on original job
+        if self.model_type_original_for_display == "sdxl": 
             original_neg_prompt_text = (job_data or {}).get('negative_prompt', '')
             self.negative_prompt_input_remix_field = TextInput(
-                label="Negative Prompt (SDXL)"[:45], # Shortened
+                label="Negative Prompt (SDXL)"[:45], 
                 style=discord.TextStyle.paragraph, 
                 placeholder='Enter negative prompt (optional)...', 
                 default=original_neg_prompt_text, 
@@ -204,7 +203,7 @@ class RemixEditPromptModal(Modal, title='Remix Prompt'):
                     if sent_msg_remix and result_remix["job_data_for_qm"]:
                         job_data_add_remix = result_remix["job_data_for_qm"]; job_data_add_remix["message_id"] = sent_msg_remix.id
                         queue_manager.add_job(result_remix["job_id"], job_data_add_remix)
-                        # Register with websocket client for progress updates
+                        
                         ws_client = WebsocketClient()
                         if ws_client.is_connected and result_remix.get("comfy_prompt_id"):
                             await ws_client.register_prompt(result_remix["comfy_prompt_id"], sent_msg_remix.id, sent_msg_remix.channel.id)
@@ -484,4 +483,3 @@ class BatchActionsView(GenerationActionsView):
         if not any(b['custom_id'] == f"delete_{job_id}" for b in action_buttons_to_readd):
             btn_delete_fallback = Button(label="Delete 🗑️", style=discord.ButtonStyle.danger, custom_id=f"delete_{job_id}", row=action_button_row)
             btn_delete_fallback.callback = self.delete_callback; self.add_item(btn_delete_fallback)
-# --- END OF FILE bot_ui_components.py ---
