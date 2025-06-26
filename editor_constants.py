@@ -1,6 +1,3 @@
-# --- START OF FILE editor_constants.py ---
-
-# --- Constants for Theming ---
 TENOS_DARK_BLUE_BG = "#023373"
 TENOS_MEDIUM_BLUE_ACCENT = "#0487D9"
 TENOS_LIGHT_BLUE_ACCENT2 = "#7FB2F0"
@@ -31,25 +28,19 @@ LISTBOX_FG = ENTRY_FG_COLOR
 LISTBOX_SELECT_BG = SELECT_BG_COLOR
 LISTBOX_SELECT_FG = SELECT_FG_COLOR
 
-# Notebook tab colors
 ACTIVE_TAB_BG = "#5f5f5f"
 INACTIVE_TAB_BG = "#3f3f3f"
 ACTIVE_TAB_FG = TEXT_COLOR_NORMAL
 INACTIVE_TAB_FG = "#b0b0b0"
 
-# Log display colors
 LOG_STDOUT_FG = TEXT_COLOR_NORMAL
 LOG_STDERR_FG = TENOS_LIGHT_BLUE_ACCENT2
 LOG_INFO_FG = TENOS_LIGHT_BLUE_ACCENT2
 LOG_WORKER_FG = TENOS_MEDIUM_BLUE_ACCENT
 
-# Style definitions for ttk.Label that can be used with style="StyleName.TLabel"
-# These are just string identifiers; the actual style configuration (e.g., font, foreground)
-# happens in ConfigEditor._configure_main_editor_style using these names.
 BOLD_TLABEL_STYLE = "Bold.TLabel"
 ACCENT_TLABEL_STYLE = "Accent.TLabel"
 
-# Default file names
 CONFIG_FILE_NAME = "config.json"
 SETTINGS_FILE_NAME = "settings.json"
 STYLES_CONFIG_FILE_NAME = "styles_config.json"
@@ -59,11 +50,7 @@ MODELS_LIST_FILE_NAME = "modelslist.json"
 CHECKPOINTS_LIST_FILE_NAME = "checkpointslist.json"
 CLIP_LIST_FILE_NAME = "cliplist.json"
 
-# Icon file paths
-ICON_PATH_ICO = r"tenos-ai_icon.ico" # Raw string to handle backslashes if path were more complex
+ICON_PATH_ICO = r"tenos-ai_icon.ico"
 ICON_PATH_PNG = r"tenos-ai_icon.png"
 
-# Bot script name
 BOT_SCRIPT_NAME = "main_bot.py"
-
-# --- END OF FILE editor_constants.py ---
