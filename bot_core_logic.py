@@ -1,4 +1,3 @@
-# --- START OF FILE bot_core_logic.py ---
 import discord
 import asyncio
 import os
@@ -37,7 +36,7 @@ async def _ensure_ws_client_id():
         return
     
     print("WebSocket client_id not yet available. Waiting up to 5 seconds...")
-    for _ in range(10): # 10 * 0.5s = 5s
+    for _ in range(10):
         if ws_client.client_id:
             print(f"WebSocket client_id acquired: {ws_client.client_id}")
             return
@@ -348,7 +347,7 @@ async def process_cancel_request(comfy_prompt_id: str) -> tuple[bool, str]:
     bot_job_id = bot_job_data.get('job_id') if bot_job_data else None
     print(f"Attempting to cancel Comfy Prompt ID: {comfy_prompt_id} (Bot Job ID: {bot_job_id or 'Unknown'})")
     
-    # Mark local job as cancelled immediately to prevent it from being processed if files appear
+    
     if bot_job_id:
          if queue_manager.is_job_completed_or_cancelled(bot_job_id): 
              print(f"Local job {bot_job_id} already completed/cancelled. No API call needed.")
@@ -359,21 +358,21 @@ async def process_cancel_request(comfy_prompt_id: str) -> tuple[bool, str]:
     else: 
         print(f"Warning: No local bot job found for ComfyID {comfy_prompt_id} during cancel request.")
 
-    # Now, attempt to stop the job in ComfyUI, regardless of local status.
-    # This is a more robust approach to handle race conditions.
+    
+    
     try:
         api_url_base = f"http://{COMFYUI_HOST}:{COMFYUI_PORT}"
-        interrupt_payload = {} # Interrupt does not need a payload
+        interrupt_payload = {} 
         delete_payload = {"delete": [comfy_prompt_id]}
 
-        # Aggressively try both actions. One will likely fail, but one should succeed if the job is active.
+        
         print(f"Sending INTERRUPT to ComfyUI for prompt {comfy_prompt_id} (in case it's running)...")
         interrupt_response = await asyncio.to_thread(requests.post, f"{api_url_base}/interrupt", json=interrupt_payload, timeout=5)
         
         print(f"Sending DELETE to ComfyUI queue for prompt {comfy_prompt_id} (in case it's pending)...")
         delete_response = await asyncio.to_thread(requests.post, f"{api_url_base}/queue", json=delete_payload, timeout=10)
         
-        # Check responses
+        
         interrupt_success = interrupt_response.status_code == 200
         delete_success = delete_response.status_code == 200
 
@@ -385,7 +384,7 @@ async def process_cancel_request(comfy_prompt_id: str) -> tuple[bool, str]:
             print(f"ComfyUI API Success for {comfy_prompt_id}: {final_status_msg}")
             return True, final_status_msg
         else:
-            # If both failed, the job was likely already finished.
+            
             error_msg = f"Failed to interrupt (Status: {interrupt_response.status_code}) or delete from queue (Status: {delete_response.status_code}). Job may have already completed."
             print(f"ComfyUI API Info for {comfy_prompt_id}: {error_msg}")
             return True, "Job cancelled locally (not found in ComfyUI active/pending queues)."
@@ -680,4 +679,3 @@ async def process_rerun_request(context_user, context_channel, referenced_messag
         model_type_override=model_type_for_rerun, 
         is_derivative_action=True 
     )
-# --- END OF FILE bot_core_logic.py ---
