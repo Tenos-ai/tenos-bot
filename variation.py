@@ -1,4 +1,3 @@
-# --- START OF FILE variation.py ---
 import json
 import random
 import uuid
@@ -6,7 +5,7 @@ import re
 import os
 import requests
 import traceback
-import math # For math.gcd if used
+import math
 
 from queue_manager import queue_manager
 
@@ -336,4 +335,3 @@ def modify_weak_variation_prompt(message_content_or_obj, referenced_message, tar
 
 def modify_strong_variation_prompt(message_content_or_obj, referenced_message, target_image_url: str, image_index: int = 1, edited_prompt: str | None = None, edited_negative_prompt: str | None = None):
     return modify_variation_prompt(message_content_or_obj, referenced_message, "strong", target_image_url, image_index, edited_prompt, edited_negative_prompt)
-# --- END OF FILE variation.py ---
