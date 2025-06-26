@@ -1,4 +1,3 @@
-# --- START OF FILE utils/seed_utils.py ---
 import random
 import re
 from time import time
@@ -75,4 +74,3 @@ def add_or_replace_seed_in_prompt(prompt_text, seed_value):
         return re.sub(r'--seed\s+\d+\b', f'--seed {seed_value}', prompt_text, flags=re.IGNORECASE)
     else:
         return f"{prompt_text.strip()} --seed {seed_value}"
-# --- END OF FILE utils/seed_utils.py ---
