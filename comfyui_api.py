@@ -1,4 +1,3 @@
-# --- START OF FILE comfyui_api.py ---
 import json
 from urllib import request, error
 import ssl
@@ -8,7 +7,7 @@ import traceback
 import time
 from socket import error as SocketError
 from urllib.error import URLError
-from websocket_client import WebsocketClient # Import the WebsocketClient
+from websocket_client import WebsocketClient
 
 class ConnectionRefusedError(Exception):
     """Custom exception for connection refused errors."""
@@ -112,10 +111,10 @@ def queue_prompt(prompt, comfyui_host=COMFYUI_HOST, comfyui_port=COMFYUI_PORT, i
         try:
             response = request.urlopen(req, timeout=20)
         except error.URLError as e_url:
-             if isinstance(e_url.reason, SocketError) and e_url.reason.errno == 111: # type: ignore
+             if isinstance(e_url.reason, SocketError) and e_url.reason.errno == 111: 
                  print(f"ERROR: Connection refused at {api_url}. Is ComfyUI running?")
                  raise ConnectionRefusedError(f"Connection refused at {api_url}") from e_url
-             elif isinstance(e_url.reason, OSError) and hasattr(e_url.reason, 'winerror') and e_url.reason.winerror == 10061: # type: ignore
+             elif isinstance(e_url.reason, OSError) and hasattr(e_url.reason, 'winerror') and e_url.reason.winerror == 10061: 
                   print(f"ERROR: Connection refused at {api_url}. Is ComfyUI running?")
                   raise ConnectionRefusedError(f"Connection refused at {api_url}") from e_url
              elif isinstance(e_url.reason, ssl.SSLCertVerificationError):
@@ -125,7 +124,7 @@ def queue_prompt(prompt, comfyui_host=COMFYUI_HOST, comfyui_port=COMFYUI_PORT, i
                          response = request.urlopen(req, context=ctx, timeout=20)
                          print("Successfully connected using unverified context.")
                      except error.URLError as inner_err:
-                         if isinstance(inner_err.reason, SocketError) and inner_err.reason.errno == 111: # type: ignore
+                         if isinstance(inner_err.reason, SocketError) and inner_err.reason.errno == 111: 
                              print(f"ERROR: Connection refused at {api_url} (SSL fallback).")
                              raise ConnectionRefusedError(f"Connection refused at {api_url} (SSL fallback)") from inner_err
                          elif isinstance(inner_err.reason, OSError) and hasattr(inner_err.reason, 'winerror') and inner_err.reason.winerror == 10061: # type: ignore
