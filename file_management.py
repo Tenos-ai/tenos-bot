@@ -1,4 +1,3 @@
-# --- START OF FILE file_management.py ---
 import os
 import discord
 import re
@@ -36,22 +35,14 @@ def extract_job_id(filename):
     if not filename:
         return None
 
-    # Standardized prefixes:
-    # GEN_UP_ + job_id
-    # GEN_VAR_ + job_id
-    # GEN_I2I_ + job_id (for img2img generations)
-    # GEN_ + job_id (for text2img generations)
     
-    # Regex to capture the 8-character hex job ID after one of the standard prefixes
-    # It ensures the prefix is at the beginning of the filename (^)
-    # and that the job ID is exactly 8 hex characters.
     match = re.search(
         r'^(GEN_UP_|GEN_VAR_|GEN_I2I_|GEN_)([a-f0-9]{8})',
         filename, re.IGNORECASE
     )
     
     if match:
-        return match.group(2) # Group 2 is the job_id
+        return match.group(2)
         
     # print(f"DEBUG extract_job_id: No specific pattern matched for '{filename}'")
     return None
@@ -175,4 +166,3 @@ async def remove_message(message_to_delete: discord.Message, command_message: di
         if command_message and command_message.channel:
             try: await command_message.channel.send("An error occurred while removing the message.", delete_after=10)
             except Exception as e_send_gen_err: print(f"Error sending 'an error occurred' message: {e_send_gen_err}")
-# --- END OF FILE file_management.py ---
