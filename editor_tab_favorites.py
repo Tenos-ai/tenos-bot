@@ -1,4 +1,3 @@
-# --- START OF FILE editor_tab_favorites.py ---
 import tkinter as tk
 from tkinter import ttk
 import json
@@ -62,10 +61,7 @@ class FavoritesTab:
         return scrollable_content_frame
 
     def populate_all_favorites_sub_tabs(self):
-        # Ensure we are using the live styles_config from the main app
-        # No need to reload it here; LoraStylesTab or main app handles loading/updating self.editor_app.styles_config
-
-        # --- Populate Flux Models Favorites ---
+        
         flux_frame = self._create_scrollable_sub_tab_frame(self.fav_flux_models_sub_tab)
         self.flux_model_favorite_vars = {}
         models_data = {}; flux_favorites = []
@@ -88,7 +84,7 @@ class FavoritesTab:
         if flux_frame.winfo_exists(): flux_frame.event_generate("<Configure>")
 
 
-        # --- Populate SDXL Checkpoints Favorites ---
+        
         sdxl_frame = self._create_scrollable_sub_tab_frame(self.fav_sdxl_checkpoints_sub_tab)
         self.sdxl_checkpoint_favorite_vars = {}
         checkpoints_data = {}; sdxl_favorites = []
@@ -116,7 +112,7 @@ class FavoritesTab:
         if sdxl_frame.winfo_exists(): sdxl_frame.event_generate("<Configure>")
 
 
-        # --- Populate CLIP Favorites (T5 and Clip-L) ---
+        
         clips_data = {}; clip_t5_fav = []; clip_l_fav = []
         self.clip_favorite_vars = {'t5': {}, 'clip_L': {}}
         try:
@@ -153,11 +149,11 @@ class FavoritesTab:
             self.clip_favorite_vars['clip_L'][clip_name] = var; row += 1
         if l_frame.winfo_exists(): l_frame.event_generate("<Configure>")
 
-        # --- Populate Styles Favorites ---
+        
         style_fav_frame = self._create_scrollable_sub_tab_frame(self.fav_styles_sub_tab)
         self.style_favorite_vars = {}
         row = 0
-        # Use the live styles_config from the main editor application instance
+        
         for style_name_key in sorted([str(k) for k in self.editor_app.styles_config.keys()]):
             if style_name_key == "off": continue
             style_data_entry = self.editor_app.styles_config[style_name_key]
@@ -201,7 +197,7 @@ class FavoritesTab:
             if save_json_config(CLIP_LIST_FILE_NAME, clips_data, "CLIP favorites"): saved_files_count +=1
         except Exception as e: errors_list.append(f"{CLIP_LIST_FILE_NAME}: {e}"); traceback.print_exc()
         try:
-            # self.editor_app.styles_config is the live dictionary
+            
             for style_name, var_fav in self.style_favorite_vars.items():
                 if style_name in self.editor_app.styles_config and isinstance(self.editor_app.styles_config[style_name], dict):
                     if isinstance(var_fav, tk.BooleanVar): self.editor_app.styles_config[style_name]['favorite'] = var_fav.get()
@@ -209,8 +205,7 @@ class FavoritesTab:
             if 'off' in self.editor_app.styles_config and isinstance(self.editor_app.styles_config['off'], dict): self.editor_app.styles_config['off']['favorite'] = False
             else: self.editor_app.styles_config['off'] = {"favorite": False}
             if save_json_config(STYLES_CONFIG_FILE_NAME, self.editor_app.styles_config, "style favorites"): saved_files_count +=1
-            # No need to call self.editor_app.styles_config = self.editor_app.styles_config_loader_func() here
-            # because we are modifying the live dictionary self.editor_app.styles_config directly.
+            
         except Exception as e: errors_list.append(f"{STYLES_CONFIG_FILE_NAME}: {e}"); traceback.print_exc()
 
         if not errors_list:
@@ -218,13 +213,11 @@ class FavoritesTab:
         else:
             silent_showerror("Error Saving Favorites", f"Failed to save some favorites settings:\n\n" + "\n".join(errors_list), parent=self.editor_app.master)
 
-        # After saving, refresh UIs that depend on this data
-        self.editor_app.load_available_files() # Reloads model/clip lists which might affect favorites in settings
-        self.editor_app.config_manager.load_bot_settings_data(self.editor_app.llm_models_config) # Reloads settings
-        self.editor_app.populate_bot_settings_tab() # Repopulates settings tab
-        if hasattr(self.editor_app, 'lora_styles_tab_manager'): # Lora styles tab might show favorite status
+        
+        self.editor_app.load_available_files()
+        self.editor_app.config_manager.load_bot_settings_data(self.editor_app.llm_models_config)
+        self.editor_app.populate_bot_settings_tab()
+        if hasattr(self.editor_app, 'lora_styles_tab_manager'):
             self.editor_app.lora_styles_tab_manager.populate_lora_styles_tab()
-        # Re-populate this favorites tab to ensure consistency if file had other changes
+        
         self.populate_all_favorites_sub_tabs()
-
-# --- END OF FILE editor_tab_favorites.py ---
