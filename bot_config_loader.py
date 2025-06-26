@@ -1,4 +1,3 @@
-# --- START OF FILE bot_config_loader.py ---
 import json
 import os
 import traceback
@@ -24,7 +23,7 @@ def load_main_config():
             if key not in config_data:
                 config_data[key] = default_structure[key]; updated = True
         
-        # Ensure ADMIN section has both USERNAME and ID keys
+        
         if "ADMIN" not in config_data or not isinstance(config_data["ADMIN"], dict):
             config_data["ADMIN"] = default_structure["ADMIN"]; updated = True
         else:
@@ -50,7 +49,7 @@ def load_main_config():
 config = load_main_config()
 BOT_TOKEN = config.get('BOT_API', {}).get('KEY')
 ADMIN_USERNAME = config.get('ADMIN', {}).get('USERNAME', None)
-ADMIN_ID = config.get('ADMIN', {}).get('ID', None) # <-- NEW
+ADMIN_ID = config.get('ADMIN', {}).get('ID', None)
 ALLOWED_USERS = config.get('ALLOWED_USERS', {})
 COMFYUI_HOST = config.get('COMFYUI_API', {}).get('HOST', '127.0.0.1')
 COMFYUI_PORT = config.get('COMFYUI_API', {}).get('PORT', 8188)
