@@ -32,7 +32,12 @@ Before using Tenosai-Bot, you **MUST** run the configurator (`TENOSAI-BOT.bat` o
 
 This step is crucial for the bot to function correctly. After initial setup, use the "Bot Control" tab in the configurator to start the bot. The bot uses the model selected via `/settings` or the Configurator as the default for new generations.
 
-OPTIONAL: download the Tenos Official Flux Dev Finetune from Huggingface [`HERE`](https://huggingface.co/Tenos-ai/Tenos)
+### OPTIONAL: download the Tenos Official Flux Dev Finetune from Huggingface [`HERE`](https://huggingface.co/Tenos-ai/Tenos)
+|||
+|---|---|
+|![GEN_UP_d2617aa5_from_img3_srcID49b5195c_00001_](https://github.com/user-attachments/assets/4ae5190c-31bf-409f-97b1-bc86c3a10f46)|![GEN_UP_9e781f69_from_img1_srcIDdd942772_00001_](https://github.com/user-attachments/assets/51da3345-0a04-4322-a752-507dec753703)|
+|![GEN_UP_d1cd670a_from_img1_srcID1f65a8b2_00001_](https://github.com/user-attachments/assets/073dc426-fc17-4d72-bb32-a4bddbeb25c8)|![GEN_UP_eaaae372_from_img1_srcID59bbc663_00001_](https://github.com/user-attachments/assets/dc624227-5438-46a1-b15c-ffadbce66a68)|
+|![GEN_UP_eaaae372_from_img1_srcID59bbc663_00001_](https://github.com/user-attachments/assets/79b49e80-91be-4f61-9ea9-a0dad5b0e7d0)|![GEN_UP_14d8816e_from_img4_srcID2bc0af53_00001_](https://github.com/user-attachments/assets/1c6e45cb-5516-4c4e-a5c8-590ed3d49364)|
 
 ## Commands and Features
 
