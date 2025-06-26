@@ -2,27 +2,27 @@
   "off": {
     "lora_1": {
       "on": false,
-      "lora": "Horrifier.safetensors",
+      "lora": "NONE.safetensors",
       "strength": 0
     },
     "lora_2": {
       "on": false,
-      "lora": "Horrifier.safetensors",
+      "lora": "NONE.safetensors",
       "strength": 0
     },
     "lora_3": {
       "on": false,
-      "lora": "Horrifier.safetensors",
+      "lora": "NONE.safetensors",
       "strength": 0
     },
     "lora_4": {
       "on": false,
-      "lora": "Horrifier.safetensors",
+      "lora": "NONE.safetensors",
       "strength": 0
     },
     "lora_5": {
       "on": false,
-      "lora": "Horrifier.safetensors",
+      "lora": "NONE.safetensors",
       "strength": 0
     },
     "favorite": false
