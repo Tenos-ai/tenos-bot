@@ -1,44 +1,37 @@
-# --- START OF FILE editor_utils.py ---
 import tkinter as tk
 from tkinter import messagebox, simpledialog, filedialog
 import json
 import os
 import traceback
 
-# Assuming editor_constants.py is in the same directory or accessible via PYTHONPATH
 from editor_constants import (
     LLM_MODELS_FILE_NAME, LLM_PROMPTS_FILE_NAME, STYLES_CONFIG_FILE_NAME,
     CONFIG_FILE_NAME, SETTINGS_FILE_NAME
 )
 
-# --- Utility Functions for Silent Dialogs (to prevent beeping) ---
+
 def create_silent_dialog(master=None, **kwargs):
     """Creates a messagebox.Message object with the bell method overridden."""
-    # Ensure a master is provided or use a temporary root if none.
-    # This is important because messagebox.Message needs a master.
+    
     temp_root = None
     if master is None:
-        # Check if a default root exists, otherwise create a temporary one.
+        
         if not tk._default_root:
             temp_root = tk.Tk()
-            temp_root.withdraw() # Hide the temporary window
+            temp_root.withdraw()
         actual_master = tk._default_root if tk._default_root else temp_root
     else:
         actual_master = master
 
     dialog = messagebox.Message(master=actual_master, **kwargs)
-    dialog.bell = lambda: None # Override the bell method
+    dialog.bell = lambda: None
 
-    # If a temporary root was created, plan to destroy it after the dialog.
-    # However, the dialog.show() is blocking, so this needs careful handling.
-    # A simpler approach for now: if master is None, the dialog might use the default root.
-    # If no default root, it might error. Let's assume a root context exists.
-    # For robust standalone use, a hidden root might be passed if master is None.
+    
     return dialog
 
 def silent_showinfo(title, message, parent=None, **kwargs):
     """Shows an info dialog without a bell sound."""
-    # parent is the Tkinter widget that should be the parent of this dialog
+    
     dialog = create_silent_dialog(master=parent, title=title, message=message,
                                 icon=messagebox.INFO, type=messagebox.OK, **kwargs)
     return dialog.show()
@@ -62,14 +55,14 @@ def silent_askyesno(title, message, parent=None, **kwargs):
         has_bell_attr = hasattr(parent, 'bell')
         if has_bell_attr:
             original_bell = parent.bell
-            parent.bell = lambda: None # Temporarily silence parent's bell
+            parent.bell = lambda: None
 
         result = messagebox.askyesno(title, message, parent=parent, **kwargs)
 
         if has_bell_attr and original_bell is not None :
-            parent.bell = original_bell # Restore original bell
+            parent.bell = original_bell
         return result
-    # If no parent, use standard messagebox (might beep based on system settings)
+    
     return messagebox.askyesno(title, message, **kwargs)
 
 def silent_askstring(title, prompt, parent=None, **kwargs):
@@ -81,11 +74,7 @@ def silent_askstring(title, prompt, parent=None, **kwargs):
             original_bell = parent.bell
             parent.bell = lambda: None
         
-        # simpledialog creates its own Toplevel, so parent.bell won't directly affect its bell.
-        # This requires a more involved way to suppress simpledialog's bell,
-        # often by subclassing or patching, which is beyond simple utility.
-        # For now, we accept that simpledialog might make a sound.
-        # The primary goal was to silence messageboxes.
+        
         result = simpledialog.askstring(title, prompt, parent=parent, **kwargs)
 
         if has_bell_attr and original_bell is not None:
@@ -95,7 +84,7 @@ def silent_askstring(title, prompt, parent=None, **kwargs):
 
 def browse_folder_dialog(parent=None, initialdir=None, title="Select Folder"):
     """Opens a folder selection dialog."""
-    # Ensure initialdir is valid or default to current working directory
+    
     if initialdir and not os.path.isdir(initialdir):
         initialdir = os.getcwd()
     elif not initialdir:
@@ -109,8 +98,6 @@ def browse_folder_dialog(parent=None, initialdir=None, title="Select Folder"):
     )
     return folder_path
 
-
-# --- Configuration Loading Helper Functions ---
 
 def load_json_config(file_name, default_config_factory, description="configuration"):
     """
@@ -148,7 +135,7 @@ def load_json_config(file_name, default_config_factory, description="configurati
     except Exception as e:
         print(f"ConfigEditor Unexpected error loading {file_name}: {e}")
         traceback.print_exc()
-        return default_config # Fallback to in-memory default
+        return default_config
 
 def default_llm_models_config_factory():
     return {
@@ -160,12 +147,11 @@ def default_llm_models_config_factory():
     }
 
 def default_llm_prompts_config_factory():
-    # These should be the full, multi-line prompts.
-    # For brevity here, placeholders are used. Replace with actual full prompts.
+    
     flux_prompt = ("Your designated function is Flux Prompt Alchemist. Your input is raw user text; "
-                   "your output is a single, optimized text prompt meticulously crafted for Flux.1 Dev via ComfyUI...") # Truncated for example
+                   "your output is a single, optimized text prompt meticulously crafted for Flux.1 Dev via ComfyUI...")
     sdxl_prompt = ("You are an expert prompt enhancer for SDXL text-to-image generation. Your input is raw user text; "
-                   "your output is a single, optimized text prompt meticulously crafted for SDXL via ComfyUI...") # Truncated for example
+                   "your output is a single, optimized text prompt meticulously crafted for SDXL via ComfyUI...")
     return {
         "enhancer_system_prompt": flux_prompt,
         "enhancer_system_prompt_sdxl": sdxl_prompt
@@ -175,11 +161,11 @@ def default_styles_config_factory():
     return {"off": {"favorite": False}}
 
 
-# Specific loader functions using the generic helper
+
 def load_llm_models_config_util():
     config = load_json_config(LLM_MODELS_FILE_NAME, default_llm_models_config_factory, "LLM models")
-    # Post-load validation/migration specific to llm_models.json
-    if "openai" not in config.get("providers", {}): # Ensure OpenAI provider exists
+    
+    if "openai" not in config.get("providers", {}):
         print(f"ConfigEditor: Adding default OpenAI provider to {LLM_MODELS_FILE_NAME}")
         if "providers" not in config: config["providers"] = {}
         config["providers"]["openai"] = default_llm_models_config_factory()["providers"]["openai"]
@@ -207,9 +193,9 @@ def load_llm_prompts_config_util():
 def load_styles_config_editor_util():
     styles = load_json_config(STYLES_CONFIG_FILE_NAME, default_styles_config_factory, "styles")
     if 'off' not in styles or not isinstance(styles.get('off'), dict):
-        styles['off'] = {"favorite": False} # Ensure 'off' style with correct structure
-        save_json_config(STYLES_CONFIG_FILE_NAME, styles, "styles after 'off' fix") # Save if modified
-    # Remove any top-level style entries that are not dictionaries
+        styles['off'] = {"favorite": False}
+        save_json_config(STYLES_CONFIG_FILE_NAME, styles, "styles after 'off' fix")
+    
     keys_to_remove = [k for k, v in styles.items() if not isinstance(v, dict)]
     if keys_to_remove:
         print(f"ConfigEditor Warning: Removing invalid non-dict style entries from {STYLES_CONFIG_FILE_NAME}: {keys_to_remove}")
@@ -226,12 +212,10 @@ def save_json_config(file_name, data, description="configuration"):
         return True
     except (OSError, TypeError) as e:
         print(f"ConfigEditor Error saving {description} to {file_name}: {e}")
-        silent_showerror("Save Error", f"Could not save {description} to {file_name}:\n{e}", parent=None) # Assuming parent might not be available
+        silent_showerror("Save Error", f"Could not save {description} to {file_name}:\n{e}", parent=None)
         return False
     except Exception as e:
         print(f"ConfigEditor Unexpected error saving {description} to {file_name}: {e}")
         traceback.print_exc()
         silent_showerror("Save Error", f"Unexpected error saving {description}:\n{e}", parent=None)
         return False
-
-# --- END OF FILE editor_utils.py ---
