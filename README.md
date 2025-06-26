@@ -5,6 +5,7 @@
 **(IF YOU DO NOT HAVE A DISCORD BOT ACCOUNT ALREADY CREATED, OPEN "HOW TO DISCORD BOT.txt" AND FOLLOW INSTRUCTIONS)**
 
 Make sure you already have ComfyUI installed.
+Download the portable zip from github via the code button at the top of the model page or click [HERE](https://github.com/Tenos-ai/tenos-bot/archive/refs/heads/main.zip) to download the zip.
   - The bot requires specific custom nodes. You can install them manually by cloning the following GitHub repositories into your `ComfyUI/custom_nodes` folder, or use the Configurator's "Install/Update Custom Nodes" tool:
       1. `https://github.com/rgthree/rgthree-comfy.git`
       2. `https://github.com/ssitu/ComfyUI_UltimateSDUpscale.git`
