@@ -1,5 +1,3 @@
-# START OF FILE settings_manager.py
-
 import json
 import discord
 import os
