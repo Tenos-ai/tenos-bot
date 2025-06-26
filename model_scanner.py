@@ -1,6 +1,3 @@
-# --- START OF FILE model_scanner.py ---
-# Modified model_scanner.py with fixes and checkpoint scanning
-
 import os
 import json
 import requests
@@ -89,9 +86,9 @@ def update_models_list(config_path, output_file):
 def scan_checkpoints(checkpoint_directory):
     """Scan for SDXL checkpoint files in the specified directory."""
     checkpoints = {
-        "checkpoints": [] # Store all found checkpoints in a single list
+        "checkpoints": []
     }
-    # Common checkpoint extensions
+    
     checkpoint_extensions = [".safetensors", ".ckpt", ".pth"]
 
     if not os.path.exists(checkpoint_directory):
@@ -118,7 +115,7 @@ def update_checkpoints_list(config_path, output_file):
     current_favorites = []
     try:
         with open(config_path, 'r') as config_file:
-            config_data = json.load(config_file) # Renamed to avoid conflict
+            config_data = json.load(config_file)
 
         checkpoint_directory = config_data.get('MODELS', {}).get('CHECKPOINTS_FOLDER')
         if not checkpoint_directory:
@@ -140,7 +137,7 @@ def update_checkpoints_list(config_path, output_file):
             except Exception as e_read:
                  print(f"ModelScanner Warning: Unexpected error reading {output_file} (checkpoints): {e_read}. Favorites might be lost.")
 
-        checkpoints_data_scanned = scan_checkpoints(checkpoint_directory) # Renamed scanned data
+        checkpoints_data_scanned = scan_checkpoints(checkpoint_directory)
         checkpoints_data_scanned['favorites'] = current_favorites
 
         try:
@@ -165,7 +162,7 @@ def scan_clip_files(config_path, output_file):
     current_favorites = {'t5': [], 'clip_L': []}
     try:
         with open(config_path, 'r') as config_file:
-            config_data = json.load(config_file) # Renamed config variable
+            config_data = json.load(config_file)
 
         clip_directory = config_data.get('CLIP', {}).get('CLIP_FILES')
         if not clip_directory:
@@ -259,7 +256,7 @@ def get_checkpoints_list(output_file):
     """Get the current SDXL checkpoints list from file."""
     if not os.path.exists(output_file):
         print(f"ModelScanner Warning: SDXL checkpoints list file {output_file} not found.")
-        return None # Return None or an empty dict structure, e.g., {"checkpoints": [], "favorites": []}
+        return None
     try:
         with open(output_file, 'r') as f:
             return json.load(f)
@@ -298,4 +295,3 @@ if __name__ == "__main__":
     update_checkpoints_list('config.json', 'checkpointslist.json')
     scan_clip_files('config.json', 'cliplist.json')
     print("Model Scanner finished.")
-# --- END OF FILE model_scanner.py ---
