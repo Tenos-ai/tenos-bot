@@ -1,4 +1,3 @@
-# --- START OF FILE websocket_client.py ---
 import asyncio
 import aiohttp
 import json
@@ -125,7 +124,7 @@ class WebsocketClient:
         msg_type = data.get('type')
         msg_data_content = data.get('data', {})
         
-        # Logging is now handled inside specific event handlers for clarity and to reduce spam.
+        
 
         if msg_type == 'status':
             sid_from_msg = msg_data_content.get('sid') if 'sid' in msg_data_content else data.get('sid')
