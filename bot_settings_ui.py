@@ -1,4 +1,3 @@
-# --- START OF FILE bot_settings_ui.py ---
 import discord
 import json
 
@@ -11,8 +10,6 @@ from settings_manager import (
     get_llm_enhancer_choices, get_llm_provider_choices, get_llm_model_choices,
     get_mp_size_choices, get_display_prompt_preference_choices
 )
-
-# --- UI Select Components for /settings ---
 
 class ModelSelect(discord.ui.Select):
     def __init__(self, settings):
@@ -47,10 +44,10 @@ class StepsSelect(discord.ui.Select):
             await interaction.followup.send(f"Default steps set to: {selected_steps}", ephemeral=True)
         except ValueError: await interaction.followup.send("Invalid step value selected.", ephemeral=True)
 
-class GuidanceSelect(discord.ui.Select): # For Flux Guidance
+class GuidanceSelect(discord.ui.Select):
     def __init__(self, settings):
         self.settings = settings
-        choices = get_guidance_choices() # This is for Flux
+        choices = get_guidance_choices()
         super().__init__(options=choices, placeholder="Select Default Guidance (Flux)")
     async def callback(self, interaction: discord.Interaction):
         if not self.values: return
@@ -64,7 +61,7 @@ class GuidanceSelect(discord.ui.Select): # For Flux Guidance
             await interaction.followup.send(f"Default Flux guidance set to: {selected_guidance}", ephemeral=True)
         except ValueError: await interaction.followup.send("Invalid Flux guidance value selected.", ephemeral=True)
 
-class SDXLGuidanceSelect(discord.ui.Select): # New for SDXL Guidance
+class SDXLGuidanceSelect(discord.ui.Select):
     def __init__(self, settings):
         self.settings = settings
         choices = get_sdxl_guidance_choices()
@@ -110,7 +107,7 @@ class UpscaleFactorSelect(discord.ui.Select):
             self.settings['upscale_factor'] = float(selected_factor)
             save_settings(self.settings)
             updated_settings = load_settings()
-            # Assuming UpscaleFactor is on StyleVariationSettingsView as per main_bot.py
+            
             view = StyleVariationSettingsView(updated_settings)
             await interaction.response.edit_message(content="Configure Style & Variation Settings:", view=view)
             await interaction.followup.send(f"Default Upscale Factor set to: {selected_factor}x", ephemeral=True)
@@ -134,7 +131,7 @@ class MPSizeSelect(discord.ui.Select):
 class T5ClipSelect(discord.ui.Select):
     def __init__(self, settings):
         self.settings = settings
-        choices = get_t5_clip_choices() # settings_manager.py handles default logic
+        choices = get_t5_clip_choices()
         super().__init__(options=choices, placeholder="Select Default T5 CLIP Model")
 
     async def callback(self, interaction: discord.Interaction):
@@ -150,7 +147,7 @@ class T5ClipSelect(discord.ui.Select):
 class ClipLSelect(discord.ui.Select):
     def __init__(self, settings):
         self.settings = settings
-        choices = get_clip_l_choices() # settings_manager.py handles default logic
+        choices = get_clip_l_choices()
         super().__init__(options=choices, placeholder="Select Default CLIP-L Model")
 
     async def callback(self, interaction: discord.Interaction):
@@ -224,11 +221,11 @@ class LLMEnhancerToggle(discord.ui.Select):
         await interaction.response.edit_message(content="Configure LLM Enhancer Settings:", view=view)
         feedback = f"LLM Prompt Enhancer set to: {'ON' if self.settings['llm_enhancer_enabled'] else 'OFF'}"
 
-        # API Key check (simplified for brevity, assuming config.json is accessible)
+        
         key_missing = False
         if self.settings['llm_enhancer_enabled']:
             provider = self.settings.get('llm_provider', 'gemini')
-            # This part would ideally use a shared config loader if config.json structure is complex
+            
             try:
                 with open('config.json', 'r') as cf: temp_config = json.load(cf)
                 temp_gemini_key = temp_config.get('LLM_ENHANCER', {}).get('GEMINI_API_KEY', '')
@@ -253,10 +250,10 @@ class LLMProviderSelect(discord.ui.Select):
         self.settings['llm_provider'] = selected_provider
         save_settings(self.settings)
         updated_settings = load_settings()
-        view = LLMSettingsView(updated_settings) # Recreate LLMSettingsView
+        view = LLMSettingsView(updated_settings)
         await interaction.response.edit_message(content="Configure LLM Enhancer Settings:", view=view)
         provider_display_name = selected_provider.capitalize()
-        # Get display name from settings_manager if possible, or just capitalize
+        
         for choice in get_llm_provider_choices():
             if choice.value == selected_provider:
                 provider_display_name = choice.label
@@ -292,7 +289,7 @@ class LLMModelSelect(discord.ui.Select):
             return
         save_settings(self.settings)
         updated_settings = load_settings()
-        view = LLMSettingsView(updated_settings) # Recreate LLMSettingsView
+        view = LLMSettingsView(updated_settings)
         await interaction.response.edit_message(content="Configure LLM Enhancer Settings:", view=view)
         provider_display_name = current_provider.capitalize()
         for choice_opt in get_llm_provider_choices():
@@ -311,13 +308,13 @@ class DisplayPromptPreferenceSelect(discord.ui.Select):
         self.settings['display_prompt_preference'] = selected_preference
         save_settings(self.settings)
         updated_settings = load_settings()
-        view = LLMSettingsView(updated_settings) # Recreate LLMSettingsView
+        view = LLMSettingsView(updated_settings)
         await interaction.response.edit_message(content="Configure LLM Enhancer Settings:", view=view)
         display_text = "Enhanced Prompt ✨" if selected_preference == "enhanced" else "Original Prompt ✍️"
         await interaction.followup.send(f"Display preference set to: {display_text}", ephemeral=True)
 
 
-# --- UI View Definitions for /settings ---
+
 
 class BaseSettingsView(discord.ui.View):
     def __init__(self, settings_ref, timeout=300):
@@ -331,27 +328,27 @@ class BaseSettingsView(discord.ui.View):
         updated_settings = load_settings() # Reload settings
         view = MainSettingsButtonView(updated_settings)
         try:
-            # Check if the original response was ephemeral. If so, followup might be better.
-            # However, edit_message should work if the message is still accessible by the bot.
+            
+            
             if not interaction.response.is_done():
                 await interaction.response.edit_message(content="Tenos.ai Bot Settings:", view=view)
-            else: # If response is done, try to edit the original response if possible
+            else: 
                  await interaction.edit_original_response(content="Tenos.ai Bot Settings:", view=view)
         except discord.NotFound:
             print("Original message for settings view not found during back callback.")
-            # If original message is gone, send a new ephemeral message
+            
             await interaction.followup.send("Returning to main settings selection.", view=MainSettingsButtonView(load_settings()), ephemeral=True)
         except Exception as e:
             print(f"Error during settings back callback edit: {e}")
             try:
-                # Fallback if edit fails catastrophically
+                
                 await interaction.followup.send("Error returning to main settings. Please use `/settings` again.", ephemeral=True)
             except Exception as e_fb:
                 print(f"Error sending settings back error followup: {e_fb}")
 
 class MainSettingsButtonView(discord.ui.View):
     def __init__(self, settings_ref):
-        super().__init__(timeout=180) # Main menu can have a shorter timeout
+        super().__init__(timeout=180)
         self.settings = settings_ref
 
     @discord.ui.button(label="Model & Clips", style=discord.ButtonStyle.primary, row=0)
@@ -381,38 +378,37 @@ class MainSettingsButtonView(discord.ui.View):
 
 class ModelClipSettingsView(BaseSettingsView):
     def __init__(self, settings_ref):
-        super().__init__(settings_ref) # Calls BaseSettingsView init for back button
-        self.add_item(ModelSelect(self.settings))      # Row 0
-        self.add_item(T5ClipSelect(self.settings))     # Row 1
-        self.add_item(ClipLSelect(self.settings))      # Row 2
-        self.add_item(MPSizeSelect(self.settings))     # Row 3 (Moved from Gen Defaults)
+        super().__init__(settings_ref)
+        self.add_item(ModelSelect(self.settings))      
+        self.add_item(T5ClipSelect(self.settings))     
+        self.add_item(ClipLSelect(self.settings))      
+        self.add_item(MPSizeSelect(self.settings))     
 
 class GenerationDefaultsView(BaseSettingsView):
     def __init__(self, settings_ref):
         super().__init__(settings_ref)
-        self.add_item(StepsSelect(self.settings))         # Row 0
-        self.add_item(GuidanceSelect(self.settings))      # Row 1 (Flux Guidance)
-        self.add_item(SDXLGuidanceSelect(self.settings))  # Row 2 (SDXL Guidance)
-        self.add_item(BatchSizeSelect(self.settings))     # Row 3
+        self.add_item(StepsSelect(self.settings))         
+        self.add_item(GuidanceSelect(self.settings))      
+        self.add_item(SDXLGuidanceSelect(self.settings))  
+        self.add_item(BatchSizeSelect(self.settings))     
 
 class StyleVariationSettingsView(BaseSettingsView):
     def __init__(self, settings_ref):
         super().__init__(settings_ref)
-        self.add_item(DefaultStyleSelect(self.settings))  # Row 0
-        self.add_item(VariationModeSelect(self.settings)) # Row 1
-        self.add_item(RemixModeToggle(self.settings))     # Row 2
-        self.add_item(UpscaleFactorSelect(self.settings)) # Row 3
+        self.add_item(DefaultStyleSelect(self.settings))  
+        self.add_item(VariationModeSelect(self.settings)) 
+        self.add_item(RemixModeToggle(self.settings))     
+        self.add_item(UpscaleFactorSelect(self.settings)) 
 
 class LLMSettingsView(BaseSettingsView):
     def __init__(self, settings_ref):
         super().__init__(settings_ref)
-        self.add_item(LLMEnhancerToggle(self.settings))    # Row 0
-        self.add_item(LLMProviderSelect(self.settings))    # Row 1
-        # Conditionally add LLMModelSelect based on if enhancer is ON
+        self.add_item(LLMEnhancerToggle(self.settings))    
+        self.add_item(LLMProviderSelect(self.settings))    
+        
         if settings_ref.get('llm_enhancer_enabled', False):
             model_select = LLMModelSelect(self.settings)
-            if not model_select.disabled: # Only add if not disabled (i.e., models exist)
-                 self.add_item(model_select) # Row 2 if added
-        self.add_item(DisplayPromptPreferenceSelect(self.settings)) # Row 2 or 3
+            if not model_select.disabled:
+                 self.add_item(model_select) 
+        self.add_item(DisplayPromptPreferenceSelect(self.settings))
 
-# --- END OF FILE bot_settings_ui.py ---
