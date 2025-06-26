@@ -1,35 +1,30 @@
-# --- START OF FILE utils/llm_enhancer.py ---
-# utils/llm_enhancer.py
-
 import requests
 import json
 import traceback
 import os
 import asyncio
 
-# --- Central Config Loading ---
-# This ensures the module uses the same config object loaded at bot startup
-# and correctly resolves the path to config.json from the root directory.
+
 try:
     from bot_config_loader import config
 except ImportError:
-    # Fallback for standalone execution or testing.
+    
     print("LLMEnhancer Warning: Could not import from bot_config_loader. Attempting direct load of config.json from parent directory.")
     try:
-        # Assumes this file is in a subdirectory of the main bot directory
+        
         config_path = os.path.join(os.path.dirname(__file__), '..', 'config.json')
         with open(config_path, 'r') as f:
             config = json.load(f)
     except Exception as e:
         print(f"LLMEnhancer FATAL: Direct config load failed: {e}")
-        config = {} # Set to empty dict to avoid further errors
+        config = {}
 
-# Define API keys from the centrally loaded config
+
 GEMINI_API_KEY = config.get('LLM_ENHANCER', {}).get('GEMINI_API_KEY', '')
 GROQ_API_KEY = config.get('LLM_ENHANCER', {}).get('GROQ_API_KEY', '')
 OPENAI_API_KEY = config.get('LLM_ENHANCER', {}).get('OPENAI_API_KEY', '')
 
-# --- LLM Prompts Loading ---
+
 def load_llm_prompts_config():
     """Loads llm_prompts.json safely."""
     default_flux_prompt = """Your designated function is Flux Prompt Alchemist. Your input is raw user text; your output is a single, optimized text prompt meticulously crafted for Flux.1 Dev via ComfyUI. Your prime directive is to generate prompts that yield visually harmonious, impactful, and coherent images, while rigorously preserving the user's core concept and explicit constraints.
@@ -298,7 +293,7 @@ async def _enhance_with_openai(original_prompt: str, model_name: str, system_ins
         ],
         "model": model_name,
         "temperature": 1,
-        "max_tokens": 524, # Changed from max_completion_tokens for compatibility with newer API versions
+        "max_tokens": 524,
     }
 
     try:
@@ -383,13 +378,13 @@ async def enhance_prompt(original_prompt: str, system_prompt_text_override: str 
     if not system_instruction_to_use:
         if target_model_type.lower() == "sdxl":
             system_instruction_to_use = SDXL_ENHANCER_SYSTEM_PROMPT
-            if not system_instruction_to_use: # Fallback if SDXL prompt is somehow empty
+            if not system_instruction_to_use:
                 print("LLMEnhancer Warning: SDXL system prompt is empty, falling back to Flux prompt.")
                 system_instruction_to_use = FLUX_ENHANCER_SYSTEM_PROMPT
-        else: # Default to Flux
+        else:
             system_instruction_to_use = FLUX_ENHANCER_SYSTEM_PROMPT
     
-    if not system_instruction_to_use: # Final fallback if all system prompts are empty
+    if not system_instruction_to_use:
         print("LLMEnhancer CRITICAL: No system prompt text available. Using basic fallback.")
         system_instruction_to_use = "Enhance the following prompt for an image generation AI:"
 
