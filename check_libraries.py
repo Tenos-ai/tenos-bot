@@ -1,5 +1,3 @@
-# --- START OF FILE check_libraries.py ---
-
 import sys
 import subprocess
 import importlib.util
@@ -11,7 +9,7 @@ required_libraries = [
     'GitPython',
     'Pillow',
     'requests',
-    'aiohttp', # <-- ADDED for the bot's internal API server
+    'aiohttp',
     'psutil',
     'python-dotenv',
     'pandas',
