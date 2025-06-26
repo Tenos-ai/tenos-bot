@@ -12,6 +12,8 @@ Make sure you already have ComfyUI installed. If you need ComfyUI still download
 
 Download the portable zip from github via the code button at the top of the model page or click [`HERE`](https://github.com/Tenos-ai/tenos-bot/archive/refs/heads/main.zip) to download the zip. I reccomend placing it in your ComfyUI Portable folder but you can put it anywhere and it should work just fine.
 
+![image](https://github.com/user-attachments/assets/14816ec3-86c3-4444-b775-455c1429fcd0)
+
   - The bot requires specific custom nodes. You can install them manually by cloning the following GitHub repositories into your `ComfyUI/custom_nodes` folder, or use the Configurator's "Install/Update Custom Nodes" tool:
       1. `https://github.com/rgthree/rgthree-comfy.git`
       2. `https://github.com/ssitu/ComfyUI_UltimateSDUpscale.git`
