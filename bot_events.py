@@ -1,9 +1,8 @@
-# --- START OF FILE bot_events.py ---
 import discord
 import traceback
-import re # For reply command parsing
-import asyncio # For validate_models_against_comfyui
-import textwrap # For message construction
+import re
+import asyncio
+import textwrap
 import os
 import json
 
@@ -95,7 +94,7 @@ async def on_bot_message(bot, message: discord.Message):
     if message.author == bot.user or message.author.bot: return
     if message.author.id in BLOCKED_USER_IDS: return
 
-    # Admin check by ID
+    
     is_admin = str(message.author.id) == str(ADMIN_ID)
 
     if message.content.startswith('/gen '):
