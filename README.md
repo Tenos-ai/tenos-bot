@@ -4,8 +4,10 @@
 
 **(IF YOU DO NOT HAVE A DISCORD BOT ACCOUNT ALREADY CREATED, OPEN "HOW TO DISCORD BOT.txt" AND FOLLOW INSTRUCTIONS)**
 
-Make sure you already have ComfyUI installed.
-Download the portable zip from github via the code button at the top of the model page or click [HERE](https://github.com/Tenos-ai/tenos-bot/archive/refs/heads/main.zip) to download the zip.
+Make sure you already have ComfyUI installed. If you need ComfyUI still download it [`HERE`](https://www.comfy.org/download).
+
+Download the portable zip from github via the code button at the top of the model page or click [`HERE`](https://github.com/Tenos-ai/tenos-bot/archive/refs/heads/main.zip) to download the zip. I reccomend placing it in your ComfyUI Portable folder but you can put it anywhere and it should work just fine.
+
   - The bot requires specific custom nodes. You can install them manually by cloning the following GitHub repositories into your `ComfyUI/custom_nodes` folder, or use the Configurator's "Install/Update Custom Nodes" tool:
       1. `https://github.com/rgthree/rgthree-comfy.git`
       2. `https://github.com/ssitu/ComfyUI_UltimateSDUpscale.git`
@@ -24,7 +26,7 @@ Before using Tenosai-Bot, you **MUST** run the configurator (`TENOSAI-BOT.bat` o
 
 This step is crucial for the bot to function correctly. After initial setup, use the "Bot Control" tab in the configurator to start the bot. The bot uses the model selected via `/settings` or the Configurator as the default for new generations.
 
-OPTIONAL: download the Tenos Official Flux Dev Finetune from Huggingface [`https://huggingface.co/Tenos-ai/Tenos`](https://huggingface.co/Tenos-ai/Tenos)
+OPTIONAL: download the Tenos Official Flux Dev Finetune from Huggingface [`HERE`](https://huggingface.co/Tenos-ai/Tenos)
 
 ## Commands and Features
 
