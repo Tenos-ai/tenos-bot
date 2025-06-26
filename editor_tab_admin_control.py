@@ -1,4 +1,3 @@
-# --- START OF FILE editor_tab_admin_control.py ---
 import tkinter as tk
 from tkinter import ttk, simpledialog
 import traceback
@@ -60,7 +59,7 @@ class AdminControlTab:
         else: self.user_cache = {}
 
     def save_user_cache_on_exit(self):
-        # Also save the main config here as a final catch-all
+        
         self._save_main_config()
         try:
             with open(USER_CACHE_FILE, 'w') as f:
@@ -214,7 +213,7 @@ class AdminControlTab:
         if user_id_str not in main_config["ALLOWED_USERS"]: main_config["ALLOWED_USERS"][user_id_str] = {}
         var = self.permission_vars.get(user_id_str, {}).get(perm_key)
         if var:
-            # **FIX**: Only update the in-memory config. Do not save or redraw here.
+            
             main_config["ALLOWED_USERS"][user_id_str][perm_key] = var.get()
 
     def _add_user_prompt(self):
