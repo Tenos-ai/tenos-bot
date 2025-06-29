@@ -1,4 +1,9 @@
 # Tenosai-Bot: ComfyUI API Discord Bot for Flux & SDXL Image Generation
+
+Planned Updates:
+(~14 days) 1.2.4: Flux Kontext Dev implementation into the "Edit" feature
+(~28 days) 1.2.5: New GUI + better LoRA style builder with fine-tuned block level settings
+
 |||
 |---|---|
 |![Screenshot 2025-06-25 191115](https://github.com/user-attachments/assets/3708790d-1bc8-49cf-aca1-465b739dd0d8)|![Screenshot 2025-06-25 191205](https://github.com/user-attachments/assets/11efb49e-e66d-4748-8d0d-f6980288ad66)|
