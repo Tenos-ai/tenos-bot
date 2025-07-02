@@ -4,14 +4,11 @@ import traceback
 import os
 import asyncio
 
-
 try:
     from bot_config_loader import config
 except ImportError:
-    
     print("LLMEnhancer Warning: Could not import from bot_config_loader. Attempting direct load of config.json from parent directory.")
     try:
-        
         config_path = os.path.join(os.path.dirname(__file__), '..', 'config.json')
         with open(config_path, 'r') as f:
             config = json.load(f)
@@ -23,7 +20,6 @@ except ImportError:
 GEMINI_API_KEY = config.get('LLM_ENHANCER', {}).get('GEMINI_API_KEY', '')
 GROQ_API_KEY = config.get('LLM_ENHANCER', {}).get('GROQ_API_KEY', '')
 OPENAI_API_KEY = config.get('LLM_ENHANCER', {}).get('OPENAI_API_KEY', '')
-
 
 def load_llm_prompts_config():
     """Loads llm_prompts.json safely."""
@@ -61,7 +57,7 @@ Tag Expansion Mode (Detailed User Input): User specifics are paramount. Retain a
 3.  **Visual Specificity through Tags:** Use tags to describe lighting (e.g., "dramatic lighting", "rim lighting", "volumetric lighting"), color palettes (e.g., "monochrome", "vibrant colors", "pastel colors"), textures ("smooth skin", "rough metal"), and atmosphere ("foggy", "glowing particles").
 4.  **Respecting User's Style Terms:** If the user provides explicit style terms like "Photograph" or "Oil Painting", translate them into appropriate tags or incorporate them directly if they function well as tags.
 
-Creative Tagging Mode (Vague/Simple User Input): User brevity implies creative license. Retain the core subject. Your task is to build a rich tagged scene:
+Creative Construction Mode (Vague/Simple User Input): User brevity implies creative license. Retain the core subject. Your task is to build a rich tagged scene:
 1.  **Select Foundational Style:** Choose an appropriate primary style tag (e.g., "fantasy art", "sci-fi concept art", "impressionist painting") that sets a strong aesthetic direction.
 2.  **Construct a Complete Scene with Tags:** Establish a setting using tags (e.g., "forest", "cityscape", "outer space"). Define lighting ("golden hour"), color ("cool color palette"), key textures ("metallic sheen"), and relevant character details ("long hair", "blue eyes", "holding sword") using tags.
 3.  **Prioritize Impactful Tags:** Focus on tags known to produce strong visual results in SDXL.
@@ -145,13 +141,22 @@ async def _enhance_with_gemini(original_prompt: str, model_name: str, system_ins
         "contents": [
             {
                 "role": "user",
-                "parts": [{"text": system_instruction_text + "\n\nEnhance this prompt:\n" + original_prompt}]
+                "parts": [{"text": original_prompt}]
             }
         ],
+        "systemInstruction": {
+             "parts": [{"text": system_instruction_text}]
+        },
         "generationConfig": {
             "temperature": 1,
-            "maxOutputTokens": 524,
-        }
+            "maxOutputTokens": 2048,
+        },
+        "safetySettings": [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+        ]
     }
 
     try:
@@ -164,17 +169,31 @@ async def _enhance_with_gemini(original_prompt: str, model_name: str, system_ins
 
         if 'candidates' in response_json and response_json['candidates']:
             candidate = response_json['candidates'][0]
+            finish_reason = candidate.get('finishReason')
+
             if 'content' in candidate and 'parts' in candidate['content'] and candidate['content']['parts']:
                 enhanced_prompt = candidate['content']['parts'][0].get('text', '').strip()
                 if enhanced_prompt:
+                    if finish_reason and finish_reason != 'STOP':
+                        print(f"Gemini Warning: Candidate finishReason is '{finish_reason}'. Still got content.")
                     enhanced_prompt = enhanced_prompt.strip('`"\' ')
                     if len(enhanced_prompt) > 2000:
                         print("Warning: Google Gemini API enhanced prompt > 2000 chars, truncating.")
                         enhanced_prompt = enhanced_prompt[:2000] + "..."
                     print(f"Google Gemini API Enhancement Successful: '{enhanced_prompt}'")
                     return enhanced_prompt, None
-                else: return None, "Google Gemini API returned empty content."
-            else: return None, "Google Gemini API response missing expected content structure."
+                else:
+                    error_message = "Google Gemini API returned empty content."
+                    if finish_reason: error_message += f" (Finish Reason: {finish_reason})"
+                    if finish_reason and finish_reason != 'STOP':
+                        print(f"Gemini Warning: Candidate finishReason is '{finish_reason}'. Full candidate: {candidate}")
+                    return None, error_message
+            else:
+                error_message = "Google Gemini API response missing expected content structure."
+                if finish_reason: error_message += f" (Finish Reason: {finish_reason})"
+                if finish_reason and finish_reason != 'STOP':
+                    print(f"Gemini Warning: Candidate finishReason is '{finish_reason}'. Full candidate: {candidate}")
+                return None, error_message
         elif 'error' in response_json:
             error_info = response_json['error']
             print(f"Google Gemini API Error: {error_info.get('code')} - {error_info.get('message')}")
@@ -193,7 +212,7 @@ async def _enhance_with_gemini(original_prompt: str, model_name: str, system_ins
             try: error_details = e.response.json().get('error', {}).get('message', e.response.text)
             except json.JSONDecodeError: error_details = e.response.text
             print(f"  Status Code: {status_code}, Details: {error_details}")
-            if status_code == 400: return None, f"Invalid request to Google Gemini API ({error_details})."
+            if status_code == 400: return None, f"Invalid request to Google Gemini API ({error_details}). The model name might be wrong or the payload structure invalid."
             if status_code in [401, 403]: return None, "Authentication error with Google Gemini API (check API key)."
             if status_code == 429: return None, "Rate limit exceeded for Google Gemini API."
             error_details = f"Google Gemini API connection error ({status_code})."
@@ -222,7 +241,7 @@ async def _enhance_with_groq(original_prompt: str, model_name: str, system_instr
         ],
         "model": model_name,
         "temperature": 1,
-        "max_tokens": 512,
+        "max_tokens": 2048,
     }
 
     try:
@@ -293,7 +312,7 @@ async def _enhance_with_openai(original_prompt: str, model_name: str, system_ins
         ],
         "model": model_name,
         "temperature": 1,
-        "max_tokens": 524,
+        "max_tokens": 2048,
     }
 
     try:
