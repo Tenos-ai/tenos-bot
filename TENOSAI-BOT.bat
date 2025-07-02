@@ -1,17 +1,31 @@
 @echo off
-REM Change directory to the script's own directory
+REM Change directory to the script's own directory to ensure paths are correct
 cd /d %~dp0
 
+echo Checking for virtual environment...
+if not exist "venv\Scripts\activate.bat" (
+    echo Virtual environment not found. Creating one now...
+    python -m venv venv
+    if %ERRORLEVEL% neq 0 (
+        echo ERROR: Failed to create the virtual environment.
+        echo Please make sure Python is installed correctly and added to your system's PATH.
+        pause
+        goto :eof
+    )
+    echo Virtual environment created successfully.
+)
+
+echo.
 echo Activating virtual environment...
 call venv\Scripts\activate
 if %ERRORLEVEL% neq 0 (
-    echo ERROR: Failed to activate virtual environment. Check if 'venv' folder exists and is correct.
+    echo ERROR: Failed to activate the virtual environment even after creation/check.
     pause
     goto :eof
 )
 
 echo.
-echo Checking and installing required libraries...
+echo Checking and installing required libraries into the virtual environment...
 python check_libraries.py
 if %ERRORLEVEL% neq 0 (
     echo WARNING: An error occurred while checking or installing libraries.
