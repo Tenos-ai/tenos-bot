@@ -11,6 +11,7 @@ import psutil
 import git 
 import shutil 
 import requests
+from datetime import datetime
 
 from editor_constants import (
     TENOS_DARK_BLUE_BG, TENOS_MEDIUM_BLUE_ACCENT, TENOS_LIGHT_BLUE_ACCENT2,
@@ -121,6 +122,7 @@ class ConfigEditor:
 
         if self.master.winfo_exists():
             self.master.after(100, self._process_gui_updates_loop)
+            self.master.after(200, self._check_for_first_run)
             self.master.after(2000, self._check_settings_file_for_changes)
 
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing_main_window)
@@ -570,7 +572,6 @@ class ConfigEditor:
                 response = requests.get("https://api.groq.com/openai/v1/models", headers=headers, timeout=10)
                 response.raise_for_status()
                 models = response.json().get('data', [])
-                # Groq's API currently only serves chat models, so we can list all of them.
                 groq_model_ids = sorted([m['id'] for m in models])
                 updated_models_data['providers']['groq']['models'] = groq_model_ids
                 results_log.append(f"Groq: Found {len(groq_model_ids)} chat models.")
@@ -612,7 +613,7 @@ class ConfigEditor:
         self.lora_styles_tab_manager.save_current_styles_config()
         self.favorites_tab_manager.save_all_favorites_data()
         self.config_manager.save_bot_settings_data()
-        self.admin_control_tab_manager._save_blocklist() # <-- Use specific save method
+        self.admin_control_tab_manager._save_blocklist()
         silent_showinfo("Save All Triggered", "All save operations triggered. Check console/messages for status.", parent=self.master)
 
     def on_closing_main_window(self):
@@ -629,6 +630,29 @@ class ConfigEditor:
             if thread_item_cleanup.is_alive(): thread_item_cleanup.join(timeout=0.5)
         self.admin_control_tab_manager.save_user_cache_on_exit()
         if self.master.winfo_exists(): self.master.destroy()
+
+    def _check_for_first_run(self):
+        """Shows a welcome/instruction dialog on the first launch."""
+        flag_file = 'first_run_complete.flag'
+        if not os.path.exists(flag_file):
+            welcome_message = (
+                "Welcome to the Tenos.ai Configurator!\n\n"
+                "It looks like this is your first time running the tool.\n\n"
+                "**IMPORTANT FIRST STEPS:**\n\n"
+                "1. Go to the 'Main Config' tab and set all the paths, especially the 'CUSTOM_NODES' path for ComfyUI.\n\n"
+                "2. Click 'Save Main Config' at the bottom of that tab.\n\n"
+                "3. Use the 'Tools' menu at the top to run:\n"
+                "   - 'Install/Update Custom Nodes'\n"
+                "   - 'Scan Models/Clips/Checkpoints'\n\n"
+                "Once these steps are done, you can start the bot from the 'Bot Control' tab."
+            )
+            silent_showinfo("First-Time Setup", welcome_message, parent=self.master)
+            
+            try:
+                with open(flag_file, 'w') as f:
+                    f.write(f"First run setup prompt shown on: {datetime.now().isoformat()}")
+            except OSError as e:
+                silent_showerror("First Run Warning", f"Could not create the first run flag file. You may see this message again.\n\nError: {e}", parent=self.master)
 
 class ProgressPrinter(git.RemoteProgress):
     def __init__(self, repo_name_str_param, log_queue_ref_param):
