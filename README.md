@@ -2,6 +2,8 @@
 
 Planned Updates:
 
+hotfix 7.2.25: Fix job cancelation issue, improved llm support for newer models, added tool to pull complete model lists (in GUI under"tools")
+
 (~14 days) 1.2.4: Flux Kontext Dev implementation into the "Edit" feature
 
 (~28 days) 1.2.5: New GUI + better LoRA style builder with fine-tuned block level settings
