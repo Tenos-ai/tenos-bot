@@ -10,6 +10,7 @@ import subprocess
 import psutil 
 import git 
 import shutil 
+import requests
 
 from editor_constants import (
     TENOS_DARK_BLUE_BG, TENOS_MEDIUM_BLUE_ACCENT, TENOS_LIGHT_BLUE_ACCENT2,
@@ -143,6 +144,7 @@ class ConfigEditor:
         tools_menu = tk.Menu(self.menu_bar, tearoff=0, bg=WIDGET_BG, fg=TEXT_COLOR_NORMAL, relief="flat", activebackground=SELECT_BG_COLOR, activeforeground=SELECT_FG_COLOR)
         tools_menu.add_command(label="Install/Update Custom Nodes", command=lambda: self.run_worker_task_on_editor(self._worker_install_custom_nodes, "Installing Nodes"))
         tools_menu.add_command(label="Scan Models/Clips/Checkpoints", command=lambda: self.run_worker_task_on_editor(self._worker_scan_models_clips_checkpoints, "Scanning Files"))
+        tools_menu.add_command(label="Refresh LLM Models List", command=lambda: self.run_worker_task_on_editor(self._worker_update_llm_models_list, "Refreshing LLMs"))
         self.menu_bar.add_cascade(label="Tools", menu=tools_menu)
         help_menu = tk.Menu(self.menu_bar, tearoff=0, bg=WIDGET_BG, fg=TEXT_COLOR_NORMAL, relief="flat", activebackground=SELECT_BG_COLOR, activeforeground=SELECT_FG_COLOR)
         help_menu.add_command(label="About", command=self.show_about_dialog)
@@ -446,6 +448,11 @@ class ConfigEditor:
             if worker_status_update.get("type") == "task_complete":
                 task_name_done = worker_status_update.get("task_name","Task"); success_status = worker_status_update.get("success",False); message_details = worker_status_update.get("message","No details.")
                 if success_status:
+                    if task_name_done == "Refreshing LLMs":
+                        self.log_queue.put(("info", "--- LLM models reloaded, updating UI. ---\n"))
+                        self.llm_models_config = load_llm_models_config_util()
+                        self.config_manager.load_bot_settings_data(self.llm_models_config)
+                        self.populate_bot_settings_tab()
                     silent_showinfo(f"{task_name_done} Complete", message_details, parent=self.master)
                     if task_name_done == "Scanning Files":
                         self.load_available_files(); self.populate_bot_settings_tab()
@@ -527,6 +534,72 @@ class ConfigEditor:
         if scan_errors_list: return "File Scanning Completed with Issues:\n"+"\n".join(scan_errors_list)
         return "File scanning finished. Lists updated. \n(UI dropdowns will refresh after this message)."
 
+    def _worker_update_llm_models_list(self):
+        """Worker task to fetch latest LLM models and update llm_models.json."""
+        keys = self.config_manager.config.get('LLM_ENHANCER', {})
+        openai_key = keys.get('OPENAI_API_KEY')
+        gemini_key = keys.get('GEMINI_API_KEY')
+        groq_key = keys.get('GROQ_API_KEY')
+        updated_models_data = load_llm_models_config_util()
+        results_log = []
+        
+        if openai_key:
+            try:
+                headers = {'Authorization': f'Bearer {openai_key}'}
+                response = requests.get("https://api.openai.com/v1/models", headers=headers, timeout=10)
+                response.raise_for_status()
+                models = response.json().get('data', [])
+                
+                chat_model_prefixes = ['gpt-4', 'gpt-3.5', 'o1', 'o3', 'o4']
+                
+                openai_model_ids = sorted([
+                    m['id'] for m in models 
+                    if any(m['id'].startswith(p) for p in chat_model_prefixes)
+                ])
+                
+                updated_models_data['providers']['openai']['models'] = openai_model_ids
+                results_log.append(f"OpenAI: Found {len(openai_model_ids)} chat models.")
+            except Exception as e:
+                msg = f"Failed to fetch OpenAI models: {e}"
+                results_log.append(f"OpenAI: {msg}"); self.log_queue.put(("stderr", msg + "\n"))
+        else: results_log.append("OpenAI: Skipped (no API key).")
+
+        if groq_key:
+            try:
+                headers = {'Authorization': f'Bearer {groq_key}'}
+                response = requests.get("https://api.groq.com/openai/v1/models", headers=headers, timeout=10)
+                response.raise_for_status()
+                models = response.json().get('data', [])
+                # Groq's API currently only serves chat models, so we can list all of them.
+                groq_model_ids = sorted([m['id'] for m in models])
+                updated_models_data['providers']['groq']['models'] = groq_model_ids
+                results_log.append(f"Groq: Found {len(groq_model_ids)} chat models.")
+            except Exception as e:
+                msg = f"Failed to fetch Groq models: {e}"
+                results_log.append(f"Groq: {msg}"); self.log_queue.put(("stderr", msg + "\n"))
+        else: results_log.append("Groq: Skipped (no API key).")
+
+        if gemini_key:
+            try:
+                response = requests.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_key}", timeout=10)
+                response.raise_for_status()
+                models = response.json().get('models', [])
+                gemini_model_ids = sorted([
+                    m['name'].replace('models/', '') for m in models 
+                    if any('generateContent' in method for method in m.get('supportedGenerationMethods', []))
+                ])
+                updated_models_data['providers']['gemini']['models'] = gemini_model_ids
+                results_log.append(f"Gemini: Found {len(gemini_model_ids)} chat models.")
+            except Exception as e:
+                msg = f"Failed to fetch Gemini models: {e}"
+                results_log.append(f"Gemini: {msg}"); self.log_queue.put(("stderr", msg + "\n"))
+        else: results_log.append("Gemini: Skipped (no API key).")
+
+        if save_json_config(LLM_MODELS_FILE_NAME, updated_models_data, "LLM models config"):
+            return "LLM Models list updated successfully.\n\n" + "\n".join(results_log)
+        else:
+            raise Exception("Failed to save the updated llm_models.json file.")
+
     def show_about_dialog(self):
         editor_title = self.master.title(); version_str = editor_title.split('v')[-1].strip() if 'v' in editor_title else "Unknown"
         about_message = (f"Tenos.ai Configuration Tool\n\nVersion: {version_str}\n\nConfigure paths, settings, styles, and favorites for the Tenos.ai Discord bot.\nEnsure ComfyUI paths in 'Main Config' are correct.\nRestart the bot via 'Bot Control' tab after making significant changes.")
@@ -539,7 +612,7 @@ class ConfigEditor:
         self.lora_styles_tab_manager.save_current_styles_config()
         self.favorites_tab_manager.save_all_favorites_data()
         self.config_manager.save_bot_settings_data()
-        self.admin_control_tab_manager._save_blocklist() 
+        self.admin_control_tab_manager._save_blocklist() # <-- Use specific save method
         silent_showinfo("Save All Triggered", "All save operations triggered. Check console/messages for status.", parent=self.master)
 
     def on_closing_main_window(self):
