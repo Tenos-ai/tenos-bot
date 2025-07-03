@@ -16,7 +16,8 @@ try:
     OUTPUT_FOLDERS = [
         config.get('OUTPUTS', {}).get('GENERATIONS'),
         config.get('OUTPUTS', {}).get('UPSCALES'),
-        config.get('OUTPUTS', {}).get('VARIATIONS')
+        config.get('OUTPUTS', {}).get('VARIATIONS'),
+        config.get('OUTPUTS', {}).get('KONTEXT_EDITS')
     ]
     OUTPUT_FOLDERS = [f for f in OUTPUT_FOLDERS if f and isinstance(f, str)]
     if not OUTPUT_FOLDERS:
@@ -35,16 +36,14 @@ def extract_job_id(filename):
     if not filename:
         return None
 
-    
     match = re.search(
-        r'^(GEN_UP_|GEN_VAR_|GEN_I2I_|GEN_)([a-f0-9]{8})',
+        r'^(EDIT_|GEN_UP_|GEN_VAR_|GEN_I2I_|GEN_)([a-f0-9]{8})',
         filename, re.IGNORECASE
     )
     
     if match:
         return match.group(2)
         
-    # print(f"DEBUG extract_job_id: No specific pattern matched for '{filename}'")
     return None
 
 
