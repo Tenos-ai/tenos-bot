@@ -16,216 +16,87 @@ from bot_core_logic import (
     process_upscale_request as core_process_upscale,
     process_variation_request as core_process_variation,
     process_rerun_request as core_process_rerun,
-    execute_generation_logic,
-    process_cancel_request
+    process_cancel_request,
+    process_kontext_edit_request
 )
 
-class EditPromptModal(Modal, title='Edit Prompt'):
-    def __init__(self, original_prompt_full: str, job_id: str, view_ref: View, model_type: str = "flux"):
-        super().__init__(timeout=600)
-        self.original_prompt_full = original_prompt_full
-        self.job_id_context = job_id
-        self.view_ref = view_ref
-        self.original_model_type_for_display = model_type 
-        
-        label_context = f"({self.original_model_type_for_display.upper()} context)"
-        max_label_len = 45 - len("Edit Prompt ") - len(label_context)
-        
-        prompt_field_label = f"Edit Prompt {label_context}"
-        if len(prompt_field_label) > 45:
-            prompt_field_label = "Edit Prompt"
 
-        self.prompt_input = TextInput(
-            label=prompt_field_label[:45],
-            style=discord.TextStyle.paragraph, 
-            placeholder='Enter your new prompt here...', 
-            default=original_prompt_full, 
-            max_length=3000, 
+class EditKontextModal(Modal, title='Edit with Kontext'):
+    def __init__(self, primary_image_url: str, interaction: discord.Interaction):
+        super().__init__(timeout=600)
+        self.primary_image_url = primary_image_url
+        self.original_interaction = interaction
+        
+        self.instruction_input = TextInput(
+            label="Edit Command & Optional Parameters",
+            style=discord.TextStyle.paragraph,
+            placeholder="add a hat on the man --steps 40 --ar 1:1\nmake the sky night time --g 4.5",
             required=True
         )
-        self.add_item(self.prompt_input)
+        
+        self.image1_input = TextInput(
+            label="Image to Edit (Primary)",
+            default=self.primary_image_url,
+            style=discord.TextStyle.short,
+            required=True,
+        )
+        
+        self.image2_input = TextInput(label="Image 2 (Optional URL)", required=False, placeholder="Paste another image URL to stitch...")
+        self.image3_input = TextInput(label="Image 3 (Optional URL)", required=False, placeholder="Paste another image URL to stitch...")
+        self.image4_input = TextInput(label="Image 4 (Optional URL)", required=False, placeholder="Paste another image URL to stitch...")
+
+        self.add_item(self.instruction_input)
+        self.add_item(self.image1_input)
+        self.add_item(self.image2_input)
+        self.add_item(self.image3_input)
+        self.add_item(self.image4_input)
 
     async def on_submit(self, interaction: discord.Interaction):
-        try:
-            if not interaction.response.is_done():
-                await interaction.response.defer(ephemeral=False, thinking=True)
-        except discord.errors.InteractionResponded:
-            print("EditPromptModal: Interaction already responded to before defer.")
-        except Exception as e_defer_modal:
-            print(f"Error deferring EditPromptModal interaction: {e_defer_modal}")
-            return
+        await interaction.response.defer(ephemeral=False, thinking=True)
+
+        instruction = self.instruction_input.value
         
-        edited_prompt = self.prompt_input.value
-        initial_response_sent = False
-
-        current_settings_edit = load_settings()
-        selected_model_for_edit = current_settings_edit.get('selected_model')
-        current_model_type_for_edit = "flux" 
-        if selected_model_for_edit and ":" in selected_model_for_edit:
-            current_model_type_for_edit = selected_model_for_edit.split(":", 1)[0].strip().lower()
-        elif selected_model_for_edit: 
-             if selected_model_for_edit.endswith((".gguf",".sft")): current_model_type_for_edit = "flux"
-             else: current_model_type_for_edit = "sdxl"
-
-        try:
-            job_results_list = await execute_generation_logic(
-                context_user=interaction.user,
-                context_channel=interaction.channel, 
-                prompt=edited_prompt,
-                is_interaction_context=True,
-                initial_interaction_object=interaction,
-                model_type_override=current_model_type_for_edit, 
-                is_derivative_action=True
-            )
-            for result in job_results_list:
-                if result["status"] == "success":
-                    msg_details = result["message_content_details"]
-                    content = (f"{msg_details['user_mention']}: `{textwrap.shorten(msg_details['prompt_to_display'], 1500, placeholder='...')}`")
-                    if msg_details['enhancer_used'] and msg_details['display_preference'] == 'enhanced': content += " ✨"
-                    content += f" (Edited - {msg_details['model_type'].upper()})" 
-                    content += f"\n> **Seed:** `{msg_details['seed']}`"
-                    if msg_details['aspect_ratio']: content += f", **AR:** `{msg_details['aspect_ratio']}`"
-                    if msg_details['steps']: content += f", **Steps:** `{msg_details['steps']}`"
-                    if msg_details['model_type'] == "sdxl": content += f", **Guidance (SDXL):** `{msg_details['guidance_sdxl']}`"
-                    else: content += f", **Guidance (Flux):** `{msg_details['guidance_flux']}`"
-                    if msg_details['mp_size'] is not None: content += f", **MP:** `{msg_details['mp_size']}`"
-                    content += f"\n> **Style:** `{msg_details['style']}`"
-                    if msg_details['is_img2img']: content += f", **Strength:** `{msg_details['img_strength_percent']}%`"
-                    if msg_details['negative_prompt']: content += f"\n> **No:** `{textwrap.shorten(msg_details['negative_prompt'], 100, placeholder='...')}`"
-                    content += "\n> **Status:** Queued..."
-                    if msg_details.get("enhancer_applied_message_for_first_run"): content += msg_details["enhancer_applied_message_for_first_run"]
-                    view_to_send = QueuedJobView(**result["view_args"]) if result.get("view_type") == "QueuedJobView" and result.get("view_args") else None
-                    sent_message = await interaction.followup.send(content, view=view_to_send, ephemeral=False, wait=True)
-                    initial_response_sent = True
-                    if sent_message and result["job_data_for_qm"]:
-                        job_data_to_add = result["job_data_for_qm"]; job_data_to_add["message_id"] = sent_message.id
-                        queue_manager.add_job(result["job_id"], job_data_to_add)
-                        
-                        ws_client = WebsocketClient()
-                        if ws_client.is_connected and result.get("comfy_prompt_id"):
-                            await ws_client.register_prompt(result["comfy_prompt_id"], sent_message.id, sent_message.channel.id)
-                elif result["status"] == "error":
-                    await interaction.followup.send(f"Error processing edited prompt: {result.get('error_message_text', 'Unknown error.')}", ephemeral=True)
-                    initial_response_sent = True
-            if not initial_response_sent and not job_results_list:
-                 await interaction.followup.send("Failed to process the edited prompt (no job data returned).", ephemeral=True)
-        except Exception as e:
-            print(f"Error in EditPromptModal on_submit (orig job {self.job_id_context}): {e}"); traceback.print_exc()
-            if not initial_response_sent:
-                try: await interaction.followup.send("An error occurred while queuing the edited prompt (on_submit exception).", ephemeral=True)
-                except Exception: pass
+        image_urls = [self.image1_input.value] 
+        if self.image2_input.value: image_urls.append(self.image2_input.value)
+        if self.image3_input.value: image_urls.append(self.image3_input.value)
+        if self.image4_input.value: image_urls.append(self.image4_input.value)
+        
+        await process_kontext_edit_request(
+            context_user=interaction.user,
+            context_channel=interaction.channel,
+            instruction=instruction,
+            image_urls=image_urls,
+            initial_interaction_obj=interaction
+        )
 
     async def on_error(self, interaction: discord.Interaction, error: Exception):
-        print(f"Error in EditPromptModal on_error: {error}"); traceback.print_exc()
-        try: 
-            if interaction.response.is_done():
-                await interaction.followup.send("An error occurred with the editing form itself.", ephemeral=True)
-            else:
-                await interaction.response.send_message("An error occurred with the editing form itself.", ephemeral=True)
-        except Exception as e_on_err: print(f"Error sending modal on_error followup for EditPromptModal: {e_on_err}")
+        print(f"Error in EditKontextModal: {error}")
+        traceback.print_exc()
+        await safe_interaction_response(interaction, "An error occurred with the editing form.", ephemeral=True)
 
-class RemixEditPromptModal(Modal, title='Remix Prompt'):
-    def __init__( self, job_data: dict, job_id_original_context: str, variation_type: str, image_index: int, original_interaction_context: discord.Interaction, referenced_message_target: discord.Message, target_image_url_actual: str ):
-        super().__init__(timeout=600)
-        enhanced_prompt_orig = (job_data or {}).get('enhanced_prompt'); original_prompt_text = (job_data or {}).get('original_prompt') or (job_data or {}).get('prompt', '')
-        prompt_for_modal_display = enhanced_prompt_orig if enhanced_prompt_orig else original_prompt_text
-        self.model_type_original_for_display = (job_data or {}).get('model_type_for_enhancer', 'flux')
-        self.job_id_for_context = job_id_original_context
-        self.variation_type_for_action = variation_type; self.image_index_for_action = image_index
-        self.original_interaction_context_opener = original_interaction_context; self.referenced_message_for_variation = referenced_message_target
-        self.target_image_url_for_variation = target_image_url_actual
 
+class ImageSelectionView(View):
+    def __init__(self, attachments: list[discord.Attachment], original_interaction: discord.Interaction):
+        super().__init__(timeout=300)
+        self.original_interaction = original_interaction
         
-        base_label = f"Remix Prompt ({variation_type.capitalize()} #{image_index})"
-        
-        self.prompt_input_remix_field = TextInput(
-            label=base_label[:45], 
-            style=discord.TextStyle.paragraph, 
-            placeholder='Enter your remixed prompt here...', 
-            default=prompt_for_modal_display, 
-            max_length=3000, 
-            required=True
-        )
-        self.add_item(self.prompt_input_remix_field)
+        for i, attachment in enumerate(attachments):
+            if i >= 4: break 
+            button = Button(label=f"Edit Image {i+1}", style=discord.ButtonStyle.primary, custom_id=f"select_edit_img_{i}")
+            
+            async def callback(interaction: discord.Interaction, image_url=attachment.url):
+                modal = EditKontextModal(primary_image_url=image_url, interaction=interaction)
+                await interaction.response.send_modal(modal)
+            
+            button.callback = callback
+            self.add_item(button)
 
-        if self.model_type_original_for_display == "sdxl": 
-            original_neg_prompt_text = (job_data or {}).get('negative_prompt', '')
-            self.negative_prompt_input_remix_field = TextInput(
-                label="Negative Prompt (SDXL)"[:45], 
-                style=discord.TextStyle.paragraph, 
-                placeholder='Enter negative prompt (optional)...', 
-                default=original_neg_prompt_text, 
-                max_length=1000, 
-                required=False
-            )
-            self.add_item(self.negative_prompt_input_remix_field)
-        else: self.negative_prompt_input_remix_field = None
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.original_interaction.user.id:
+            await interaction.response.send_message("You cannot select an image for another user's edit request.", ephemeral=True)
+            return False
+        return True
 
-    async def on_submit(self, interaction_from_modal: discord.Interaction):
-        try:
-            if not interaction_from_modal.response.is_done():
-                await interaction_from_modal.response.defer(ephemeral=False, thinking=True)
-        except discord.errors.InteractionResponded: pass
-        except Exception as e_defer_modal_remix:
-            print(f"Error deferring RemixEditPromptModal interaction: {e_defer_modal_remix}"); return
-
-        edited_prompt_text_remix = self.prompt_input_remix_field.value; edited_negative_prompt_text_remix = None
-        if self.negative_prompt_input_remix_field: 
-            edited_negative_prompt_text_remix = self.negative_prompt_input_remix_field.value
-            if edited_negative_prompt_text_remix is not None: edited_negative_prompt_text_remix = edited_negative_prompt_text_remix.strip();
-            if not edited_negative_prompt_text_remix: edited_negative_prompt_text_remix = None
-        
-        initial_response_sent_remix = False
-        try:
-            results_list_remix = await core_process_variation(
-                context_user=interaction_from_modal.user, 
-                context_channel=interaction_from_modal.channel, 
-                referenced_message_obj=self.referenced_message_for_variation, 
-                variation_type_str=self.variation_type_for_action, 
-                image_idx=self.image_index_for_action, 
-                edited_prompt_str=edited_prompt_text_remix, 
-                edited_neg_prompt_str=edited_negative_prompt_text_remix, 
-                is_interaction=True, 
-                initial_interaction_obj=interaction_from_modal
-            )
-            for result_remix in results_list_remix:
-                if result_remix["status"] == "success":
-                    msg_details_remix = result_remix["message_content_details"]
-                    content_remix = (f"{msg_details_remix['user_mention']}: `{textwrap.shorten(msg_details_remix['prompt_to_display'], 50, placeholder='...')}` ({msg_details_remix['description']} on img #{msg_details_remix['image_index']} from `{msg_details_remix['original_job_id']}` - {msg_details_remix['model_type']})\n"
-                                   f"> **Seed:** `{msg_details_remix['seed']}`, **AR:** `{msg_details_remix['aspect_ratio']}`, **Steps:** `{msg_details_remix['steps']}`, **Style:** `{msg_details_remix['style']}`")
-                    if msg_details_remix.get('is_remixed'): content_remix += "\n> `(Remixed Prompt)`"
-                    enhancer_text_val_remix = msg_details_remix.get('enhancer_reference_text')
-                    if enhancer_text_val_remix: content_remix += f"\n{enhancer_text_val_remix.strip()}"
-                    content_remix += "\n> **Status:** Queued... "
-                    view_remix = QueuedJobView(**result_remix["view_args"]) if result_remix.get("view_type") == "QueuedJobView" and result_remix.get("view_args") else None
-                    sent_msg_remix = await interaction_from_modal.followup.send(content_remix, view=view_remix, ephemeral=False, wait=True)
-                    initial_response_sent_remix = True
-                    if sent_msg_remix and result_remix["job_data_for_qm"]:
-                        job_data_add_remix = result_remix["job_data_for_qm"]; job_data_add_remix["message_id"] = sent_msg_remix.id
-                        queue_manager.add_job(result_remix["job_id"], job_data_add_remix)
-                        
-                        ws_client = WebsocketClient()
-                        if ws_client.is_connected and result_remix.get("comfy_prompt_id"):
-                            await ws_client.register_prompt(result_remix["comfy_prompt_id"], sent_msg_remix.id, sent_msg_remix.channel.id)
-                elif result_remix["status"] == "error":
-                    await interaction_from_modal.followup.send(f"Error processing remixed variation: {result_remix.get('error_message_text', 'Unknown error.')}", ephemeral=True)
-                    initial_response_sent_remix = True
-            if not initial_response_sent_remix and not results_list_remix: 
-                await interaction_from_modal.followup.send("Failed to process remixed variation (no results).", ephemeral=True)
-        except Exception as e_submit_remix_modal:
-            print(f"Error in RemixEditPromptModal on_submit (orig job {self.job_id_for_context}): {e_submit_remix_modal}"); traceback.print_exc()
-            if not initial_response_sent_remix:
-                try: await interaction_from_modal.followup.send("An error occurred while queuing remixed variation (on_submit exception).", ephemeral=True)
-                except Exception: pass
-
-    async def on_error(self, interaction_modal_error: discord.Interaction, error: Exception):
-        print(f"Error in RemixEditPromptModal on_error: {error}"); traceback.print_exc()
-        try: 
-            if interaction_modal_error.response.is_done():
-                await interaction_modal_error.followup.send("An error occurred with the remix editing form itself.", ephemeral=True)
-            else:
-                await interaction_modal_error.response.send_message("An error occurred with the remix editing form itself.", ephemeral=True)
-        except Exception as e_on_err_remix_modal: print(f"Error sending remix modal on_error followup: {e_on_err_remix_modal}")
 
 class QueuedJobView(View):
     def __init__(self, comfy_prompt_id: str, timeout=86400*2):
@@ -324,13 +195,6 @@ class GenerationActionsView(View):
             return await channel.fetch_message(self.original_message_id) if channel else None
         except Exception as e: print(f"Error refetching message {self.original_message_id} for view: {e}"); return None
 
-    async def handle_action_error(self, interaction: discord.Interaction, action_name: str, error: Exception):
-        print(f"Error during '{action_name}' (Job ID: {self.job_id}): {error}"); traceback.print_exc()
-        try:
-            if interaction.response.is_done(): await interaction.followup.send(f"Action '{action_name}' failed due to an error.", ephemeral=True)
-            else: await interaction.response.send_message(f"Action '{action_name}' failed due to an error.", ephemeral=True)
-        except Exception as fe: print(f"Error sending followup/response during {action_name} failure: {fe}")
-
     async def _process_and_send_action_results(self, interaction: discord.Interaction, results: list, action_description: str):
         if not interaction.response.is_done():
             try: await interaction.response.defer(ephemeral=False, thinking=False) 
@@ -372,26 +236,22 @@ class GenerationActionsView(View):
                     content_str += "\n> **Status:** Queued... "
                     if msg_details_item.get("enhancer_applied_message_for_first_run"): content_str += msg_details_item["enhancer_applied_message_for_first_run"]
                 view_to_send_item = QueuedJobView(**result_item["view_args"]) if result_item.get("view_type") == "QueuedJobView" and result_item.get("view_args") else None
-                sent_message_item = await interaction.followup.send(content_str, view=view_to_send_item, ephemeral=False, wait=True)
+                sent_message_item = await safe_interaction_response(interaction, content=content_str, view=view_to_send_item)
                 if sent_message_item and result_item["job_data_for_qm"]:
                     job_data_to_add_item = result_item["job_data_for_qm"]; job_data_to_add_item["message_id"] = sent_message_item.id
                     queue_manager.add_job(result_item["job_id"], job_data_to_add_item)
-                    # Register with websocket client for progress updates
                     ws_client = WebsocketClient()
                     if ws_client.is_connected and result_item.get("comfy_prompt_id"):
                         await ws_client.register_prompt(result_item["comfy_prompt_id"], sent_message_item.id, sent_message_item.channel.id)
             elif result_item["status"] == "error":
                 error_text_item = result_item.get('error_message_text', f'Unknown error during {action_description}.')
-                await interaction.followup.send(f"Error ({action_description}): {error_text_item}", ephemeral=True)
+                await safe_interaction_response(interaction, f"Error ({action_description}): {error_text_item}", ephemeral=True)
         if not results:
-            await interaction.followup.send(f"Failed to process {action_description.lower()} request (no results returned from logic).", ephemeral=True)
+            await safe_interaction_response(interaction, f"Failed to process {action_description.lower()} request (no results returned).", ephemeral=True)
 
     async def upscale_callback(self, interaction: discord.Interaction):
-        if not interaction.response.is_done():
-            try: await interaction.response.defer(ephemeral=False, thinking=False)
-            except discord.errors.InteractionResponded: pass
         ref_msg = await self.get_referenced_message(interaction)
-        if not ref_msg: await interaction.followup.send("Error: Original message not found.", ephemeral=True); return
+        if not ref_msg: await safe_interaction_response(interaction, "Error: Original message not found.", ephemeral=True); return
         image_idx = 1
         try: image_idx = int(interaction.data['custom_id'].split('_')[1]) 
         except (IndexError, ValueError): pass
@@ -404,41 +264,39 @@ class GenerationActionsView(View):
         image_idx = 1
         try: parts = interaction.data['custom_id'].split('_'); image_idx = int(parts[2] if len(parts) > 2 and parts[1] in ['w','s'] else parts[1]) 
         except (IndexError, ValueError): pass
+        ref_msg = await self.get_referenced_message(interaction)
+        if not ref_msg: await safe_interaction_response(interaction, "Error: Original message not found.", ephemeral=True); return
         if remix_enabled:
-            if interaction.response.is_done(): await interaction.followup.send("Remix mode: Cannot open edit modal as interaction was already acknowledged. Please try action again.", ephemeral=True); return
-            ref_msg = await self.get_referenced_message(interaction)
-            if not ref_msg: await interaction.response.send_message("Error: Original message not found for remix.",ephemeral=True); return 
             job_data = queue_manager.get_job_data_by_id(self.job_id) or queue_manager.get_job_data(ref_msg.id, ref_msg.channel.id if ref_msg.channel else interaction.channel_id) 
             target_attachment = ref_msg.attachments[image_idx-1] if len(ref_msg.attachments) >= image_idx else None
-            if not target_attachment: await interaction.response.send_message("Error: Target image for remix not found.",ephemeral=True); return
-            modal = RemixEditPromptModal(job_data or {}, self.job_id, variation_type, image_idx, interaction, ref_msg, target_attachment.url)
-            await interaction.response.send_modal(modal) 
+            if not target_attachment: await safe_interaction_response(interaction, "Error: Target image for remix not found.", ephemeral=True); return
+            await safe_interaction_response(interaction, "Remix mode for Variations is temporarily disabled.", ephemeral=True)
         else:
-            if not interaction.response.is_done(): await interaction.response.defer(ephemeral=False, thinking=False)
-            ref_msg = await self.get_referenced_message(interaction)
-            if not ref_msg: await interaction.followup.send("Error: Original message not found.", ephemeral=True); return
             results = await core_process_variation(context_user=interaction.user, context_channel=interaction.channel, referenced_message_obj=ref_msg, variation_type_str=variation_type, image_idx=image_idx, is_interaction=True, initial_interaction_obj=interaction) 
             await self._process_and_send_action_results(interaction, results, f"{variation_type.capitalize()} Variation")
 
     async def rerun_callback(self, interaction: discord.Interaction):
-        if not interaction.response.is_done(): await interaction.response.defer(ephemeral=False, thinking=True) 
         ref_msg = await self.get_referenced_message(interaction)
-        if not ref_msg: await interaction.followup.send("Error: Original message not found.", ephemeral=True); return
+        if not ref_msg: await safe_interaction_response(interaction, "Error: Original message not found.", ephemeral=True); return
         results = await core_process_rerun(context_user=interaction.user, context_channel=interaction.channel, referenced_message_obj=ref_msg, run_times_count=1, is_interaction=True, initial_interaction_obj=interaction) 
         await self._process_and_send_action_results(interaction, results, "Rerun")
 
     async def edit_callback(self, interaction: discord.Interaction):
-        if interaction.response.is_done(): await interaction.followup.send("Cannot open edit modal (interaction already acknowledged). Try again or use `/gen`.", ephemeral=True); return
-        job_data = queue_manager.get_job_data_by_id(self.job_id)
-        if not job_data: ref_msg_for_edit = await self.get_referenced_message(interaction); job_id_file_edit = extract_job_id(ref_msg_for_edit.attachments[0].filename) if ref_msg_for_edit and ref_msg_for_edit.attachments else None; job_data = queue_manager.get_job_data_by_id(job_id_file_edit) if job_id_file_edit else None
-        if not job_data: await interaction.response.send_message("Error: Cannot find job data to edit.", ephemeral=True); return
-        full_prompt_str = reconstruct_full_prompt_string(job_data); 
-        original_model_type_for_modal_display = job_data.get('model_type_for_enhancer', 'flux') 
-        modal_to_send = EditPromptModal(full_prompt_str, self.job_id, self, model_type=original_model_type_for_modal_display)
-        await interaction.response.send_modal(modal_to_send)
+        ref_msg = await self.get_referenced_message(interaction)
+        if not ref_msg or not ref_msg.attachments:
+            await safe_interaction_response(interaction, "Original message or its images not found.", ephemeral=True)
+            return
+
+        attachments = ref_msg.attachments
+        if len(attachments) == 1:
+            modal = EditKontextModal(primary_image_url=attachments[0].url, interaction=interaction)
+            await interaction.response.send_modal(modal)
+        else:
+            view = ImageSelectionView(attachments=attachments, original_interaction=interaction)
+            await interaction.response.send_message("This job has multiple images. Please select which one you'd like to edit:", view=view, ephemeral=True)
 
     async def delete_callback(self, interaction: discord.Interaction):
-        if not interaction.response.is_done(): await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
         for item_btn_del in self.children:
             if isinstance(item_btn_del,Button) and item_btn_del.custom_id == interaction.data['custom_id']: item_btn_del.disabled=True; item_btn_del.label="Deleting..."; break 
         try:
