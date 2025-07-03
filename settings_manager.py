@@ -21,9 +21,9 @@ def load_llm_models_config():
         if not isinstance(config, dict) or "providers" not in config or not isinstance(config["providers"], dict):
             print("SettingsManager Error: llm_models.json has invalid structure. Using default.")
             return default_config
-        
         if "openai" not in config["providers"]:
             print("SettingsManager: Adding default OpenAI provider to llm_models.json")
+            if "providers" not in config: config["providers"] = {}
             config["providers"]["openai"] = default_config["providers"]["openai"]
             # try:
             #     with open('llm_models.json', 'w') as f_write:
@@ -34,6 +34,7 @@ def load_llm_models_config():
         for key, data in config["providers"].items():
             if not isinstance(data, dict) or "display_name" not in data or "models" not in data or not isinstance(data["models"], list):
                 print(f"SettingsManager Warning: Invalid structure for provider '{key}'. Reverting to default for this provider.")
+                
                 config["providers"][key] = default_config["providers"].get(key, {"display_name": key, "models": []})
         return config
     except (OSError, json.JSONDecodeError) as e:
@@ -223,9 +224,8 @@ def load_settings():
             current_selected_model_setting_stripped = current_selected_model_setting.strip()
             model_type, model_name_from_setting = None, current_selected_model_setting_stripped
             if ":" in current_selected_model_setting_stripped:
-                model_type, model_name_from_setting = current_selected_model_setting_stripped.split(":", 1)
-                model_type = model_type.strip().lower()
-                model_name_from_setting = model_name_from_setting.strip()
+                 model_type, model_name_from_setting = current_selected_model_setting_stripped.split(":", 1)
+                 model_type = model_type.strip().lower(); model_name_from_setting = model_name_from_setting.strip()
 
             valid_current_model_found = False
             if model_type == "flux":
@@ -269,6 +269,21 @@ def load_settings():
             if available_flux_models: settings['selected_model'] = f"Flux: {next(iter(available_flux_models.values()))}"
             elif available_sdxl_checkpoints: settings['selected_model'] = f"SDXL: {next(iter(available_sdxl_checkpoints.values()))}"
             updated = True
+            
+        
+        current_kontext_model = settings.get('selected_kontext_model')
+        if current_kontext_model and isinstance(current_kontext_model, str):
+            current_kontext_model_norm = current_kontext_model.strip()
+            if current_kontext_model_norm.lower() not in available_flux_models:
+                print(f"⚠️ Warning: Selected Kontext Model '{current_kontext_model}' not found in Flux models list. Resetting.")
+                settings['selected_kontext_model'] = next(iter(available_flux_models.values())) if available_flux_models else None
+                updated = True
+            elif current_kontext_model != available_flux_models.get(current_kontext_model_norm.lower()):
+                settings['selected_kontext_model'] = available_flux_models.get(current_kontext_model_norm.lower())
+                updated = True
+        elif not current_kontext_model and available_flux_models:
+            settings['selected_kontext_model'] = next(iter(available_flux_models.values()))
+            updated = True
 
 
         available_clips_t5_raw = []; available_clips_l_raw = []
@@ -290,7 +305,7 @@ def load_settings():
                 print(f"⚠️ Warning: Selected T5 CLIP '{current_t5_clip}' not found. Resetting.")
                 settings['selected_t5_clip'] = next(iter(available_clips_t5.values())) if available_clips_t5 else None
                 updated = True
-            elif current_t5_clip != available_clips_t5.get(current_t5_clip_norm.lower()):
+            elif current_t5_clip != available_clips_t5.get(current_t5_clip_norm.lower()): # Correct casing/spacing
                 settings['selected_t5_clip'] = available_clips_t5.get(current_t5_clip_norm.lower())
                 updated = True
         elif not current_t5_clip and available_clips_t5:
@@ -402,6 +417,7 @@ def _get_default_settings():
 
     return {
         "selected_model": default_model_setting,
+        "selected_kontext_model": default_flux_model_raw,
         "steps": 32,
         "selected_t5_clip": default_t5,
         "selected_clip_l": default_l,
@@ -430,7 +446,12 @@ def save_settings(settings):
         numeric_keys_float = ['default_guidance', 'default_guidance_sdxl', 'upscale_factor']
         numeric_keys_int = ['steps', 'default_batch_size']
         bool_keys = ['remix_mode', 'llm_enhancer_enabled']
-        string_keys_to_strip = ['llm_provider', 'llm_model_gemini', 'llm_model_groq', 'llm_model_openai', 'selected_model', 'selected_t5_clip', 'selected_clip_l', 'selected_upscale_model', 'selected_vae', 'default_style', 'default_sdxl_negative_prompt']
+        string_keys_to_strip = [
+            'llm_provider', 'llm_model_gemini', 'llm_model_groq', 'llm_model_openai',
+            'selected_model', 'selected_t5_clip', 'selected_clip_l', 'selected_upscale_model',
+            'selected_vae', 'default_style', 'default_sdxl_negative_prompt',
+            'selected_kontext_model'
+        ]
         mp_size_key = 'default_mp_size'
         allowed_mp_sizes = ["0.25", "0.5", "1", "1.25", "1.5", "1.75", "2", "2.5", "3", "4"]
         display_prompt_key = 'display_prompt_preference'
@@ -462,7 +483,7 @@ def save_settings(settings):
         for key in string_keys_to_strip:
             if key in valid_settings and isinstance(valid_settings[key], str):
                 valid_settings[key] = valid_settings[key].strip()
-            elif key in valid_settings and valid_settings[key] is None and key not in ['selected_model', 'selected_t5_clip', 'selected_clip_l', 'selected_upscale_model', 'selected_vae']: # Allow None for model selections
+            elif key in valid_settings and valid_settings[key] is None and key not in ['selected_model', 'selected_t5_clip', 'selected_clip_l', 'selected_upscale_model', 'selected_vae', 'selected_kontext_model']:
                 
                 if defaults[key] is not None:
                     print(f"Warning: '{key}' is None but expects a string. Resetting to default.")
@@ -783,7 +804,7 @@ def get_upscale_model_choices():
     upscale_models_raw = []
     if isinstance(models_data, dict):
         upscale_models_raw.extend(models_data.get('upscaler', []))
-        if not upscale_models_raw: upscale_models_raw.extend(models_data.get('unet', [])) # Fallback
+        if not upscale_models_raw: upscale_models_raw.extend(models_data.get('unet', []))
     upscale_models = sorted(list(set(u.strip() for u in upscale_models_raw if isinstance(u, str))))
     settings = load_settings(); current_upscale_model_setting = settings.get('selected_upscale_model')
     current_upscale_model = current_upscale_model_setting.strip() if isinstance(current_upscale_model_setting, str) else None
@@ -827,3 +848,51 @@ def get_vae_choices():
 def get_display_prompt_preference_choices():
     settings = load_settings(); current_preference = settings.get('display_prompt_preference', 'enhanced')
     return [discord.SelectOption(label="Show Enhanced Prompt ✨", value="enhanced", default=(current_preference == 'enhanced')), discord.SelectOption(label="Show Original Prompt ✍️", value="original", default=(current_preference == 'original'))]
+
+def get_kontext_model_choices():
+    choices = []
+    flux_models_data = {}
+    try:
+        if os.path.exists('modelslist.json'):
+            with open('modelslist.json', 'r') as f: flux_models_data = json.load(f)
+        if not isinstance(flux_models_data, dict): flux_models_data = {}
+    except Exception: flux_models_data = {}
+
+    settings = load_settings()
+    current_kontext_model = settings.get('selected_kontext_model')
+    if isinstance(current_kontext_model, str): current_kontext_model = current_kontext_model.strip()
+
+    flux_favorites_raw = flux_models_data.get('favorites', [])
+    flux_favorites = [f.strip() for f in flux_favorites_raw if isinstance(f, str)]
+    added_values = set()
+
+    def add_option(model_name, is_default=False, is_favorite=False):
+        norm_model_name = model_name.strip()
+        if norm_model_name in added_values: return
+        label = f"{'⭐ ' if is_favorite else ''}{norm_model_name}".strip()
+        choices.append(discord.SelectOption(label=label[:100], value=norm_model_name, default=is_default))
+        added_values.add(norm_model_name)
+    
+    
+    if current_kontext_model:
+        is_fav = current_kontext_model in flux_favorites
+        add_option(current_kontext_model, is_default=True, is_favorite=is_fav)
+
+    
+    for model in flux_favorites:
+        add_option(model, is_favorite=True)
+
+    
+    for model_type_key in ['safetensors', 'sft', 'gguf']:
+        for model in flux_models_data.get(model_type_key, []):
+            if isinstance(model, str):
+                add_option(model.strip())
+
+    
+    if choices and not any(opt.default for opt in choices):
+        if current_kontext_model and any(opt.value == current_kontext_model for opt in choices):
+            next(opt for opt in choices if opt.value == current_kontext_model).default = True
+        elif choices:
+            choices[0].default = True
+
+    return choices[:25]
