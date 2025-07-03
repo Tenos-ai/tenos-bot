@@ -2,8 +2,16 @@
 
 ## Updates
 
-- **Version 1.2.3**: Integrated **FLUX Kontext** for powerful instruction-based image editing and stitching via the new `/edit` command. The LLM Enhancer now supports multi-modal vision to better interpret edit instructions.
-- **Hotfix 7.2.25**: Fixed a job cancellation issue, improved first-time setup with venv creation, enhanced LLM support for new models, and added a tool to pull complete model lists from the GUI.
+**COMPLETEED UPDATES**
+
+**7/2/25**
+- **Update 1**: Integrated **FLUX Kontext** for powerful instruction-based image editing and stitching via the new `/edit` command. The LLM Enhancer now supports multi-modal vision to better interpret edit instructions.
+- **Hotfix 1**: Fixed a job cancellation issue, improved first-time setup with venv creation, enhanced LLM support for new models, and added a tool to pull complete model lists from the GUI.
+
+**PLANED UPDATES**
+- New GUI
+
+----------
 
 |||
 |---|---|
