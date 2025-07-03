@@ -2,7 +2,7 @@
 
 ## Updates
 
-**COMPLETEED UPDATES**
+**COMPLETED UPDATES**
 
 **7/2/25**
 - **Update 1**: Integrated **FLUX Kontext** for powerful instruction-based image editing and stitching via the new `/edit` command. The LLM Enhancer now supports multi-modal vision to better interpret edit instructions.
