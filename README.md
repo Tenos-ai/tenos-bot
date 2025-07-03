@@ -1,29 +1,26 @@
 # Tenosai-Bot: ComfyUI API Discord Bot for Flux & SDXL Image Generation
 
-Planned Updates:
+## Updates
 
-hotfix 7.2.25: Fixed job cancelation issue where the button would cancel the job you wanted in queue but also stopped the current job running, added first time setup and venv creation to bat, improved llm support for newer models, added tool to pull complete model lists (in GUI under"tools")
-
-(~14 days) 1.2.4: Flux Kontext Dev implementation into the "Edit" feature
-
-(~28 days) 1.2.5: New GUI + better LoRA style builder with fine-tuned block level settings
+- **Version 1.2.3**: Integrated **FLUX Kontext** for powerful instruction-based image editing and stitching via the new `/edit` command. The LLM Enhancer now supports multi-modal vision to better interpret edit instructions.
+- **Hotfix 7.2.25**: Fixed a job cancellation issue, improved first-time setup with venv creation, enhanced LLM support for new models, and added a tool to pull complete model lists from the GUI.
 
 |||
 |---|---|
 |![Screenshot 2025-06-25 191115](https://github.com/user-attachments/assets/3708790d-1bc8-49cf-aca1-465b739dd0d8)|![Screenshot 2025-06-25 191205](https://github.com/user-attachments/assets/11efb49e-e66d-4748-8d0d-f6980288ad66)|
-|![Screenshot 2025-06-25 190919](https://github.com/user-attachments/assets/a6029416-32c5-45b6-906b-5985e1eaef6b)|![Screenshot 2025-06-25 190957](https://github.com/user-attachments/assets/d5edf35e-bec3-4da5-9b09-da7d2393c481)
+|![Screenshot 2025-06-25 190919](https://github.com/user-attachments/assets/a6029416-32c5-45b6-906b-5985e1eaef6b)|![Screenshot 2025-06-25 190957](https://github.com/user-attachments/assets/d5edf35e-bec3-4da5-9b09-da7d2393c481)|
 
 ## First-Time Setup
 
 **(IF YOU DO NOT HAVE A DISCORD BOT ACCOUNT ALREADY CREATED, OPEN "HOW TO DISCORD BOT.txt" AND FOLLOW INSTRUCTIONS)**
 
-Make sure you already have ComfyUI installed. If you need ComfyUI still download it [`HERE`](https://www.comfy.org/download).
+Make sure you already have ComfyUI installed. If you need ComfyUI still, you can download it [`HERE`](https://www.comfy.org/download).
 
-Download the portable zip from github via the code button at the top of the model page or click [`HERE`](https://github.com/Tenos-ai/tenos-bot/archive/refs/heads/main.zip) to download the zip. I reccomend placing it in your ComfyUI Portable folder but you can put it anywhere and it should work just fine.
+Download the portable zip from this repository via the "Code" button at the top of the page, or click [`HERE`](https://github.com/Tenos-ai/tenos-bot/archive/refs/heads/main.zip) to download the zip directly. I recommend placing it in your ComfyUI Portable folder, but you can put it anywhere and it should work just fine.
 
 ![image](https://github.com/user-attachments/assets/14816ec3-86c3-4444-b775-455c1429fcd0)
 
-  - The bot requires specific custom nodes. You can install them manually by cloning the following GitHub repositories into your `ComfyUI/custom_nodes` folder, or use the Configurator's "Install/Update Custom Nodes" tool:
+  - The bot requires specific custom nodes. You can install them manually by cloning the following GitHub repositories into your `ComfyUI/custom_nodes` folder, or by using the Configurator's "Install/Update Custom Nodes" tool (under the "Tools" menu):
       1. `https://github.com/rgthree/rgthree-comfy.git`
       2. `https://github.com/ssitu/ComfyUI_UltimateSDUpscale.git`
       3. `https://github.com/jamesWalker55/comfyui-various.git`
@@ -36,12 +33,12 @@ Before using Tenosai-Bot, you **MUST** run the configurator (`TENOSAI-BOT.bat` o
 
 - **Map all necessary file paths** (Outputs, Models, CLIPs, LoRAs, Custom Nodes) under the "Main Config" tab.
 - **Input your unique Discord bot token** into the `BOT_API` -> `KEY` field in "Main Config".
-- **Input the admin's Discord username** into the `ADMIN` -> `USERNAME` field in "Main Config".
-- **Optionally input API Keys** for Google Gemini, Groq, and/or OpenAI in the `LLM_ENHANCER` section of "Main Config" if you plan to use the LLM Prompt Enhancer feature (see `/settings` and the "LLM Prompts" tab in the Configurator).
+- **Input the admin's Discord User ID** into the `ADMIN` -> `ID` field in "Main Config".
+- **Optionally input API Keys** for Google Gemini, Groq, and/or OpenAI in the `LLM_ENHANCER` section of "Main Config" if you plan to use the LLM Prompt Enhancer feature.
 
 This step is crucial for the bot to function correctly. After initial setup, use the "Bot Control" tab in the configurator to start the bot. The bot uses the model selected via `/settings` or the Configurator as the default for new generations.
 
-### OPTIONAL: download the Tenos Official Flux Dev Finetune from Huggingface [`HERE`](https://huggingface.co/Tenos-ai/Tenos)
+### OPTIONAL: Download the Tenos Official Flux Dev Finetune from Huggingface [`HERE`](https://huggingface.co/Tenos-ai/Tenos)
 |||
 |---|---|
 |![GEN_UP_d2617aa5_from_img3_srcID49b5195c_00001_](https://github.com/user-attachments/assets/4ae5190c-31bf-409f-97b1-bc86c3a10f46)|![GEN_UP_9e781f69_from_img1_srcIDdd942772_00001_](https://github.com/user-attachments/assets/51da3345-0a04-4322-a752-507dec753703)|
@@ -64,21 +61,32 @@ Options:
 - `--style [style_name]`: Apply a predefined LoRA style (see `/styles`). Default in `/settings`.
 - `--r [N]`: Run the prompt `N` times with different seeds (max 10).
 - `--no "[negative_prompt_text]"`: **(SDXL Only)** Provide a negative prompt.
-    - For initial `/gen` or `/please`: If used, this text will be appended to your default SDXL negative prompt (set via `/settings` or Configurator). To use *only* your typed negative prompt, or an empty one for the initial generation, use ` --no ""` or just `--no`.
-    - For derivative actions (Edit modal, Remix modal, `--no` in replies for Variations): The provided text *replaces* any previous negative prompt.
 
 Example: `/gen a majestic lion --ar 16:9 --seed 1234 --style realistic --g_sdxl 6.5`
 Example (SDXL with custom negative): `/gen cyberpunk city --no "trees, nature, day"`
 
-**Optional LLM Prompt Enhancer:**
-- An admin can enable an optional prompt enhancer via `/settings`.
-- If enabled (and the corresponding API Key is configured), your initial prompt may be automatically rewritten by the selected LLM (Google Gemini, Groq, or OpenAI) to be more descriptive before generation. This applies to both Flux and SDXL, using different system prompts.
+**LLM Prompt Enhancer:**
+- An admin can enable a prompt enhancer via `/settings`.
+- If enabled, your initial prompt may be rewritten by the selected LLM (Google Gemini, Groq, or OpenAI) to be more descriptive. This applies to `/gen` and `/edit` commands.
 - Generated messages will have a ✨ icon if the enhancer was used successfully.
-- Configure the LLM provider and specific model via `/settings`.
 - Edit the system prompts used by the enhancer via the Configurator's "LLM Prompts" tab.
 
-### 2. Image Upscaling
-Command: Reply with `--up` or click the ⬆️ button.
+### 2. Image Editing with Kontext
+Command: `/edit`
+Usage: `/edit [instruction] [image1] [image2] [image3] [image4] [options]`
+
+This powerful feature uses FLUX Kontext to edit up to 4 images based on your text instructions. You can blend images, change objects, alter styles, and much more.
+
+Options:
+- `--g [number]`: Set guidance scale for the edit (e.g., `3.0`).
+- `--ar [W:H]`: Set aspect ratio for the final output canvas.
+- `--steps [number]`: Set the number of steps for the generation.
+
+Example: `/edit instruction:make the cat wear a wizard hat image1:<upload_cat_image>`
+Example: `/edit instruction:blend these two styles image1:<upload_style1_image> image2:<upload_style2_image> --ar 16:9`
+
+### 3. Image Upscaling
+Command: Reply with `--up` or click the `Upscale ⬆️` button.
 Usage: Reply to a generated image with `--up [options]` or click the button.
 
 Options (for reply command):
@@ -87,8 +95,8 @@ Options (for reply command):
 
 Example (replying to an image): `--up --seed 5678 --style detailed`
 
-### 3. Image Variation
-Command: Reply with `--vary [type]` or click the 🤏 (Weak) / 💪 (Strong) buttons.
+### 4. Image Variation
+Command: Reply with `--vary [type]` or click the `Vary W 🤏` / `Vary S 💪` buttons.
 Usage: Reply to a generated image with `--vary [type] [options]` or click the button.
 
 Types:
@@ -96,54 +104,47 @@ Types:
 - `s`: Strong variation (significant changes, higher denoise)
 
 Options (for reply command):
-- `--noprompt`: Generate variation with a blank prompt (uses image context only).
-- `--prompt "[new_prompt]"`: If Remix Mode is ON (via `/settings`), use this new prompt for the variation. Enclose multi-word prompts in quotes.
+- `--prompt "[new_prompt]"`: If Remix Mode is ON (via `/settings`), use this new prompt for the variation.
 - `--no "[negative_prompt_text]"`: **(SDXL Variation Only)** Sets/replaces the negative prompt for this variation.
 - `--style [style_name]`: Apply a different style to the variation.
 
-Example: `--vary s --prompt "a lion in a jungle" --style cartoon` (*If Remix Mode ON*)
-Example (SDXL): `--vary w --no "blurry"`
-
 **Remix Mode:**
-- If "Variation Remix Mode" is ON (via `/settings`), clicking a Vary button (🤏/💪) or replying with just `--vary w/s` (without `--prompt`) will open a modal. This modal allows you to edit the positive prompt (and negative prompt for SDXL variations) before generating the variation.
+- If "Variation Remix Mode" is ON (via `/settings`), clicking a Vary button (🤏/💪) will open a modal to edit the prompt before generating.
 
-### 4. Rerunning & Editing Prompts
-- **Rerun Button 🔄 / Reply `--r [N]`**: Reruns the *original unenhanced prompt* and parameters of a generation with a new seed. `N` for multiple runs. The negative prompt used will be the one from the original generation (not re-combined with defaults).
-- **Edit Button ✏️**: Opens a modal to edit the full original prompt string (including parameters like seed, style, AR, `--no`, etc.). The edited prompt is then processed as if it were a new `/gen` command, meaning the LLM enhancer (if enabled) might apply, and the `--no` parameter will be combined with the default SDXL negative prompt if it's an SDXL model.
+### 5. Rerunning & Editing
+- **Rerun 🔄**: Reruns the original generation prompt and parameters with a new seed.
+- **Edit ✏️**: Opens a modal to perform a new **Kontext Edit** on the selected image(s). You can provide new instructions and even add more images to blend.
 
-### 5. Viewing Prompts
-Command: `--show` (as a reply, Admin only)
-Usage: Reply to a generated image with `--show`.
-This will send you a DM with the full prompt string (including parameters) that was used to generate that specific image.
-
-### 6. Deleting Images/Messages
-- **Delete Button 🗑️ / Reply `--delete`**: (Admin/Owner only) Deletes the generated image file(s) from storage AND removes the bot's message.
-- **React with 🗑️**: (Admin/Owner only) Same as Delete Button/`--delete`.
-- **Reply `--remove`**: (Admin/Owner only) Removes the bot's message from chat only (files remain).
-- **Cancel Button ⏸️**: (Admin/Owner of job only) Appears on "queued" messages. Attempts to cancel the job in ComfyUI and remove it from the bot's queue.
-
-### 7. Admin Commands
-- `/settings`: Configure default Model (Flux/SDXL), CLIPs, Steps, Guidance (Flux & SDXL), Default SDXL Negative Prompt, Batch Size, Upscale Factor, Default Style, Variation Mode, Remix Mode, LLM Enhancer settings (Provider, Model, Display Preference).
-- `/sheet [src]`: Queue prompts from a TSV file (URL or Discord Message ID/Link). Requires a 'prompt' column.
-- `/clear`: Clear the ComfyUI processing queue (cancels pending, interrupts running).
-- `/models`: List models available to ComfyUI via DM.
-- `/styles`: View available style presets via DM (also available to non-admins).
+### 6. Utility Commands
+- `/styles`: View available style presets via DM.
 - `/ping`: Check bot latency.
-- `/help`: Show help information.
+- `/help`: Show this help information.
 
-### 8. Configuration and Management (Configurator Tool)
+### 7. Deleting & Managing Jobs
+- **Delete 🗑️ / Reply `--delete`**: (Admin/Owner only) Deletes generated image file(s) AND the Discord message.
+- **React with 🗑️**: (Admin/Owner only) Same as the Delete button.
+- **Reply `--remove`**: (Admin/Owner only) Removes the Discord message only (files remain).
+- **Cancel ⏸️**: (Admin/Owner of job only) Appears on queued messages to cancel the job in ComfyUI.
+- **`--show` (Reply)**: (Admin only) Get a DM with the full prompt string used for a generation.
+
+### 8. Admin Commands
+- `/settings`: Configure default models (Flux, SDXL, Kontext), CLIPs, generation parameters, LLM enhancer, and more.
+- `/sheet [src]`: Queue prompts from a TSV file (URL or Discord Message ID/Link).
+- `/clear`: Clear the ComfyUI processing queue.
+- `/models`: List models available to ComfyUI via DM.
+
+### 9. Configuration and Management (Configurator Tool)
 The Configurator Tool (`TENOSAI-BOT.bat` or `python config-editor-script.py`) allows admins to:
-- **Main Config:** Update paths (Outputs, Models, CLIPs, LoRAs, Custom Nodes), Bot Token, Admin Username, LLM API Keys.
-- **Bot Settings:** Set global defaults for generation parameters (mirrors most of `/settings`). Includes "Default SDXL Negative Prompt".
-- **LoRA Styles:** Create, edit, delete, and favorite LoRA style presets (used by `--style`).
-- **Favorites:** Mark favorite Models (Flux & SDXL), CLIPs, and Styles for easier selection in settings dropdowns within the Configurator and the bot's `/settings` command.
-- **LLM Prompts:** Edit the system prompts used by the LLM Enhancer for both Flux and SDXL.
-- **Bot Control:** Start/Stop the `main_bot.py` script and view its log output.
-- **Tools:** Install/Update required Custom Nodes, Scan Models/CLIPs/Checkpoints into JSON lists (used by the bot and configurator for selections).
+- **Main Config:** Update all critical paths, Bot Token, Admin ID, and LLM API Keys.
+- **Bot Settings:** Set global defaults for all generation parameters (mirrors `/settings`).
+- **LoRA Styles:** Create, edit, and favorite LoRA style presets.
+- **Favorites:** Mark favorite Models, CLIPs, and Styles for easier selection in menus.
+- **LLM Prompts:** Edit the powerful system prompts used by the LLM Enhancer.
+- **Bot Control:** Start/Stop the bot script and view its live log output.
+- **Tools Menu:** Install/Update Custom Nodes, Scan for new models/checkpoints/CLIPs, and refresh the LLM models list.
 
 **Important Notes:**
-- Changes made in the Configurator (especially paths, API keys, and LLM Prompts) often require **restarting the `main_bot.py` script** to take effect (use the "Bot Control" tab).
-- LoRA Styles (`--style [name]`) apply predefined LoRA configurations. Manage them in the Configurator's "LoRA Styles" tab.
-- The bot distinguishes between Flux and SDXL workflows based on the selected model in `/settings` (or via `model_type_override` in certain actions). Ensure your selected model prefix (e.g., "Flux: model.gguf" or "SDXL: checkpoint.safetensors") is correct.
+- Changes made in the Configurator (especially paths and API keys) require **restarting the bot script** to take effect (use the "Bot Control" tab).
+- The bot distinguishes between Flux and SDXL workflows based on the model selected in `/settings`. Ensure your selected model has the correct prefix (e.g., "Flux: model.gguf" or "SDXL: checkpoint.safetensors").
 
 Enjoy creating! ❤️ BobsBlazed @Tenos.ai
