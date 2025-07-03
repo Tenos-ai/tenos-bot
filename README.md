@@ -9,6 +9,8 @@
 - **Hotfix 1**: Fixed a job cancellation issue, improved first-time setup with venv creation, enhanced LLM support for new models, and added a tool to pull complete LLM model lists from the GUI.
 
 **PLANED UPDATES**
+
+- self-update tool/update notifications
 - New GUI
 
 ----------
