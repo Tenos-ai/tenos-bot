@@ -18,7 +18,7 @@ class EditorConfigManager:
         self.llm_models_data_for_settings_template = {}
         
         self.settings_last_mtime = 0
-
+        
         self.config_template_definition = {
             "OUTPUTS": {"UPSCALES": "", "VARIATIONS": "", "GENERATIONS": ""},
             "MODELS": {"MODEL_FILES": "", "CHECKPOINTS_FOLDER": "", "UPSCALE_MODELS": "", "VAE_MODELS": ""},
@@ -33,13 +33,24 @@ class EditorConfigManager:
             "LLM_ENHANCER": {"OPENAI_API_KEY": "", "GEMINI_API_KEY": "", "GROQ_API_KEY": ""},
         }
         self.settings_template_factory = lambda: {
-             "selected_model": None, "steps": 32, "selected_t5_clip": None,
-             "selected_clip_l": None, "selected_upscale_model": None, "selected_vae": None,
-             "default_style": "off", "default_variation_mode": "weak", "default_batch_size": 1,
-             "default_guidance": 3.5, "default_guidance_sdxl": 7.0,
-             "default_sdxl_negative_prompt": "", "default_mp_size": "1",
-             "remix_mode": False, "upscale_factor": 1.85,
-             "llm_enhancer_enabled": False, "llm_provider": "gemini",
+             "selected_model": None, 
+             "selected_kontext_model": None,
+             "steps": 32, 
+             "selected_t5_clip": None,
+             "selected_clip_l": None, 
+             "selected_upscale_model": None, 
+             "selected_vae": None,
+             "default_style": "off", 
+             "default_variation_mode": "weak", 
+             "default_batch_size": 1,
+             "default_guidance": 3.5, 
+             "default_guidance_sdxl": 7.0,
+             "default_sdxl_negative_prompt": "", 
+             "default_mp_size": "1",
+             "remix_mode": False, 
+             "upscale_factor": 1.85,
+             "llm_enhancer_enabled": False, 
+             "llm_provider": "gemini",
              "llm_model_gemini": self._get_default_llm_model_for_provider("gemini", "gemini-1.5-flash"),
              "llm_model_groq": self._get_default_llm_model_for_provider("groq", "llama3-8b-8192"),
              "llm_model_openai": self._get_default_llm_model_for_provider("openai", "gpt-3.5-turbo"),
