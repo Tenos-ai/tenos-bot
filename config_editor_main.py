@@ -56,6 +56,16 @@ class ConfigEditor:
         self.style = ttk.Style()
         self._configure_main_editor_style()
 
+        self.bot_process = None
+        self.log_queue = queue.Queue()
+        self.stop_readers = threading.Event()
+        self.reader_threads = []
+        self.worker_queue = queue.Queue()
+        self.worker_thread = None
+        self.config_vars = {}
+        self.settings_vars = {}
+        self.bot_settings_widgets = {}
+
         def silence_bell_global(): pass
         self.master.bell = silence_bell_global
         self.master.option_add('*Dialog.msg.font', ('Arial', 10))
@@ -67,13 +77,6 @@ class ConfigEditor:
         self.master.option_add("*TCombobox*Listbox.font", ('Arial', 9))
 
         self._set_application_icon()
-
-        self.bot_process = None
-        self.log_queue = queue.Queue()
-        self.stop_readers = threading.Event()
-        self.reader_threads = []
-        self.worker_queue = queue.Queue()
-        self.worker_thread = None
 
         self.llm_models_config = load_llm_models_config_util()
         self.llm_prompts_config = load_llm_prompts_config_util()
@@ -92,10 +95,6 @@ class ConfigEditor:
         self.available_upscale_models = ["None"]
         self.available_vaes = ["None"]
         self.load_available_files()
-
-        self.config_vars = {}
-        self.settings_vars = {}
-        self.bot_settings_widgets = {}
 
         self.provider_display_map = { k: v.get("display_name", k.capitalize()) for k, v in self.llm_models_config.get("providers", {}).items() }
         self.display_prompt_map = { "enhanced": "Show Enhanced Prompt ✨", "original": "Show Original Prompt ✍️" }
@@ -320,6 +319,7 @@ class ConfigEditor:
         ttk.Label(settings_content_grid,text="Core Defaults",style=BOLD_TLABEL_STYLE).grid(row=current_row_idx,column=0,columnspan=2,sticky='w',pady=(10,5),padx=5); current_row_idx+=1
         combined_model_names = [f"Flux: {m}" for m in self.available_models] + [f"SDXL: {c}" for c in self.available_checkpoints]
         create_setting_row_ui("Selected Model", ttk.Combobox, combined_model_names, 'selected_model')
+        create_setting_row_ui("Selected Kontext Model", ttk.Combobox, self.available_models, 'selected_kontext_model')
         create_setting_row_ui("Selected T5 Clip", ttk.Combobox, self.available_clips_t5, 'selected_t5_clip')
         create_setting_row_ui("Selected Clip-L", ttk.Combobox, self.available_clips_l, 'selected_clip_l')
         create_setting_row_ui("Selected Upscale Model", ttk.Combobox, self.available_upscale_models, 'selected_upscale_model')
@@ -499,7 +499,8 @@ class ConfigEditor:
     def _worker_install_custom_nodes(self):
         custom_nodes_path_str = self.config_manager.config.get('NODES',{}).get('CUSTOM_NODES')
         if not (custom_nodes_path_str and isinstance(custom_nodes_path_str,str) and os.path.isdir(custom_nodes_path_str)):
-            msg_err = "Custom Nodes path not set/invalid in Main Config."; self.log_queue.put(("stderr", f"Install Custom Nodes Error: {msg_err}\n")); return msg_err
+            msg_err = "Custom Nodes path not set or invalid in Main Config."; self.log_queue.put(("stderr", f"Install Custom Nodes Error: {msg_err}\n")); return msg_err
+        # CORRECTED: Removed the non-existent Extraltodeus repository
         repositories_to_install = ["https://github.com/rgthree/rgthree-comfy.git", "https://github.com/ssitu/ComfyUI_UltimateSDUpscale.git", "https://github.com/jamesWalker55/comfyui-various.git", "https://github.com/city96/ComfyUI-GGUF.git", "https://github.com/tsogzark/ComfyUI-load-image-from-url.git","https://github.com/BobsBlazed/Bobs_Latent_Optimizer.git","https://github.com/Tenos-ai/Tenos-Resize-to-1-M-Pixels.git"]
         installation_results = []; errors_encountered_install = False
         for idx, repo_url_str in enumerate(repositories_to_install):
@@ -551,14 +552,8 @@ class ConfigEditor:
                 response = requests.get("https://api.openai.com/v1/models", headers=headers, timeout=10)
                 response.raise_for_status()
                 models = response.json().get('data', [])
-                
                 chat_model_prefixes = ['gpt-4', 'gpt-3.5', 'o1', 'o3', 'o4']
-                
-                openai_model_ids = sorted([
-                    m['id'] for m in models 
-                    if any(m['id'].startswith(p) for p in chat_model_prefixes)
-                ])
-                
+                openai_model_ids = sorted([m['id'] for m in models if any(m['id'].startswith(p) for p in chat_model_prefixes)])
                 updated_models_data['providers']['openai']['models'] = openai_model_ids
                 results_log.append(f"OpenAI: Found {len(openai_model_ids)} chat models.")
             except Exception as e:
@@ -585,10 +580,7 @@ class ConfigEditor:
                 response = requests.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_key}", timeout=10)
                 response.raise_for_status()
                 models = response.json().get('models', [])
-                gemini_model_ids = sorted([
-                    m['name'].replace('models/', '') for m in models 
-                    if any('generateContent' in method for method in m.get('supportedGenerationMethods', []))
-                ])
+                gemini_model_ids = sorted([m['name'].replace('models/', '') for m in models if 'generateContent' in m.get('supportedGenerationMethods', [])])
                 updated_models_data['providers']['gemini']['models'] = gemini_model_ids
                 results_log.append(f"Gemini: Found {len(gemini_model_ids)} chat models.")
             except Exception as e:
