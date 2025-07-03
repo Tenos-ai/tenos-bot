@@ -8,6 +8,7 @@ import traceback
 import re
 import requests
 from io import BytesIO
+import math
 
 from bot_config_loader import config, COMFYUI_HOST, COMFYUI_PORT, ADMIN_USERNAME
 from queue_manager import queue_manager
@@ -17,12 +18,13 @@ from comfyui_api import queue_prompt as comfy_queue_prompt, ConnectionRefusedErr
 from websocket_client import WebsocketClient
 
 from image_generation import modify_prompt as ig_modify_prompt
-from upscaling import modify_upscale_prompt as up_modify_upscale_prompt
+from upscaling import modify_upscale_prompt as up_modify_upscale_prompt, get_image_dimensions
 from variation import modify_weak_variation_prompt, modify_strong_variation_prompt
-
+from kontext_editing import modify_kontext_prompt
+from utils.seed_utils import generate_seed
 from utils.show_prompt import reconstruct_full_prompt_string
-from utils.message_utils import send_long_message 
-from utils.llm_enhancer import enhance_prompt as util_enhance_prompt, FLUX_ENHANCER_SYSTEM_PROMPT, SDXL_ENHANCER_SYSTEM_PROMPT
+from utils.message_utils import send_long_message, safe_interaction_response
+from utils.llm_enhancer import enhance_prompt as util_enhance_prompt, FLUX_ENHANCER_SYSTEM_PROMPT, SDXL_ENHANCER_SYSTEM_PROMPT, KONTEXT_ENHANCER_SYSTEM_PROMPT
 
 _bot_instance_core = None
 def register_bot_instance_for_core(bot_instance):
@@ -93,13 +95,10 @@ async def update_job_progress(bot, prompt_id, current_step, max_steps, image_dat
         progress_bar = f"**Status:** Generating: [ {'● ' * filled_blocks}{'◌ ' * empty_blocks}] {int(percentage)}%"
         
         original_content = message.content
-        # DEBUG: print(f"Original content for prompt {prompt_id}:\n---\n{original_content}\n---")
         new_content = re.sub(r'> \*\*Status:\*\*.*', f'> {progress_bar}', original_content, flags=re.MULTILINE)
         
         if new_content != original_content:
             edit_kwargs['content'] = new_content
-        # DEBUG: else:
-        # DEBUG:    print(f"Regex failed to replace status for prompt {prompt_id}. Pattern not found.")
 
     if image_data:
         now = asyncio.get_event_loop().time()
@@ -222,6 +221,7 @@ async def process_completed_job(bot, job_id, job_data, file_paths: list):
         job_type_info_str = f" ({job_model_type.upper()})"
         if job_type_display_str.lower() == 'upscale': job_type_info_str = f" (Upscaled {job_data.get('upscale_factor', '?x')}{job_type_info_str})"
         elif job_type_display_str.lower() == 'variation': job_type_info_str = f" ({job_data.get('variation_type', '?').capitalize()} Variation{job_type_info_str})"
+        elif job_type_display_str.lower() == 'kontext_edit': job_type_info_str = f" (Kontext Edit)"
         elif batch_size > 1: job_type_info_str += f", **Batch:** `{batch_size}`"
         final_content += job_type_info_str
         if job_model_type == "sdxl" and job_data.get('negative_prompt'): final_content += f"\n> **No:** `{textwrap.shorten(job_data['negative_prompt'], 100, placeholder='...')}`"
@@ -597,8 +597,12 @@ async def process_variation_request(context_user, context_channel, referenced_me
     message_content_var = initial_interaction_obj.message.content if is_interaction and initial_interaction_obj and initial_interaction_obj.message else ""
 
     modify_func_var = modify_weak_variation_prompt if variation_type_str == 'weak' else modify_strong_variation_prompt
-    job_id_var, mod_prompt_var, resp_status_var, job_details_var = modify_func_var(message_content_var, referenced_message_obj, target_attachment_var.url, image_idx, edited_prompt_str, edited_neg_prompt_str)
+    
+    job_id_var, mod_prompt_var, resp_status_var, job_details_var = modify_func_var(
+        message_content_var, referenced_message_obj, target_attachment_var.url, image_idx, edited_prompt_str, edited_neg_prompt_str
+    )
     if not job_id_var: return [{"status": "error", "error_message_text": resp_status_var or "Failed to prepare variation."}]
+    
     comfy_id_var = None; queue_err_var = None
     try: comfy_id_var = comfy_queue_prompt(mod_prompt_var, COMFYUI_HOST, COMFYUI_PORT)
     except ComfyConnectionRefusedError as e_conn_ref_var: queue_err_var = f"Error: Could not connect to ComfyUI ({e_conn_ref_var})."
@@ -664,3 +668,124 @@ async def process_rerun_request(context_user, context_channel, referenced_messag
         model_type_override=model_type_for_rerun, 
         is_derivative_action=True 
     )
+
+async def process_kontext_edit_request(
+    context_user: discord.User,
+    context_channel: discord.abc.Messageable,
+    instruction: str,
+    image_urls: list,
+    initial_interaction_obj: discord.Interaction | None = None
+):
+    """Handles a Kontext edit request from start to finish."""
+    await _ensure_ws_client_id()
+    settings = load_settings()
+    
+    param_pattern = r'\s--(\w+)(?:\s+("([^"]*)"|((?:(?!--|\s--).)+)|([^\s]+)))?'
+    params_dict = {}
+    clean_instruction = instruction
+    first_param_match = re.search(r'\s--\w+', instruction)
+    
+    if first_param_match:
+        clean_instruction = instruction[:first_param_match.start()].strip()
+        param_string = instruction[first_param_match.start():]
+        param_matches = re.findall(param_pattern, param_string)
+        for key, _, quoted_val, unquoted_compound, unquoted_single in param_matches:
+            value = quoted_val if quoted_val else (unquoted_compound if unquoted_compound else unquoted_single)
+            params_dict[key.lower()] = value.strip() if value else True
+
+    enhancer_info = {'used': False, 'provider': None, 'enhanced_text': None, 'error': None}
+    enhanced_instruction = clean_instruction
+    
+    if settings.get('llm_enhancer_enabled', False):
+        enhancer_info['provider'] = settings.get('llm_provider', 'gemini')
+        enhanced_res, err_msg = await util_enhance_prompt(
+            clean_instruction, 
+            system_prompt_text_override=KONTEXT_ENHANCER_SYSTEM_PROMPT, 
+            target_model_type="kontext",
+            image_urls=image_urls
+        )
+        if enhanced_res:
+            enhanced_instruction = enhanced_res
+            enhancer_info.update({'used': True, 'enhanced_text': enhanced_res})
+        elif err_msg:
+            enhancer_info['error'] = err_msg
+
+    primary_image_url = image_urls[0]
+    dimensions = await asyncio.to_thread(get_image_dimensions, primary_image_url)
+    final_aspect_ratio = "1:1"
+    if dimensions:
+        w, h = dimensions
+        if h > 0:
+            common_divisor = math.gcd(w, h)
+            final_aspect_ratio = f"{w//common_divisor}:{h//common_divisor}"
+    
+    if params_dict.get('ar') and re.match(r'^\d+:\d+$', str(params_dict['ar'])):
+        final_aspect_ratio = str(params_dict['ar'])
+
+    final_steps = settings.get('steps', 32)
+    if params_dict.get('steps') and str(params_dict.get('steps')).isdigit():
+        final_steps = int(params_dict['steps'])
+
+    final_guidance = 3.0
+    if params_dict.get('g'):
+        try:
+            final_guidance = float(params_dict['g'])
+        except (ValueError, TypeError): pass
+
+    seed = generate_seed()
+    source_job_id = "slash_command"
+    if initial_interaction_obj and initial_interaction_obj.message and initial_interaction_obj.message.attachments:
+        source_job_id = extract_job_id(initial_interaction_obj.message.attachments[0].filename) or "unknown"
+
+    job_id, workflow_payload, status_msg, job_details = modify_kontext_prompt(
+        image_urls=image_urls,
+        instruction=enhanced_instruction,
+        user_settings=settings,
+        base_seed=seed,
+        aspect_ratio=final_aspect_ratio,
+        steps_override=final_steps,
+        guidance_override=final_guidance,
+        source_job_id=source_job_id
+    )
+    
+    if not workflow_payload:
+        await safe_interaction_response(initial_interaction_obj, f"Error: {status_msg}", ephemeral=True)
+        return
+
+    comfy_id = None
+    try:
+        comfy_id = comfy_queue_prompt(workflow_payload, COMFYUI_HOST, COMFYUI_PORT)
+    except Exception as e:
+        await safe_interaction_response(initial_interaction_obj, f"Error queueing job with ComfyUI: {e}", ephemeral=True)
+        return
+        
+    if not comfy_id:
+        await safe_interaction_response(initial_interaction_obj, "Failed to queue job with ComfyUI (unknown error).", ephemeral=True)
+        return
+
+    from bot_ui_components import QueuedJobView
+    
+    content = (f"{context_user.mention}: Editing with Kontext...\n"
+               f"> **Instruction:** `{textwrap.shorten(instruction, 100, placeholder='...')}`\n"
+               f"> **Images:** {len(image_urls)}, **AR:** `{final_aspect_ratio}`, **Seed:** `{seed}`\n"
+               f"> **Status:** Queued...")
+    
+    if enhancer_info['used']:
+        content += " ✨"
+    
+    view = QueuedJobView(comfy_prompt_id=comfy_id)
+    sent_message = await safe_interaction_response(initial_interaction_obj, content=content, view=view)
+    
+    if sent_message:
+        job_data_for_qm = {
+            "comfy_prompt_id": comfy_id, "channel_id": context_channel.id,
+            "user_id": context_user.id, "user_name": context_user.name,
+            "user_mention": context_user.mention, "message_id": sent_message.id,
+            "enhancer_used": enhancer_info['used'], "llm_provider": enhancer_info['provider'],
+            "original_prompt": instruction, "enhanced_prompt": enhanced_instruction,
+            "enhancer_error": enhancer_info['error'], **job_details
+        }
+        queue_manager.add_job(job_id, job_data_for_qm)
+        ws_client = WebsocketClient()
+        if ws_client.is_connected:
+            await ws_client.register_prompt(comfy_id, sent_message.id, sent_message.channel.id)
