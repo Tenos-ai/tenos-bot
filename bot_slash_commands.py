@@ -2,11 +2,11 @@ import discord
 from discord import app_commands
 import textwrap
 import traceback
-import json
-import re
-from io import StringIO
-import asyncio
-import requests
+import json 
+import re 
+from io import StringIO 
+import asyncio 
+import requests 
 
 from bot_config_loader import ADMIN_ID, ALLOWED_USERS, COMFYUI_HOST, COMFYUI_PORT
 from bot_commands import handle_gen_command
@@ -14,6 +14,7 @@ from bot_settings_ui import MainSettingsButtonView
 from utils.message_utils import send_long_message, safe_interaction_response
 from settings_manager import load_settings, load_styles_config
 from comfyui_api import get_available_comfyui_models
+from bot_core_logic import process_kontext_edit_request
 
 _bot_instance_slash = None
 def register_bot_instance_for_slash(bot_instance):
@@ -23,13 +24,9 @@ def register_bot_instance_for_slash(bot_instance):
 def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
     register_bot_instance_for_slash(bot_ref)
 
-    
     def has_permission(user: discord.User, permission_key: str) -> bool:
-        """Checks if a user has a specific permission."""
-        
         if str(user.id) == ADMIN_ID:
             return True
-        
         user_config = ALLOWED_USERS.get(str(user.id), {})
         return user_config.get(permission_key, False)
 
@@ -41,7 +38,7 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
 
 
     @tree.command(name="gen", description="Generate image(s). Use --no for SDXL negative. See /help for all options.")
-    @app_commands.describe(prompt="Prompt text + optional parameters (--seed, --g, --g_sdxl, --ar, --mp, --img, --style, --r, --no)")
+    @app_commands.describe(prompt="Prompt text + optional parameters (--seed, --g, --g_sdxl, --ar, --mp, --style, --r, --no)")
     async def gen(interaction: discord.Interaction, prompt: str):
         if not has_permission(interaction.user, "can_gen"):
             await interaction.response.send_message(
@@ -49,15 +46,51 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
                 ephemeral=True
             )
             return
-
         await handle_gen_command(interaction, prompt)
+
+
+    @tree.command(name="edit", description="Edit image(s) with an instruction using FLUX Kontext. Add --ar, --steps, --g.")
+    @app_commands.describe(
+        instruction="The command for editing the image (e.g., 'make the sky blue').",
+        image1="The primary image to edit.",
+        image2="(Optional) A second image for stitching/editing.",
+        image3="(Optional) A third image for stitching/editing.",
+        image4="(Optional) A fourth image for stitching/editing."
+    )
+    async def edit(
+        interaction: discord.Interaction,
+        instruction: str,
+        image1: discord.Attachment,
+        image2: discord.Attachment = None,
+        image3: discord.Attachment = None,
+        image4: discord.Attachment = None
+    ):
+        if not has_permission(interaction.user, "can_gen"):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=False, thinking=True)
+        
+        image_urls = [att.url for att in [image1, image2, image3, image4] if att is not None]
+
+        for att in [image1, image2, image3, image4]:
+            if att and not att.content_type.startswith('image/'):
+                await interaction.followup.send(f"Error: File '{att.filename}' is not a valid image. Please only upload images.", ephemeral=True)
+                return
+
+        await process_kontext_edit_request(
+            context_user=interaction.user,
+            context_channel=interaction.channel,
+            instruction=instruction,
+            image_urls=image_urls,
+            initial_interaction_obj=interaction
+        )
 
 
     @tree.command(name="styles", description="View available style names for use with --style.")
     async def styles(interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         styles_data = load_styles_config()
-        
         
         styles_with_types = []
         for name, data in styles_data.items():
@@ -71,22 +104,19 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
             await interaction.followup.send("No custom styles are currently configured.", ephemeral=True)
             return
             
-        
         styles_with_types.sort(key=lambda s: (not s['favorite'], s['type'], s['name'].lower()))
 
         msg = "**Available styles (`--style name`):**\n"
         
-        
         max_len = 0
         for s in styles_with_types:
-            # Format: ⭐ [TYPE] name
-            item_len = len(s['name']) + len(s['type']) + 4 # for "[TYPE] "
+            item_len = len(s['name']) + len(s['type']) + 4 
             if s['favorite']:
-                item_len += 2 # for "⭐ "
+                item_len += 2 
             if item_len > max_len:
                 max_len = item_len
         
-        cols = max(1, 80 // (max_len + 4)) # +4 for backticks and spacing
+        cols = max(1, 80 // (max_len + 4)) 
         col_items = (len(styles_with_types) + cols - 1) // cols
         
         lines = []
@@ -97,9 +127,7 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
                 if idx < len(styles_with_types):
                     style = styles_with_types[idx]
                     prefix = "⭐ " if style['favorite'] else ""
-                    
                     formatted_name = f"`{prefix}[{style['type']}] {style['name']}`"
-                    
                     line_parts.append(formatted_name.ljust(max_len + 4 + len(prefix)))
             lines.append(" ".join(line_parts).strip())
             
@@ -110,13 +138,12 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
             await interaction.followup.send("Available styles list sent via DM.", ephemeral=True)
         else:
             try:
-                
                 if len(msg) > 2000:
                     msg = msg[:1990] + "\n... (list truncated)"
                 if interaction.channel:
                     await interaction.channel.send(msg)
                     await interaction.followup.send("(Could not send via DM, styles list shown in channel instead)", ephemeral=True)
-                else:
+                else: 
                     await interaction.followup.send("Could not send styles list (channel unavailable).", ephemeral=True)
             except discord.HTTPException:
                 await interaction.followup.send("Could not send styles list (message too long for DM/channel).", ephemeral=True)
@@ -131,7 +158,6 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
         if str(interaction.user.id) == admin_id_str:
             await interaction.response.send_message("You are the admin. Please use the `/gen` command directly.", ephemeral=True)
             return
-        
         if has_permission(interaction.user, "can_gen"):
             await interaction.response.send_message(f"You already have permission to use `/gen` directly.", ephemeral=True)
             return
@@ -274,6 +300,7 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
             "**🤖 Tenos.ai Bot Help! 🤖**\n\n"
             "**Core Commands:**\n"
             "`/gen [prompt] [opts]` - Generate image(s).\n"
+            "`/edit [instruction] [images] [opts]` - Edit image(s) with a command. Supports `--ar`, `--steps`, `--g`.\n"
             "`/please [prompt] [opts]` - Request an image generation from the admin.\n"
             "`/styles` - View available style presets.\n"
             "`/help` - Show this help message.\n\n"
@@ -281,7 +308,7 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
             "`Upscale ⬆️` - Upscale an image for more detail.\n"
             "`Vary W 🤏` / `Vary S 💪` - Create a weak or strong variation of an image.\n"
             "`Rerun 🔄` - Rerun the original prompt with a new random seed.\n"
-            "`Edit ✏️` - Open a modal to edit the prompt and regenerate.\n"
+            "`Edit ✏️` - Open a modal to perform a Kontext edit on the image(s).\n"
             "`Delete 🗑️` - Delete the image and its source file.\n\n"
             "**Optional Parameters (for /gen and /please):**\n"
             "`--seed [number]` - Use a specific seed.\n"
@@ -358,4 +385,3 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
             dm_sent = await send_long_message(interaction.user, model_info)
             await interaction.followup.send("Model list sent via DM." if dm_sent else f"Found models but could not send DM (message too long or DMs disabled).", ephemeral=True)
         except Exception as e: await interaction.followup.send(f"Error getting models: {e}", ephemeral=True); traceback.print_exc()
-
