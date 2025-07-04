@@ -227,7 +227,7 @@ class ConfigEditor:
     def populate_main_config_sub_tabs(self):
         self.config_vars.clear()
         
-        # Destroy old widgets before repopulating
+        
         for parent_frame in [self.paths_tab_frame, self.endpoints_tab_frame, self.api_keys_tab_frame, self.app_settings_tab_frame]:
             for widget in parent_frame.winfo_children():
                 widget.destroy()
@@ -530,10 +530,22 @@ class ConfigEditor:
             return msg
 
         try:
+            
+            if repo.head.is_detached:
+                self.log_queue.put(("worker", "HEAD is detached. Attempting to checkout 'main' branch...\n"))
+                try:
+                    repo.git.checkout('main')
+                    self.log_queue.put(("info", "Successfully checked out 'main' branch.\n"))
+                except git.GitCommandError as e_checkout:
+                    msg = f"Could not checkout 'main' branch: {e_checkout.stderr}. Please resolve the repository state manually. Update aborted."
+                    self.log_queue.put(("stderr", msg + "\n"))
+                    return msg
+
             origin = repo.remotes.origin
             self.log_queue.put(("worker", "Fetching updates from origin...\n"))
             origin.fetch(prune=True)
-
+            
+            
             tracking_branch = repo.head.reference.tracking_branch()
             if not tracking_branch:
                 msg = "Update failed: Current branch is not tracking a remote branch."
@@ -567,8 +579,8 @@ class ConfigEditor:
             self.log_queue.put(("info", msg + "\n"))
             return msg
 
-        except git.GitCommandError as e:
-            error_msg = f"Git command failed: {e.stderr}"
+        except (git.GitCommandError, TypeError) as e:
+            error_msg = f"Git command failed: {getattr(e, 'stderr', str(e))}"
             self.log_queue.put(("stderr", error_msg + "\n"))
             return error_msg
         except Exception as e:
