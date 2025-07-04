@@ -35,7 +35,7 @@ class EditorConfigManager:
         }
         self.settings_template_factory = lambda: {
              "selected_model": None, 
-             "selected_kontext_model": None, # NEW
+             "selected_kontext_model": None,
              "steps": 32, 
              "selected_t5_clip": None,
              "selected_clip_l": None, 
@@ -135,12 +135,10 @@ class EditorConfigManager:
 
             if save_json_config(CONFIG_FILE_NAME, config_to_write, "main application config"):
                 self.config = config_to_write
-                if show_success_message: silent_showinfo("Success", "Main configuration saved successfully!", parent=self.editor_app.master)
-                self.editor_app.load_available_files()
-                self.editor_app.populate_bot_settings_tab()
-                if hasattr(self.editor_app, 'lora_styles_tab_manager'): self.editor_app.lora_styles_tab_manager.populate_lora_styles_tab()
-                if hasattr(self.editor_app, 'favorites_tab_manager'): self.editor_app.favorites_tab_manager.populate_all_favorites_sub_tabs()
-                if hasattr(self.editor_app, 'admin_control_tab_manager'): self.editor_app.admin_control_tab_manager.populate_admin_tab()
+                if show_success_message:
+                    silent_showinfo("Success", "Main configuration saved successfully!", parent=self.editor_app.master)
+                    
+                    self.editor_app.master.after(50, self.editor_app.refresh_all_ui_tabs)
         except Exception as e_save:
             silent_showerror("Save Error", f"Failed to save main config: {str(e_save)}", parent=self.editor_app.master)
             traceback.print_exc()
