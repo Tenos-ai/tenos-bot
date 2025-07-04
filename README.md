@@ -4,7 +4,7 @@
 
 **COMPLETED UPDATES**
 **7/4/25**
-- **Update 2**: added auto update feature so the app and repo stay in sync without needing to download the zip over and over as I add features. update on startup can be turned on and off in `main config` > `app settings`.
+- **Update 2**: added auto update feature so the app and repo stay in sync without needing to download the zip over and over as I add features. The automatic update on startup can be turned on and off in `main config` > `app settings`. Updates can also be triggered manually via `Tools` > `Update Application`.
 
 **7/2/25**
 - **Update 1**: Integrated **FLUX Kontext** for powerful instruction-based image editing and stitching via the new `/edit` command. The LLM Enhancer now supports multi-modal vision to better interpret edit instructions.
