@@ -122,6 +122,7 @@ class ConfigEditor:
         if self.master.winfo_exists():
             self.master.after(100, self._process_gui_updates_loop)
             self.master.after(200, self._check_for_first_run)
+            self.master.after(500, self._check_for_startup_update)
             self.master.after(2000, self._check_settings_file_for_changes)
 
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing_main_window)
@@ -143,6 +144,8 @@ class ConfigEditor:
         file_menu.add_command(label="Exit", command=self.on_closing_main_window)
         self.menu_bar.add_cascade(label="File", menu=file_menu)
         tools_menu = tk.Menu(self.menu_bar, tearoff=0, bg=WIDGET_BG, fg=TEXT_COLOR_NORMAL, relief="flat", activebackground=SELECT_BG_COLOR, activeforeground=SELECT_FG_COLOR)
+        tools_menu.add_command(label="Update Application", command=lambda: self.run_worker_task_on_editor(self._worker_update_application, "Updating Application"))
+        tools_menu.add_separator(background=BORDER_COLOR)
         tools_menu.add_command(label="Install/Update Custom Nodes", command=lambda: self.run_worker_task_on_editor(self._worker_install_custom_nodes, "Installing Nodes"))
         tools_menu.add_command(label="Scan Models/Clips/Checkpoints", command=lambda: self.run_worker_task_on_editor(self._worker_scan_models_clips_checkpoints, "Scanning Files"))
         tools_menu.add_command(label="Refresh LLM Models List", command=lambda: self.run_worker_task_on_editor(self._worker_update_llm_models_list, "Refreshing LLMs"))
@@ -204,10 +207,12 @@ class ConfigEditor:
         self.paths_tab_frame = ttk.Frame(self.main_config_notebook, padding="10", style="Tenos.TFrame")
         self.endpoints_tab_frame = ttk.Frame(self.main_config_notebook, padding="10", style="Tenos.TFrame")
         self.api_keys_tab_frame = ttk.Frame(self.main_config_notebook, padding="10", style="Tenos.TFrame")
+        self.app_settings_tab_frame = ttk.Frame(self.main_config_notebook, padding="10", style="Tenos.TFrame")
         
         self.main_config_notebook.add(self.paths_tab_frame, text=" File Paths ")
         self.main_config_notebook.add(self.endpoints_tab_frame, text=" Endpoint URLs ")
         self.main_config_notebook.add(self.api_keys_tab_frame, text=" API Keys ")
+        self.main_config_notebook.add(self.app_settings_tab_frame, text=" App Settings ")
         
         ttk.Button(self.main_config_tab_frame, text="Save Main Config", command=self.config_manager.save_main_config_data).pack(side="bottom", pady=10)
         
@@ -247,6 +252,17 @@ class ConfigEditor:
             ttk.Label(self.api_keys_tab_frame, text=section.replace("_", " ").title(), style=BOLD_TLABEL_STYLE).pack(fill=tk.X, pady=(10,5))
             for key in self.config_manager.config_template_definition[section]:
                 create_config_row(self.api_keys_tab_frame, section, key)
+
+        for widget in self.app_settings_tab_frame.winfo_children(): widget.destroy()
+        app_settings = self.config_manager.config.get("APP_SETTINGS", {})
+        auto_update_var = tk.BooleanVar(value=app_settings.get("AUTO_UPDATE_ON_STARTUP", True))
+        self.config_vars["APP_SETTINGS.AUTO_UPDATE_ON_STARTUP"] = auto_update_var
+        auto_update_check = tk.Checkbutton(self.app_settings_tab_frame, 
+                                           text="Automatically check for updates on startup", 
+                                           variable=auto_update_var,
+                                           style="Tenos.TCheckbutton")
+        auto_update_check.pack(anchor='w', padx=5, pady=5)
+
 
     def _browse_folder_for_main_config(self, section_name, key_name):
         var_lookup_key = f"{section_name}.{key_name}"
@@ -496,11 +512,70 @@ class ConfigEditor:
         self.worker_queue.put({"type":"task_complete","task_name":task_name_ui,"success":success_flag_worker,"message":message_str_worker})
         self.log_queue.put(("info",f"--- Finished {task_name_ui} (Success: {success_flag_worker}) ---\n"))
 
+    def _worker_update_application(self):
+        """Worker task to update the application from Git."""
+        repo_url = "https://github.com/Tenos-ai/tenos-bot.git"
+        try:
+            repo = git.Repo(search_parent_directories=True)
+            self.log_queue.put(("worker", f"Found Git repository at: {repo.working_dir}\n"))
+        except git.InvalidGitRepositoryError:
+            msg = "Application directory is not a Git repository. Cannot auto-update. Please re-download from GitHub."
+            self.log_queue.put(("stderr", msg + "\n"))
+            return msg
+
+        try:
+            origin = repo.remotes.origin
+            self.log_queue.put(("worker", "Fetching updates from origin...\n"))
+            origin.fetch(prune=True)
+
+            tracking_branch = repo.head.reference.tracking_branch()
+            if not tracking_branch:
+                msg = "Update failed: Current branch is not tracking a remote branch."
+                self.log_queue.put(("stderr", msg + "\n"))
+                return msg
+
+            local_commit = repo.head.commit
+            remote_commit = tracking_branch.commit
+
+            if local_commit == remote_commit:
+                msg = "Application is already up to date."
+                self.log_queue.put(("info", msg + "\n"))
+                return msg
+            
+            self.log_queue.put(("worker", f"Updates found. Local: {local_commit.hexsha[:7]}, Remote: {remote_commit.hexsha[:7]}\n"))
+
+            if repo.is_dirty(untracked_files=True):
+                self.log_queue.put(("stderr", "Warning: Local changes detected. Stashing changes before update...\n"))
+                try:
+                    repo.git.stash()
+                    self.log_queue.put(("worker", "Local changes stashed.\n"))
+                except git.GitCommandError as e_stash:
+                    msg = f"Could not stash local changes: {e_stash.stderr}. Update aborted."
+                    self.log_queue.put(("stderr", msg + "\n"))
+                    return msg
+
+            self.log_queue.put(("worker", "Pulling latest changes...\n"))
+            origin.pull()
+
+            msg = "Application updated successfully. Please restart the configurator for changes to take effect."
+            self.log_queue.put(("info", msg + "\n"))
+            return msg
+
+        except git.GitCommandError as e:
+            error_msg = f"Git command failed: {e.stderr}"
+            self.log_queue.put(("stderr", error_msg + "\n"))
+            return error_msg
+        except Exception as e:
+            error_msg = f"An unexpected error occurred during update: {e}"
+            self.log_queue.put(("stderr", error_msg + "\n"))
+            traceback.print_exc()
+            return error_msg
+
     def _worker_install_custom_nodes(self):
         custom_nodes_path_str = self.config_manager.config.get('NODES',{}).get('CUSTOM_NODES')
         if not (custom_nodes_path_str and isinstance(custom_nodes_path_str,str) and os.path.isdir(custom_nodes_path_str)):
             msg_err = "Custom Nodes path not set or invalid in Main Config."; self.log_queue.put(("stderr", f"Install Custom Nodes Error: {msg_err}\n")); return msg_err
-        # CORRECTED: Removed the non-existent Extraltodeus repository
+        
         repositories_to_install = ["https://github.com/rgthree/rgthree-comfy.git", "https://github.com/ssitu/ComfyUI_UltimateSDUpscale.git", "https://github.com/jamesWalker55/comfyui-various.git", "https://github.com/city96/ComfyUI-GGUF.git", "https://github.com/tsogzark/ComfyUI-load-image-from-url.git","https://github.com/BobsBlazed/Bobs_Latent_Optimizer.git","https://github.com/Tenos-ai/Tenos-Resize-to-1-M-Pixels.git"]
         installation_results = []; errors_encountered_install = False
         for idx, repo_url_str in enumerate(repositories_to_install):
@@ -622,6 +697,16 @@ class ConfigEditor:
             if thread_item_cleanup.is_alive(): thread_item_cleanup.join(timeout=0.5)
         self.admin_control_tab_manager.save_user_cache_on_exit()
         if self.master.winfo_exists(): self.master.destroy()
+
+    def _check_for_startup_update(self):
+        """Checks if auto-update is enabled and runs the updater if so."""
+        try:
+            app_settings = self.config_manager.config.get("APP_SETTINGS", {})
+            if app_settings.get("AUTO_UPDATE_ON_STARTUP", True):
+                self.log_queue.put(("info", "--- Auto-update enabled, checking for updates... ---\n"))
+                self.run_worker_task_on_editor(self._worker_update_application, "Startup Update Check")
+        except Exception as e:
+            self.log_queue.put(("stderr", f"Error during startup update check: {e}\n"))
 
     def _check_for_first_run(self):
         """Shows a welcome/instruction dialog on the first launch."""
