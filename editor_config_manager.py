@@ -1,7 +1,7 @@
 import json
 import os
 import traceback
-from tkinter import scrolledtext
+from tkinter import scrolledtext, BooleanVar
 
 from editor_utils import load_json_config, save_json_config, silent_showerror, silent_showinfo
 from editor_constants import CONFIG_FILE_NAME, SETTINGS_FILE_NAME
@@ -18,7 +18,7 @@ class EditorConfigManager:
         self.llm_models_data_for_settings_template = {}
         
         self.settings_last_mtime = 0
-        
+
         self.config_template_definition = {
             "OUTPUTS": {"UPSCALES": "", "VARIATIONS": "", "GENERATIONS": ""},
             "MODELS": {"MODEL_FILES": "", "CHECKPOINTS_FOLDER": "", "UPSCALE_MODELS": "", "VAE_MODELS": ""},
@@ -28,13 +28,14 @@ class EditorConfigManager:
             "COMFYUI_API": {"HOST": "127.0.0.1", "PORT": 8188},
             "BOT_INTERNAL_API": {"HOST": "127.0.0.1", "PORT": 8189},
             "BOT_API": {"KEY": ""},
-            "ADMIN": {"USERNAME": ""},
+            "ADMIN": {"USERNAME": "", "ID": ""},
             "ALLOWED_USERS": {},
             "LLM_ENHANCER": {"OPENAI_API_KEY": "", "GEMINI_API_KEY": "", "GROQ_API_KEY": ""},
+            "APP_SETTINGS": {"AUTO_UPDATE_ON_STARTUP": True}
         }
         self.settings_template_factory = lambda: {
              "selected_model": None, 
-             "selected_kontext_model": None,
+             "selected_kontext_model": None, # NEW
              "steps": 32, 
              "selected_t5_clip": None,
              "selected_clip_l": None, 
@@ -117,10 +118,13 @@ class EditorConfigManager:
                     for sub_key in section_value:
                         ui_var_name = f"{section_key}.{sub_key}"
                         if ui_var_name in self.editor_app.config_vars:
-                            value_from_ui = self.editor_app.config_vars[ui_var_name].get()
+                            tk_var = self.editor_app.config_vars[ui_var_name]
+                            value_from_ui = tk_var.get()
                             if (section_key == "COMFYUI_API" or section_key == "BOT_INTERNAL_API") and sub_key == "PORT":
                                 try: config_to_write[section_key][sub_key] = int(value_from_ui)
                                 except (ValueError, TypeError): config_to_write[section_key][sub_key] = self.config_template_definition[section_key][sub_key]
+                            elif isinstance(tk_var, BooleanVar):
+                                config_to_write[section_key][sub_key] = value_from_ui
                             else: config_to_write[section_key][sub_key] = value_from_ui if value_from_ui is not None else ""
                         else: config_to_write[section_key][sub_key] = self.config.get(section_key, {}).get(sub_key, "")
                 else:
