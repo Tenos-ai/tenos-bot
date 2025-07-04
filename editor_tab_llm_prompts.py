@@ -24,38 +24,36 @@ class LLMPromptsTab:
         ttk.Button(self.llm_prompts_tab_frame, text="Save LLM Prompts", command=self.save_llm_prompts_data).pack(side=tk.BOTTOM, pady=10)
 
     def _create_prompt_editing_widgets(self):
-        """Creates the UI structure for editing LLM prompts."""
-        
-        flux_frame = ttk.LabelFrame(self.llm_prompts_tab_frame, text="Flux Enhancer System Prompt", padding=5, style="Tenos.TLabelframe")
-        flux_frame.pack(fill="both", expand=True, pady=(5, 2))
-        flux_text_widget = scrolledtext.ScrolledText(flux_frame, wrap=tk.WORD, height=10, width=80,
-                                                  font=("Consolas", 10), bg=ENTRY_BG_COLOR, fg=TEXT_COLOR_NORMAL,
-                                                  insertbackground=ENTRY_INSERT_COLOR, selectbackground=SELECT_BG_COLOR,
-                                                  selectforeground=SELECT_FG_COLOR, borderwidth=1, relief="sunken")
-        flux_text_widget.pack(fill="both", expand=True, padx=5, pady=5)
-        self.llm_prompt_widgets['enhancer_system_prompt'] = flux_text_widget
+        """Creates the UI structure for editing LLM prompts using a sub-notebook."""
+        llm_sub_notebook = ttk.Notebook(self.llm_prompts_tab_frame, style="Tenos.TNotebook")
+        llm_sub_notebook.pack(expand=True, fill="both", padx=0, pady=5)
 
         
-        sdxl_frame = ttk.LabelFrame(self.llm_prompts_tab_frame, text="SDXL Enhancer System Prompt", padding=5, style="Tenos.TLabelframe")
-        sdxl_frame.pack(fill="both", expand=True, pady=(2, 5))
-        sdxl_text_widget = scrolledtext.ScrolledText(sdxl_frame, wrap=tk.WORD, height=10, width=80,
-                                                  font=("Consolas", 10), bg=ENTRY_BG_COLOR, fg=TEXT_COLOR_NORMAL,
-                                                  insertbackground=ENTRY_INSERT_COLOR, selectbackground=SELECT_BG_COLOR,
-                                                  selectforeground=SELECT_FG_COLOR, borderwidth=1, relief="sunken")
-        sdxl_text_widget.pack(fill="both", expand=True, padx=5, pady=5)
-        self.llm_prompt_widgets['enhancer_system_prompt_sdxl'] = sdxl_text_widget
+        def create_prompt_sub_tab(parent, title, config_key):
+            tab_frame = ttk.Frame(parent, padding="5", style="Tenos.TFrame")
+            parent.add(tab_frame, text=f" {title} ")
+            
+            text_widget = scrolledtext.ScrolledText(tab_frame, wrap=tk.WORD, height=10, width=80,
+                                                      font=("Consolas", 10), bg=ENTRY_BG_COLOR, fg=TEXT_COLOR_NORMAL,
+                                                      insertbackground=ENTRY_INSERT_COLOR, selectbackground=SELECT_BG_COLOR,
+                                                      selectforeground=SELECT_FG_COLOR, borderwidth=1, relief="sunken")
+            text_widget.pack(fill="both", expand=True, padx=5, pady=5)
+            self.llm_prompt_widgets[config_key] = text_widget
+
+        
+        create_prompt_sub_tab(llm_sub_notebook, "Flux Prompt", 'enhancer_system_prompt')
+        create_prompt_sub_tab(llm_sub_notebook, "SDXL Prompt", 'enhancer_system_prompt_sdxl')
+        create_prompt_sub_tab(llm_sub_notebook, "Kontext Prompt", 'enhancer_system_prompt_kontext')
+
 
     def load_and_populate_llm_prompts(self):
         """Loads LLM prompts from file and populates the UI widgets."""
         self.llm_prompts_config_data = load_llm_prompts_config_util()
 
-        if 'enhancer_system_prompt' in self.llm_prompt_widgets and self.llm_prompt_widgets['enhancer_system_prompt'].winfo_exists():
-            self.llm_prompt_widgets['enhancer_system_prompt'].delete('1.0', tk.END)
-            self.llm_prompt_widgets['enhancer_system_prompt'].insert(tk.END, self.llm_prompts_config_data.get('enhancer_system_prompt', ''))
-        
-        if 'enhancer_system_prompt_sdxl' in self.llm_prompt_widgets and self.llm_prompt_widgets['enhancer_system_prompt_sdxl'].winfo_exists():
-            self.llm_prompt_widgets['enhancer_system_prompt_sdxl'].delete('1.0', tk.END)
-            self.llm_prompt_widgets['enhancer_system_prompt_sdxl'].insert(tk.END, self.llm_prompts_config_data.get('enhancer_system_prompt_sdxl', ''))
+        for key, widget in self.llm_prompt_widgets.items():
+            if widget.winfo_exists():
+                widget.delete('1.0', tk.END)
+                widget.insert(tk.END, self.llm_prompts_config_data.get(key, ''))
 
     def save_llm_prompts_data(self):
         """Saves the LLM prompts from the UI widgets back to the file."""
@@ -69,10 +67,10 @@ class LLMPromptsTab:
                 
                 if current_text_in_widget != self.llm_prompts_config_data.get(key, "").strip():
                     save_needed = True
-            else:
+            else: 
                 updated_prompts_from_ui[key] = self.llm_prompts_config_data.get(key, '')
         
-        if not updated_prompts_from_ui:
+        if not updated_prompts_from_ui: 
             silent_showwarning("No Prompts", "No LLM prompt fields found to save.", parent=self.editor_app.master)
             return
 
