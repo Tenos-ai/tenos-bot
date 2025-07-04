@@ -1,3 +1,4 @@
+# --- START OF FILE config_editor_main.py ---
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext 
 import os
@@ -104,7 +105,7 @@ class ConfigEditor:
         self.notebook = ttk.Notebook(self.master, style="Tenos.TNotebook")
         self.notebook.pack(expand=True, fill="both", padx=10, pady=10)
 
-        
+        # Create all tab structures first
         self._create_main_config_tab_structure()
         self.admin_control_tab_manager = AdminControlTab(self, self.notebook)
         self._create_bot_settings_tab_structure()
@@ -114,7 +115,7 @@ class ConfigEditor:
         self._initialize_shared_log_display_widget()
         self.bot_control_tab_manager = BotControlTab(self, self.notebook)
 
-        
+        # Now that all widgets are created, populate them with data
         self.refresh_all_ui_tabs()
 
         if self.master.winfo_exists():
@@ -227,7 +228,7 @@ class ConfigEditor:
     def populate_main_config_sub_tabs(self):
         self.config_vars.clear()
         
-        
+        # Destroy old widgets before repopulating
         for parent_frame in [self.paths_tab_frame, self.endpoints_tab_frame, self.api_keys_tab_frame, self.app_settings_tab_frame]:
             for widget in parent_frame.winfo_children():
                 widget.destroy()
@@ -529,12 +530,11 @@ class ConfigEditor:
             return msg
 
         try:
+            origin = repo.remotes.origin
             if repo.head.is_detached:
                 self.log_queue.put(("worker", "HEAD is detached. Determining default branch...\n"))
                 default_branch = None
-                origin = repo.remotes.origin
                 try:
-                    
                     remote_info = repo.git.remote('show', 'origin')
                     head_branch_match = re.search(r"HEAD branch:\s*(\S+)", remote_info)
                     if head_branch_match:
@@ -549,7 +549,6 @@ class ConfigEditor:
                     self.log_queue.put(("worker", f"Attempting to checkout and track '{default_branch}'...\n"))
                     try:
                         repo.git.checkout(default_branch)
-                        # Explicitly set the local branch to track the remote branch
                         repo.git.branch('--set-upstream-to=origin/{}'.format(default_branch), default_branch)
                         self.log_queue.put(("info", f"Successfully checked out and tracking '{default_branch}'.\n"))
                     except git.GitCommandError as e_checkout:
@@ -561,7 +560,6 @@ class ConfigEditor:
                     self.log_queue.put(("stderr", msg + "\n"))
                     return msg
 
-            origin = repo.remotes.origin
             self.log_queue.put(("worker", "Fetching updates from origin...\n"))
             origin.fetch(prune=True)
             
@@ -612,7 +610,7 @@ class ConfigEditor:
         custom_nodes_path_str = self.config_manager.config.get('NODES',{}).get('CUSTOM_NODES')
         if not (custom_nodes_path_str and isinstance(custom_nodes_path_str,str) and os.path.isdir(custom_nodes_path_str)):
             msg_err = "Custom Nodes path not set or invalid in Main Config."; self.log_queue.put(("stderr", f"Install Custom Nodes Error: {msg_err}\n")); return msg_err
-        
+        # CORRECTED: Removed the non-existent Extraltodeus repository
         repositories_to_install = ["https://github.com/rgthree/rgthree-comfy.git", "https://github.com/ssitu/ComfyUI_UltimateSDUpscale.git", "https://github.com/jamesWalker55/comfyui-various.git", "https://github.com/city96/ComfyUI-GGUF.git", "https://github.com/tsogzark/ComfyUI-load-image-from-url.git","https://github.com/BobsBlazed/Bobs_Latent_Optimizer.git","https://github.com/Tenos-ai/Tenos-Resize-to-1-M-Pixels.git"]
         installation_results = []; errors_encountered_install = False
         for idx, repo_url_str in enumerate(repositories_to_install):
