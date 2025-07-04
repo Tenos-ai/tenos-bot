@@ -520,7 +520,6 @@ class ConfigEditor:
 
     def _worker_update_application(self):
         """Worker task to update the application from Git."""
-        repo_url = "https://github.com/Tenos-ai/tenos-bot.git"
         try:
             repo = git.Repo(search_parent_directories=True)
             self.log_queue.put(("worker", f"Found Git repository at: {repo.working_dir}\n"))
@@ -530,14 +529,35 @@ class ConfigEditor:
             return msg
 
         try:
-            
             if repo.head.is_detached:
-                self.log_queue.put(("worker", "HEAD is detached. Attempting to checkout 'main' branch...\n"))
+                self.log_queue.put(("worker", "HEAD is detached. Determining default branch...\n"))
+                default_branch = None
+                origin = repo.remotes.origin
                 try:
-                    repo.git.checkout('main')
-                    self.log_queue.put(("info", "Successfully checked out 'main' branch.\n"))
-                except git.GitCommandError as e_checkout:
-                    msg = f"Could not checkout 'main' branch: {e_checkout.stderr}. Please resolve the repository state manually. Update aborted."
+                    
+                    remote_info = repo.git.remote('show', 'origin')
+                    head_branch_match = re.search(r"HEAD branch:\s*(\S+)", remote_info)
+                    if head_branch_match:
+                        default_branch = head_branch_match.group(1)
+                        self.log_queue.put(("worker", f"Determined default remote branch is '{default_branch}'.\n"))
+                except git.GitCommandError:
+                     self.log_queue.put(("stderr", "Could not determine default branch via 'remote show'. Falling back to common names...\n"))
+                     if 'main' in origin.refs: default_branch = 'main'
+                     elif 'master' in origin.refs: default_branch = 'master'
+                
+                if default_branch:
+                    self.log_queue.put(("worker", f"Attempting to checkout and track '{default_branch}'...\n"))
+                    try:
+                        repo.git.checkout(default_branch)
+                        # Explicitly set the local branch to track the remote branch
+                        repo.git.branch('--set-upstream-to=origin/{}'.format(default_branch), default_branch)
+                        self.log_queue.put(("info", f"Successfully checked out and tracking '{default_branch}'.\n"))
+                    except git.GitCommandError as e_checkout:
+                        msg = f"Could not checkout/track branch '{default_branch}': {e_checkout.stderr}. Update aborted."
+                        self.log_queue.put(("stderr", msg + "\n"))
+                        return msg
+                else:
+                    msg = "Could not determine or find a default branch ('main' or 'master'). Update aborted."
                     self.log_queue.put(("stderr", msg + "\n"))
                     return msg
 
@@ -545,10 +565,9 @@ class ConfigEditor:
             self.log_queue.put(("worker", "Fetching updates from origin...\n"))
             origin.fetch(prune=True)
             
-            
             tracking_branch = repo.head.reference.tracking_branch()
             if not tracking_branch:
-                msg = "Update failed: Current branch is not tracking a remote branch."
+                msg = "Update failed: Current branch is not tracking a remote branch. Please resolve manually."
                 self.log_queue.put(("stderr", msg + "\n"))
                 return msg
 
