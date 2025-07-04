@@ -1,10 +1,5 @@
-# --- START OF FILE kontext_templates.py ---
 import json
 
-# This contains all the nodes that are common to all Kontext edits.
-# THIS VERSION IS CORRECTED based on user-provided workflow examples.
-# It uses a standard KSampler and provides the missing 'weight_dtype' for the UNETLoader.
-# It also correctly defines all required inputs for the ImageStitch node.
 BASE_WORKFLOW = {
     "kontext_model_loader": {
         "inputs": {
@@ -133,7 +128,6 @@ def get_kontext_workflow(num_images: int):
     
     final_image_source_node = "load_image_1"
     
-    # Common inputs for all ImageStitch nodes, matching the user's example
     stitch_inputs = {
         "match_image_size": True,
         "spacing_width": 0,
@@ -147,15 +141,25 @@ def get_kontext_workflow(num_images: int):
             "class_type": "ImageStitch", "_meta": {"title": "Stitch 1 & 2"}
         }
         final_image_source_node = "stitch_1_2"
-    elif num_images >= 3:
-        image_4_input = ["load_image_4", 0] if num_images == 4 else ["load_image_3", 0]
-        
+    
+    elif num_images == 3:
+        workflow["stitch_1_2"] = {
+            "inputs": {**stitch_inputs, "image1": ["load_image_1", 0], "image2": ["load_image_2", 0], "direction": "right"},
+            "class_type": "ImageStitch", "_meta": {"title": "Stitch 1 & 2"}
+        }
+        workflow["stitch_final_vertical"] = {
+            "inputs": {**stitch_inputs, "image1": ["stitch_1_2", 0], "image2": ["load_image_3", 0], "direction": "down"},
+            "class_type": "ImageStitch", "_meta": {"title": "Stitch Final Grid"}
+        }
+        final_image_source_node = "stitch_final_vertical"
+
+    elif num_images == 4:
         workflow["stitch_1_2"] = {
             "inputs": {**stitch_inputs, "image1": ["load_image_1", 0], "image2": ["load_image_2", 0], "direction": "right"},
             "class_type": "ImageStitch", "_meta": {"title": "Stitch 1 & 2"}
         }
         workflow["stitch_3_4"] = {
-            "inputs": {**stitch_inputs, "image1": ["load_image_3", 0], "image2": image_4_input, "direction": "right"},
+            "inputs": {**stitch_inputs, "image1": ["load_image_3", 0], "image2": ["load_image_4", 0], "direction": "right"},
             "class_type": "ImageStitch", "_meta": {"title": "Stitch 3 & 4"}
         }
         workflow["stitch_final_vertical"] = {
