@@ -3,14 +3,14 @@
 ## Updates
 
 **COMPLETED UPDATES**
-
+**7/4/25**
+- **Update 2**: added auto update feature so the app and repo stay in sync without needing to download the zip over and over as I add features. update on startup can be turned on and off in `main config` > `app settings`.
 **7/2/25**
 - **Update 1**: Integrated **FLUX Kontext** for powerful instruction-based image editing and stitching via the new `/edit` command. The LLM Enhancer now supports multi-modal vision to better interpret edit instructions.
 - **Hotfix 1**: Fixed a job cancellation issue, improved first-time setup with venv creation, enhanced LLM support for new models, and added a tool to pull complete LLM model lists from the GUI.
 
 **PLANED UPDATES**
 
-- self-update tool/update notifications
 - New GUI
 
 ----------
