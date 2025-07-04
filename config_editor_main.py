@@ -1,4 +1,3 @@
-# --- START OF FILE config_editor_main.py ---
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext 
 import os
