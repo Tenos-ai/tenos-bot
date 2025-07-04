@@ -3,6 +3,7 @@
 ## Updates
 
 **COMPLETED UPDATES**
+
 **7/4/25**
 - **Update 2**: added auto update feature so the app and repo stay in sync without needing to download the zip over and over as I add features. The automatic update on startup can be turned on and off in `main config` > `app settings`. Updates can also be triggered manually via `Tools` > `Update Application`.
 
