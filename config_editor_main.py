@@ -1,17 +1,18 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext 
+from tkinter import ttk, messagebox, scrolledtext
 import os
-import json 
+import json
 import traceback
 import threading
 import queue
-import platform 
-import subprocess 
-import psutil 
-import git 
-import shutil 
+import platform
+import subprocess
+import psutil
+import git
+import shutil
 import requests
 import re
+import sys
 from datetime import datetime
 
 from editor_constants import (
@@ -474,7 +475,7 @@ class ConfigEditor:
                 task_name_done = worker_status_update.get("task_name","Task"); success_status = worker_status_update.get("success",False); message_details = worker_status_update.get("message","No details.")
                 if success_status:
                     if task_name_done == "Refreshing LLMs":
-                        self.log_queue.put(("info", "--- LLM models reloaded, updating UI. ---\n"))
+                        self.log_queue.put(("info", "--- LLM models reloaded, updating UI. ---\\n"))
                         self.llm_models_config = load_llm_models_config_util()
                         self.config_manager.load_bot_settings_data(self.llm_models_config)
                         self.populate_bot_settings_tab()
@@ -483,6 +484,8 @@ class ConfigEditor:
                         self.load_available_files(); self.populate_bot_settings_tab()
                         if hasattr(self, 'favorites_tab_manager'): self.favorites_tab_manager.populate_all_favorites_sub_tabs()
                 else: silent_showerror(f"{task_name_done} Failed", message_details, parent=self.master)
+            elif worker_status_update.get("type") == "restart_required":
+                self._restart_application()
         except queue.Empty: pass
         except Exception: pass
         if self.master.winfo_exists(): self.master.after(100, self._process_gui_updates_loop)
@@ -492,7 +495,7 @@ class ConfigEditor:
             if os.path.exists(SETTINGS_FILE_NAME):
                 current_mtime = os.path.getmtime(SETTINGS_FILE_NAME)
                 if self.config_manager.settings_last_mtime != 0 and abs(current_mtime - self.config_manager.settings_last_mtime) > 1e-6:
-                    self.log_queue.put(("info", "--- Detected external change in settings.json. Reloading automatically. ---\n"))
+                    self.log_queue.put(("info", "--- Detected external change in settings.json. Reloading automatically. ---\\n"))
                     self.config_manager.load_bot_settings_data(self.llm_models_config)
                     self.populate_bot_settings_tab()
             if self.master.winfo_exists(): self.master.after(2000, self._check_settings_file_for_changes)
@@ -503,7 +506,7 @@ class ConfigEditor:
 
     def run_worker_task_on_editor(self, task_function_to_run, task_display_name_str):
         if self.worker_thread and self.worker_thread.is_alive(): silent_showwarning("Busy","Background task running.",parent=self.master); return
-        self.log_queue.put(("info",f"--- Starting {task_display_name_str} ---\n"))
+        self.log_queue.put(("info",f"--- Starting {task_display_name_str} ---\\n"))
         while not self.worker_queue.empty():
             try: self.worker_queue.get_nowait()
             except queue.Empty: break
@@ -517,137 +520,122 @@ class ConfigEditor:
             success_flag_worker = True; message_str_worker = result_message_worker if isinstance(result_message_worker, str) else f"{task_name_ui} completed."
         except Exception as e_task_exec: success_flag_worker = False; message_str_worker = f"{task_name_ui} failed: {e_task_exec}"
         self.worker_queue.put({"type":"task_complete","task_name":task_name_ui,"success":success_flag_worker,"message":message_str_worker})
-        self.log_queue.put(("info",f"--- Finished {task_name_ui} (Success: {success_flag_worker}) ---\n"))
+        self.log_queue.put(("info",f"--- Finished {task_name_ui} (Success: {success_flag_worker}) ---\\n"))
 
     def _worker_update_application(self):
-        """Worker task to update the application from Git."""
+        """Worker task to update the application from Git using a more robust pull-and-check method."""
         try:
             repo = git.Repo(search_parent_directories=True)
-            self.log_queue.put(("worker", f"Found Git repository at: {repo.working_dir}\n"))
+            self.log_queue.put(("worker", f"Found Git repository at: {repo.working_dir}\\n"))
         except git.InvalidGitRepositoryError:
             msg = "Application directory is not a Git repository. Cannot auto-update. Please re-download from GitHub."
-            self.log_queue.put(("stderr", msg + "\n"))
+            self.log_queue.put(("stderr", msg + "\\n"))
             return msg
 
         try:
             origin = repo.remotes.origin
             
-            # --- State Correction Logic ---
+            # --- State Correction Logic (unchanged) ---
             if repo.head.is_detached or not repo.head.reference.tracking_branch():
-                self.log_queue.put(("worker", "Detached HEAD or non-tracking branch detected. Attempting to fix...\n"))
+                self.log_queue.put(("worker", "Detached HEAD or non-tracking branch detected. Attempting to fix...\\n"))
                 default_branch = None
                 try:
                     remote_info = repo.git.remote('show', 'origin')
-                    head_branch_match = re.search(r"HEAD branch:\s*(\S+)", remote_info)
+                    head_branch_match = re.search(r"HEAD branch:\\s*(\\S+)", remote_info)
                     if head_branch_match:
                         default_branch = head_branch_match.group(1)
-                        self.log_queue.put(("worker", f"Determined default remote branch is '{default_branch}'.\n"))
                 except git.GitCommandError:
-                     self.log_queue.put(("stderr", "Could not determine default branch via 'remote show'. Falling back to common names...\n"))
                      if 'main' in origin.refs: default_branch = 'main'
                      elif 'master' in origin.refs: default_branch = 'master'
                 
                 if default_branch:
-                    self.log_queue.put(("worker", f"Resetting local '{default_branch}' to 'origin/{default_branch}'...\n"))
+                    self.log_queue.put(("worker", f"Attempting to checkout and track '{default_branch}'.\\n"))
                     try:
                         repo.git.checkout(default_branch)
                         repo.git.branch('--set-upstream-to=origin/{}'.format(default_branch), default_branch)
-                        self.log_queue.put(("info", f"Successfully checked out and tracking '{default_branch}'.\n"))
                     except git.GitCommandError as e_checkout:
                         msg = f"Could not checkout/track branch '{default_branch}': {e_checkout.stderr}. Update aborted."
-                        self.log_queue.put(("stderr", msg + "\n"))
+                        self.log_queue.put(("stderr", msg + "\\n"))
                         return msg
                 else:
                     msg = "Could not determine or find a default branch ('main' or 'master'). Update aborted."
-                    self.log_queue.put(("stderr", msg + "\n"))
+                    self.log_queue.put(("stderr", msg + "\\n"))
                     return msg
-
-            self.log_queue.put(("worker", "Fetching updates from origin...\n"))
-            origin.fetch(prune=True)
-            
-            tracking_branch = repo.head.reference.tracking_branch()
-            if not tracking_branch:
-                msg = "Update failed: Current branch is not tracking a remote branch. Please resolve manually."
-                self.log_queue.put(("stderr", msg + "\n"))
-                return msg
-
-            local_commit = repo.head.commit
-            remote_commit = tracking_branch.commit
-
-            if local_commit == remote_commit:
-                msg = "Application is already up to date."
-                self.log_queue.put(("info", msg + "\n"))
-                return msg
-            
-            self.log_queue.put(("worker", f"Updates found. Local: {local_commit.hexsha[:7]}, Remote: {remote_commit.hexsha[:7]}\n"))
 
             if repo.is_dirty(untracked_files=True):
-                self.log_queue.put(("stderr", "Warning: Local changes detected. Stashing changes before update...\n"))
+                self.log_queue.put(("stderr", "Warning: Local changes detected. Stashing changes before update...\\n"))
                 try:
                     repo.git.stash()
-                    self.log_queue.put(("worker", "Local changes stashed.\n"))
+                    self.log_queue.put(("worker", "Local changes stashed.\\n"))
                 except git.GitCommandError as e_stash:
                     msg = f"Could not stash local changes: {e_stash.stderr}. Update aborted."
-                    self.log_queue.put(("stderr", msg + "\n"))
+                    self.log_queue.put(("stderr", msg + "\\n"))
                     return msg
 
-            self.log_queue.put(("worker", "Pulling latest changes...\n"))
-            origin.pull()
-
-            msg = "Application updated successfully. Please restart the configurator for changes to take effect."
-            self.log_queue.put(("info", msg + "\n"))
+            self.log_queue.put(("worker", "Pulling latest changes from origin...\\n"))
+            pull_result = origin.pull()[0]
+            
+            # Check the flags to see if an update happened
+            if pull_result.flags & (git.remote.FetchInfo.HEAD_UPTODATE | git.remote.FetchInfo.ALREADY_UP_TO_DATE):
+                msg = "Application is already up to date."
+                self.log_queue.put(("info", msg + "\\n"))
+                return msg
+            
+            # If we reach here, an update happened.
+            msg = "Application updated successfully! Restarting automatically in 3 seconds..."
+            self.log_queue.put(("info", msg + "\\n"))
+            self.worker_queue.put({"type": "restart_required"})
             return msg
 
         except (git.GitCommandError, TypeError) as e:
             error_msg = f"Git command failed: {getattr(e, 'stderr', str(e))}"
-            self.log_queue.put(("stderr", error_msg + "\n"))
+            self.log_queue.put(("stderr", error_msg + "\\n"))
             return error_msg
         except Exception as e:
             error_msg = f"An unexpected error occurred during update: {e}"
-            self.log_queue.put(("stderr", error_msg + "\n"))
+            self.log_queue.put(("stderr", error_msg + "\\n"))
             traceback.print_exc()
             return error_msg
 
     def _worker_install_custom_nodes(self):
         custom_nodes_path_str = self.config_manager.config.get('NODES',{}).get('CUSTOM_NODES')
         if not (custom_nodes_path_str and isinstance(custom_nodes_path_str,str) and os.path.isdir(custom_nodes_path_str)):
-            msg_err = "Custom Nodes path not set or invalid in Main Config."; self.log_queue.put(("stderr", f"Install Custom Nodes Error: {msg_err}\n")); return msg_err
-        # CORRECTED: Removed the non-existent Extraltodeus repository
+            msg_err = "Custom Nodes path not set or invalid in Main Config."; self.log_queue.put(("stderr", f"Install Custom Nodes Error: {msg_err}\\n")); return msg_err
         repositories_to_install = ["https://github.com/rgthree/rgthree-comfy.git", "https://github.com/ssitu/ComfyUI_UltimateSDUpscale.git", "https://github.com/jamesWalker55/comfyui-various.git", "https://github.com/city96/ComfyUI-GGUF.git", "https://github.com/tsogzark/ComfyUI-load-image-from-url.git","https://github.com/BobsBlazed/Bobs_Latent_Optimizer.git","https://github.com/Tenos-ai/Tenos-Resize-to-1-M-Pixels.git"]
         installation_results = []; errors_encountered_install = False
         for idx, repo_url_str in enumerate(repositories_to_install):
             repo_name_short = repo_url_str.split('/')[-1].replace('.git',''); repo_target_path = os.path.join(custom_nodes_path_str, repo_name_short)
             current_action_str = "Updating" if os.path.exists(repo_target_path) else "Cloning"
-            self.log_queue.put(("worker", f"{current_action_str} {repo_name_short} ({idx+1}/{len(repositories_to_install)})...\n"))
+            self.log_queue.put(("worker", f"{current_action_str} {repo_name_short} ({idx+1}/{len(repositories_to_install)})...\\n"))
             try:
                 if not os.path.exists(repo_target_path): git.Repo.clone_from(repo_url_str, repo_target_path, progress=ProgressPrinter(repo_name_short, self.log_queue)); installation_results.append(f"Cloned {repo_name_short}: Success")
                 else: git.Repo(repo_target_path).remotes.origin.pull(progress=ProgressPrinter(repo_name_short, self.log_queue)); installation_results.append(f"Updated {repo_name_short}: Success")
-            except git.GitCommandError as e_git_cmd: error_detail_git = e_git_cmd.stderr.strip() if e_git_cmd.stderr else str(e_git_cmd); installation_results.append(f"{current_action_str} {repo_name_short}: FAILED (Git: {error_detail_git})"); errors_encountered_install = True; self.log_queue.put(("stderr",f"Git Command Error {repo_name_short}: {error_detail_git}\n"))
-            except Exception as e_other_install: installation_results.append(f"{current_action_str} {repo_name_short}: FAILED ({type(e_other_install).__name__}: {str(e_other_install)})"); errors_encountered_install = True; self.log_queue.put(("stderr",f"Error {current_action_str.lower()}ing {repo_name_short}: {str(e_other_install)}\n"))
+            except git.GitCommandError as e_git_cmd: error_detail_git = e_git_cmd.stderr.strip() if e_git_cmd.stderr else str(e_git_cmd); installation_results.append(f"{current_action_str} {repo_name_short}: FAILED (Git: {error_detail_git})"); errors_encountered_install = True; self.log_queue.put(("stderr",f"Git Command Error {repo_name_short}: {error_detail_git}\\n"))
+            except Exception as e_other_install: installation_results.append(f"{current_action_str} {repo_name_short}: FAILED ({type(e_other_install).__name__}: {str(e_other_install)})"); errors_encountered_install = True; self.log_queue.put(("stderr",f"Error {current_action_str.lower()}ing {repo_name_short}: {str(e_other_install)}\\n"))
         local_nodes_source_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),"nodes")
         if os.path.isdir(local_nodes_source_dir):
-            self.log_queue.put(("worker",f"Copying local nodes from '{local_nodes_source_dir}' to '{custom_nodes_path_str}'...\n"))
+            self.log_queue.put(("worker",f"Copying local nodes from '{local_nodes_source_dir}' to '{custom_nodes_path_str}'...\\n"))
             try: shutil.copytree(local_nodes_source_dir,custom_nodes_path_str,dirs_exist_ok=True); installation_results.append("Copied local nodes: Success")
-            except Exception as e_copy_local: installation_results.append(f"Copied local nodes: FAILED ({type(e_copy_local).__name__}: {str(e_copy_local)})"); errors_encountered_install = True; self.log_queue.put(("stderr",f"Error copying local nodes: {str(e_copy_local)}\n"))
+            except Exception as e_copy_local: installation_results.append(f"Copied local nodes: FAILED ({type(e_copy_local).__name__}: {str(e_copy_local)})"); errors_encountered_install = True; self.log_queue.put(("stderr",f"Error copying local nodes: {str(e_copy_local)}\\n"))
         else: installation_results.append("Copy local nodes: Skipped (local 'nodes' folder not found)")
         summary_prefix_str = "Custom Node Installation Succeeded" if not errors_encountered_install else "Custom Node Installation Completed with Errors"
-        return f"{summary_prefix_str}:\n\n" + "\n".join(installation_results)
+        return f"{summary_prefix_str}:\\n\\n" + "\\n".join(installation_results)
 
     def _worker_scan_models_clips_checkpoints(self):
         scan_errors_list = []
         try: import model_scanner
-        except ImportError: err_msg = "Scan Error: model_scanner.py module not found."; self.log_queue.put(("stderr", f"{err_msg}\n")); return err_msg
+        except ImportError: err_msg = "Scan Error: model_scanner.py module not found."; self.log_queue.put(("stderr", f"{err_msg}\\n")); return err_msg
         current_main_config = self.config_manager.config
         paths_map = {"Flux Models": current_main_config.get('MODELS',{}).get('MODEL_FILES'), "CLIP Files": current_main_config.get('CLIP',{}).get('CLIP_FILES'), "SDXL Checkpoints": current_main_config.get('MODELS',{}).get('CHECKPOINTS_FOLDER')}
         valid_paths_exist = any(pth_val and isinstance(pth_val,str) and os.path.isdir(pth_val) for pth_val in paths_map.values())
-        if not valid_paths_exist: msg = "No valid paths configured for scanning."; self.log_queue.put(("stderr",f"{msg}\n")); return msg
+        if not valid_paths_exist: msg = "No valid paths configured for scanning."; self.log_queue.put(("stderr",f"{msg}\\n")); return msg
         try:
-            if paths_map["Flux Models"] and os.path.isdir(paths_map["Flux Models"]): self.log_queue.put(("worker","Scanning Flux models...\n")); model_scanner.update_models_list(CONFIG_FILE_NAME,MODELS_LIST_FILE_NAME)
-            if paths_map["CLIP Files"] and os.path.isdir(paths_map["CLIP Files"]): self.log_queue.put(("worker","Scanning CLIPs...\n")); model_scanner.scan_clip_files(CONFIG_FILE_NAME,CLIP_LIST_FILE_NAME)
-            if paths_map["SDXL Checkpoints"] and os.path.isdir(paths_map["SDXL Checkpoints"]): self.log_queue.put(("worker","Scanning SDXL checkpoints...\n")); model_scanner.update_checkpoints_list(CONFIG_FILE_NAME,CHECKPOINTS_LIST_FILE_NAME)
-        except Exception as e_scan_call: scan_errors_list.append(f"Error during scan call: {e_scan_call}"); self.log_queue.put(("stderr",f"Scan Call Error: {e_scan_call}\n")); traceback.print_exc()
-        if scan_errors_list: return "File Scanning Completed with Issues:\n"+"\n".join(scan_errors_list)
-        return "File scanning finished. Lists updated. \n(UI dropdowns will refresh after this message)."
+            if paths_map["Flux Models"] and os.path.isdir(paths_map["Flux Models"]): self.log_queue.put(("worker","Scanning Flux models...\\n")); model_scanner.update_models_list(CONFIG_FILE_NAME,MODELS_LIST_FILE_NAME)
+            if paths_map["CLIP Files"] and os.path.isdir(paths_map["CLIP Files"]): self.log_queue.put(("worker","Scanning CLIPs...\\n")); model_scanner.scan_clip_files(CONFIG_FILE_NAME,CLIP_LIST_FILE_NAME)
+            if paths_map["SDXL Checkpoints"] and os.path.isdir(paths_map["SDXL Checkpoints"]): self.log_queue.put(("worker","Scanning SDXL checkpoints...\\n")); model_scanner.update_checkpoints_list(CONFIG_FILE_NAME,CHECKPOINTS_LIST_FILE_NAME)
+        except Exception as e_scan_call: scan_errors_list.append(f"Error during scan call: {e_scan_call}"); self.log_queue.put(("stderr",f"Scan Call Error: {e_scan_call}\\n")); traceback.print_exc()
+        if scan_errors_list: return "File Scanning Completed with Issues:\\n"+"\\n".join(scan_errors_list)
+        return "File scanning finished. Lists updated. \\n(UI dropdowns will refresh after this message)."
 
     def _worker_update_llm_models_list(self):
         """Worker task to fetch latest LLM models and update llm_models.json."""
@@ -670,7 +658,7 @@ class ConfigEditor:
                 results_log.append(f"OpenAI: Found {len(openai_model_ids)} chat models.")
             except Exception as e:
                 msg = f"Failed to fetch OpenAI models: {e}"
-                results_log.append(f"OpenAI: {msg}"); self.log_queue.put(("stderr", msg + "\n"))
+                results_log.append(f"OpenAI: {msg}"); self.log_queue.put(("stderr", msg + "\\n"))
         else: results_log.append("OpenAI: Skipped (no API key).")
 
         if groq_key:
@@ -684,7 +672,7 @@ class ConfigEditor:
                 results_log.append(f"Groq: Found {len(groq_model_ids)} chat models.")
             except Exception as e:
                 msg = f"Failed to fetch Groq models: {e}"
-                results_log.append(f"Groq: {msg}"); self.log_queue.put(("stderr", msg + "\n"))
+                results_log.append(f"Groq: {msg}"); self.log_queue.put(("stderr", msg + "\\n"))
         else: results_log.append("Groq: Skipped (no API key).")
 
         if gemini_key:
@@ -697,17 +685,17 @@ class ConfigEditor:
                 results_log.append(f"Gemini: Found {len(gemini_model_ids)} chat models.")
             except Exception as e:
                 msg = f"Failed to fetch Gemini models: {e}"
-                results_log.append(f"Gemini: {msg}"); self.log_queue.put(("stderr", msg + "\n"))
+                results_log.append(f"Gemini: {msg}"); self.log_queue.put(("stderr", msg + "\\n"))
         else: results_log.append("Gemini: Skipped (no API key).")
 
         if save_json_config(LLM_MODELS_FILE_NAME, updated_models_data, "LLM models config"):
-            return "LLM Models list updated successfully.\n\n" + "\n".join(results_log)
+            return "LLM Models list updated successfully.\\n\\n" + "\\n".join(results_log)
         else:
             raise Exception("Failed to save the updated llm_models.json file.")
 
     def show_about_dialog(self):
         editor_title = self.master.title(); version_str = editor_title.split('v')[-1].strip() if 'v' in editor_title else "Unknown"
-        about_message = (f"Tenos.ai Configuration Tool\n\nVersion: {version_str}\n\nConfigure paths, settings, styles, and favorites for the Tenos.ai Discord bot.\nEnsure ComfyUI paths in 'Main Config' are correct.\nRestart the bot via 'Bot Control' tab after making significant changes.")
+        about_message = (f"Tenos.ai Configuration Tool\\n\\nVersion: {version_str}\\n\\nConfigure paths, settings, styles, and favorites for the Tenos.ai Discord bot.\\nEnsure ComfyUI paths in 'Main Config' are correct.\\nRestart the bot via 'Bot Control' tab after making significant changes.")
         silent_showinfo("About Tenos.ai Configurator", about_message, parent=self.master)
 
     def save_all_configurations_from_menu(self):
@@ -720,6 +708,30 @@ class ConfigEditor:
         self.admin_control_tab_manager._save_blocklist()
         silent_showinfo("Save All Triggered", "All save operations triggered. Check console/messages for status.", parent=self.master)
 
+    def _restart_application(self):
+        """Gracefully stops the bot and restarts the configurator application."""
+        self.log_queue.put(("info", "--- Restarting application ---\\n"))
+        # Stop the bot if it's running
+        if self.bot_control_tab_manager.is_bot_script_running():
+            self.bot_control_tab_manager.stop_bot_script()
+        
+        # Give a moment for processes to close before restarting
+        self.master.after(1500, self._execute_restart)
+
+    def _execute_restart(self):
+        try:
+            # Clean up window and threads before exec
+            self.stop_readers.set()
+            for thread_item in self.reader_threads:
+                if thread_item.is_alive():
+                    thread_item.join(timeout=0.2)
+            
+            # Re-execute the script
+            os.execl(sys.executable, sys.executable, *sys.argv)
+        except Exception as e:
+            self.log_queue.put(("stderr", f"FATAL: Failed to execute restart: {e}\\n"))
+            silent_showerror("Restart Failed", f"Could not restart the application.\\nPlease close and start it manually.\\n\\nError: {e}", parent=self.master)
+            
     def on_closing_main_window(self):
         if self.bot_control_tab_manager.is_bot_script_running():
              if silent_askyesno("Exit Confirmation", "Bot script running. Stop bot and exit configurator?", parent=self.master):
@@ -740,24 +752,24 @@ class ConfigEditor:
         try:
             app_settings = self.config_manager.config.get("APP_SETTINGS", {})
             if app_settings.get("AUTO_UPDATE_ON_STARTUP", True):
-                self.log_queue.put(("info", "--- Auto-update enabled, checking for updates... ---\n"))
+                self.log_queue.put(("info", "--- Auto-update enabled, checking for updates... ---\\n"))
                 self.run_worker_task_on_editor(self._worker_update_application, "Startup Update Check")
         except Exception as e:
-            self.log_queue.put(("stderr", f"Error during startup update check: {e}\n"))
+            self.log_queue.put(("stderr", f"Error during startup update check: {e}\\n"))
 
     def _check_for_first_run(self):
         """Shows a welcome/instruction dialog on the first launch."""
         flag_file = 'first_run_complete.flag'
         if not os.path.exists(flag_file):
             welcome_message = (
-                "Welcome to the Tenos.ai Configurator!\n\n"
-                "It looks like this is your first time running the tool.\n\n"
-                "**IMPORTANT FIRST STEPS:**\n\n"
-                "1. Go to the 'Main Config' tab and set all the paths, especially the 'CUSTOM_NODES' path for ComfyUI.\n\n"
-                "2. Click 'Save Main Config' at the bottom of that tab.\n\n"
-                "3. Use the 'Tools' menu at the top to run:\n"
-                "   - 'Install/Update Custom Nodes'\n"
-                "   - 'Scan Models/Clips/Checkpoints'\n\n"
+                "Welcome to the Tenos.ai Configurator!\\n\\n"
+                "It looks like this is your first time running the tool.\\n\\n"
+                "**IMPORTANT FIRST STEPS:**\\n\\n"
+                "1. Go to the 'Main Config' tab and set all the paths, especially the 'CUSTOM_NODES' path for ComfyUI.\\n\\n"
+                "2. Click 'Save Main Config' at the bottom of that tab.\\n\\n"
+                "3. Use the 'Tools' menu at the top to run:\\n"
+                "   - 'Install/Update Custom Nodes'\\n"
+                "   - 'Scan Models/Clips/Checkpoints'\\n\\n"
                 "Once these steps are done, you can start the bot from the 'Bot Control' tab."
             )
             silent_showinfo("First-Time Setup", welcome_message, parent=self.master)
@@ -766,14 +778,14 @@ class ConfigEditor:
                 with open(flag_file, 'w') as f:
                     f.write(f"First run setup prompt shown on: {datetime.now().isoformat()}")
             except OSError as e:
-                silent_showerror("First Run Warning", f"Could not create the first run flag file. You may see this message again.\n\nError: {e}", parent=self.master)
+                silent_showerror("First Run Warning", f"Could not create the first run flag file. You may see this message again.\\n\\nError: {e}", parent=self.master)
 
 class ProgressPrinter(git.RemoteProgress):
     def __init__(self, repo_name_str_param, log_queue_ref_param):
         super().__init__(); self.repo_name = repo_name_str_param; self.log_queue = log_queue_ref_param
     def update(self, op_code_val_progress, cur_count_val_progress, max_count_val_progress=None, message_str_progress=''):
         output_str_progress = f"Git ({self.repo_name}): {message_str_progress.splitlines()[0]}"
-        self.log_queue.put(("worker", output_str_progress + "\n"))
+        self.log_queue.put(("worker", output_str_progress + "\\n"))
 
 if __name__ == "__main__":
     try:
@@ -784,6 +796,6 @@ if __name__ == "__main__":
         traceback.print_exc()
         try:
             error_dialog_fallback_root = tk.Tk(); error_dialog_fallback_root.withdraw()
-            messagebox.showerror("Fatal Error - Config Editor Application", f"Could not start Config Editor application:\n{main_app_execution_error}\n\nCheck console output for detailed traceback.", parent=None)
+            messagebox.showerror("Fatal Error - Config Editor Application", f"Could not start Config Editor application:\\n{main_app_execution_error}\\n\\nCheck console output for detailed traceback.", parent=None)
             error_dialog_fallback_root.destroy()
         except Exception: pass
