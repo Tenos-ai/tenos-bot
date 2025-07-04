@@ -106,7 +106,7 @@ class ConfigEditor:
         self.notebook = ttk.Notebook(self.master, style="Tenos.TNotebook")
         self.notebook.pack(expand=True, fill="both", padx=10, pady=10)
 
-        # Create all tab structures first
+        
         self._create_main_config_tab_structure()
         self.admin_control_tab_manager = AdminControlTab(self, self.notebook)
         self._create_bot_settings_tab_structure()
@@ -116,7 +116,7 @@ class ConfigEditor:
         self._initialize_shared_log_display_widget()
         self.bot_control_tab_manager = BotControlTab(self, self.notebook)
 
-        # Now that all widgets are created, populate them with data
+        
         self.refresh_all_ui_tabs()
 
         if self.master.winfo_exists():
