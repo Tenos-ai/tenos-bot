@@ -531,8 +531,10 @@ class ConfigEditor:
 
         try:
             origin = repo.remotes.origin
-            if repo.head.is_detached:
-                self.log_queue.put(("worker", "HEAD is detached. Determining default branch...\n"))
+            
+            # --- State Correction Logic ---
+            if repo.head.is_detached or not repo.head.reference.tracking_branch():
+                self.log_queue.put(("worker", "Detached HEAD or non-tracking branch detected. Attempting to fix...\n"))
                 default_branch = None
                 try:
                     remote_info = repo.git.remote('show', 'origin')
@@ -546,13 +548,12 @@ class ConfigEditor:
                      elif 'master' in origin.refs: default_branch = 'master'
                 
                 if default_branch:
-                    self.log_queue.put(("worker", f"Attempting to checkout and track '{default_branch}'...\n"))
+                    self.log_queue.put(("worker", f"Resetting local '{default_branch}' to 'origin/{default_branch}'...\n"))
                     try:
-                        repo.git.checkout(default_branch)
-                        repo.git.branch('--set-upstream-to=origin/{}'.format(default_branch), default_branch)
-                        self.log_queue.put(("info", f"Successfully checked out and tracking '{default_branch}'.\n"))
+                        repo.git.checkout('-B', default_branch, f'origin/{default_branch}')
+                        self.log_queue.put(("info", f"Successfully reset and checked out '{default_branch}'.\n"))
                     except git.GitCommandError as e_checkout:
-                        msg = f"Could not checkout/track branch '{default_branch}': {e_checkout.stderr}. Update aborted."
+                        msg = f"Could not reset branch '{default_branch}': {e_checkout.stderr}. Update aborted."
                         self.log_queue.put(("stderr", msg + "\n"))
                         return msg
                 else:
@@ -560,17 +561,12 @@ class ConfigEditor:
                     self.log_queue.put(("stderr", msg + "\n"))
                     return msg
 
+            # --- Standard Update Logic ---
             self.log_queue.put(("worker", "Fetching updates from origin...\n"))
             origin.fetch(prune=True)
             
-            tracking_branch = repo.head.reference.tracking_branch()
-            if not tracking_branch:
-                msg = "Update failed: Current branch is not tracking a remote branch. Please resolve manually."
-                self.log_queue.put(("stderr", msg + "\n"))
-                return msg
-
             local_commit = repo.head.commit
-            remote_commit = tracking_branch.commit
+            remote_commit = repo.head.reference.tracking_branch().commit
 
             if local_commit == remote_commit:
                 msg = "Application is already up to date."
