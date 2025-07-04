@@ -12,6 +12,7 @@ import psutil
 import git 
 import shutil 
 import requests
+import re
 from datetime import datetime
 
 from editor_constants import (
@@ -550,10 +551,11 @@ class ConfigEditor:
                 if default_branch:
                     self.log_queue.put(("worker", f"Resetting local '{default_branch}' to 'origin/{default_branch}'...\n"))
                     try:
-                        repo.git.checkout('-B', default_branch, f'origin/{default_branch}')
-                        self.log_queue.put(("info", f"Successfully reset and checked out '{default_branch}'.\n"))
+                        repo.git.checkout(default_branch)
+                        repo.git.branch('--set-upstream-to=origin/{}'.format(default_branch), default_branch)
+                        self.log_queue.put(("info", f"Successfully checked out and tracking '{default_branch}'.\n"))
                     except git.GitCommandError as e_checkout:
-                        msg = f"Could not reset branch '{default_branch}': {e_checkout.stderr}. Update aborted."
+                        msg = f"Could not checkout/track branch '{default_branch}': {e_checkout.stderr}. Update aborted."
                         self.log_queue.put(("stderr", msg + "\n"))
                         return msg
                 else:
@@ -561,12 +563,17 @@ class ConfigEditor:
                     self.log_queue.put(("stderr", msg + "\n"))
                     return msg
 
-            # --- Standard Update Logic ---
             self.log_queue.put(("worker", "Fetching updates from origin...\n"))
             origin.fetch(prune=True)
             
+            tracking_branch = repo.head.reference.tracking_branch()
+            if not tracking_branch:
+                msg = "Update failed: Current branch is not tracking a remote branch. Please resolve manually."
+                self.log_queue.put(("stderr", msg + "\n"))
+                return msg
+
             local_commit = repo.head.commit
-            remote_commit = repo.head.reference.tracking_branch().commit
+            remote_commit = tracking_branch.commit
 
             if local_commit == remote_commit:
                 msg = "Application is already up to date."
