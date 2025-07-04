@@ -94,7 +94,6 @@ class ConfigEditor:
         self.available_loras = ["None"]
         self.available_upscale_models = ["None"]
         self.available_vaes = ["None"]
-        self.load_available_files()
 
         self.provider_display_map = { k: v.get("display_name", k.capitalize()) for k, v in self.llm_models_config.get("providers", {}).items() }
         self.display_prompt_map = { "enhanced": "Show Enhanced Prompt ✨", "original": "Show Original Prompt ✍️" }
@@ -105,19 +104,18 @@ class ConfigEditor:
         self.notebook = ttk.Notebook(self.master, style="Tenos.TNotebook")
         self.notebook.pack(expand=True, fill="both", padx=10, pady=10)
 
-        self._create_main_config_tab_structure()
         
+        self._create_main_config_tab_structure()
         self.admin_control_tab_manager = AdminControlTab(self, self.notebook)
-
         self._create_bot_settings_tab_structure()
-        self.populate_bot_settings_tab()
-
         self.lora_styles_tab_manager = LoraStylesTab(self, self.notebook)
         self.favorites_tab_manager = FavoritesTab(self, self.notebook)
         self.llm_prompts_tab_manager = LLMPromptsTab(self, self.notebook)
-
         self._initialize_shared_log_display_widget()
         self.bot_control_tab_manager = BotControlTab(self, self.notebook)
+
+        
+        self.refresh_all_ui_tabs()
 
         if self.master.winfo_exists():
             self.master.after(100, self._process_gui_updates_loop)
@@ -126,6 +124,16 @@ class ConfigEditor:
             self.master.after(2000, self._check_settings_file_for_changes)
 
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing_main_window)
+        
+    def refresh_all_ui_tabs(self):
+        """A single method to refresh all data-dependent UI elements."""
+        self.load_available_files()
+        self.populate_main_config_sub_tabs()
+        self.admin_control_tab_manager.populate_admin_tab()
+        self.populate_bot_settings_tab()
+        self.lora_styles_tab_manager.populate_lora_styles_tab()
+        self.favorites_tab_manager.populate_all_favorites_sub_tabs()
+        self.llm_prompts_tab_manager.load_and_populate_llm_prompts()
 
     def _set_application_icon(self):
         if os.path.exists(ICON_PATH_ICO):
@@ -216,11 +224,14 @@ class ConfigEditor:
         
         ttk.Button(self.main_config_tab_frame, text="Save Main Config", command=self.config_manager.save_main_config_data).pack(side="bottom", pady=10)
         
-        self.populate_main_config_sub_tabs()
-
     def populate_main_config_sub_tabs(self):
         self.config_vars.clear()
         
+        # Destroy old widgets before repopulating
+        for parent_frame in [self.paths_tab_frame, self.endpoints_tab_frame, self.api_keys_tab_frame, self.app_settings_tab_frame]:
+            for widget in parent_frame.winfo_children():
+                widget.destroy()
+
         def create_config_row(parent_frame, section_name, item_key_name, is_path=False, is_port=False):
             row_frame = ttk.Frame(parent_frame, style="Tenos.TFrame")
             row_frame.pack(fill=tk.X, pady=2)
@@ -235,34 +246,29 @@ class ConfigEditor:
                 browse_btn = ttk.Button(row_frame, text="Browse...", command=lambda s=section_name, k=item_key_name: self._browse_folder_for_main_config(s, k))
                 browse_btn.pack(side=tk.LEFT, padx=5)
 
-        for widget in self.paths_tab_frame.winfo_children(): widget.destroy()
         for section in ["OUTPUTS", "MODELS", "CLIP", "LORAS", "NODES"]:
             ttk.Label(self.paths_tab_frame, text=section.replace("_", " ").title(), style=BOLD_TLABEL_STYLE).pack(fill=tk.X, pady=(10,5))
-            for key in self.config_manager.config_template_definition[section]:
+            for key in self.config_manager.config_template_definition.get(section, {}):
                 create_config_row(self.paths_tab_frame, section, key, is_path=True)
                 
-        for widget in self.endpoints_tab_frame.winfo_children(): widget.destroy()
         for section in ["COMFYUI_API", "BOT_INTERNAL_API"]:
             ttk.Label(self.endpoints_tab_frame, text=section.replace("_", " ").title(), style=BOLD_TLABEL_STYLE).pack(fill=tk.X, pady=(10,5))
-            create_config_row(self.endpoints_tab_frame, section, "HOST")
-            create_config_row(self.endpoints_tab_frame, section, "PORT", is_port=True)
+            for key in self.config_manager.config_template_definition.get(section, {}):
+                create_config_row(self.endpoints_tab_frame, section, key, is_port=(key=="PORT"))
 
-        for widget in self.api_keys_tab_frame.winfo_children(): widget.destroy()
         for section in ["BOT_API", "LLM_ENHANCER"]:
             ttk.Label(self.api_keys_tab_frame, text=section.replace("_", " ").title(), style=BOLD_TLABEL_STYLE).pack(fill=tk.X, pady=(10,5))
-            for key in self.config_manager.config_template_definition[section]:
+            for key in self.config_manager.config_template_definition.get(section, {}):
                 create_config_row(self.api_keys_tab_frame, section, key)
 
-        for widget in self.app_settings_tab_frame.winfo_children(): widget.destroy()
         app_settings = self.config_manager.config.get("APP_SETTINGS", {})
         auto_update_var = tk.BooleanVar(value=app_settings.get("AUTO_UPDATE_ON_STARTUP", True))
         self.config_vars["APP_SETTINGS.AUTO_UPDATE_ON_STARTUP"] = auto_update_var
-        auto_update_check = tk.Checkbutton(self.app_settings_tab_frame, 
+        auto_update_check = ttk.Checkbutton(self.app_settings_tab_frame, 
                                            text="Automatically check for updates on startup", 
                                            variable=auto_update_var,
                                            style="Tenos.TCheckbutton")
         auto_update_check.pack(anchor='w', padx=5, pady=5)
-
 
     def _browse_folder_for_main_config(self, section_name, key_name):
         var_lookup_key = f"{section_name}.{key_name}"
@@ -328,7 +334,7 @@ class ConfigEditor:
                     if curr_str_val and curr_str_val not in options_data and var_key_name != 'llm_model': tk_var_instance.set(curr_str_val)
                     elif not curr_str_val and safe_options_list: tk_var_instance.set(safe_options_list[0])
             elif widget_class == ttk.Spinbox: ui_element = ttk.Spinbox(settings_content_grid,textvariable=tk_var_instance,wrap=True,width=10,style="Tenos.TSpinbox",**widget_kwargs)
-            elif widget_class == tk.Checkbutton: ui_element = tk.Checkbutton(settings_content_grid,variable=tk_var_instance,bg=FRAME_BG_COLOR,fg=TEXT_COLOR_NORMAL,selectcolor=ENTRY_BG_COLOR,activebackground=FRAME_BG_COLOR,activeforeground=TEXT_COLOR_NORMAL,highlightthickness=0,borderwidth=0)
+            elif widget_class == ttk.Checkbutton: ui_element = ttk.Checkbutton(settings_content_grid,variable=tk_var_instance,style="Tenos.TCheckbutton")
             else: ui_element = ttk.Entry(settings_content_grid,textvariable=tk_var_instance,width=42,style="Tenos.TEntry")
             ui_element.grid(row=current_row_idx,column=1,sticky="ew",padx=5,pady=5)
             self.settings_vars[var_key_name] = tk_var_instance; self.bot_settings_widgets[var_key_name] = ui_element; current_row_idx +=1
@@ -352,9 +358,9 @@ class ConfigEditor:
         create_setting_row_ui("Default Upscale Factor", ttk.Spinbox, var_key_name='upscale_factor', from_=1.5, to=4.0, increment=0.05, format="%.2f")
         ttk.Label(settings_content_grid,text="Variation Settings",style=BOLD_TLABEL_STYLE).grid(row=current_row_idx,column=0,columnspan=2,sticky='w',pady=(15,5),padx=5); current_row_idx+=1
         create_setting_row_ui("Default Variation Mode", ttk.Combobox, ['weak','strong'], 'default_variation_mode')
-        create_setting_row_ui("Variation Remix Mode", tk.Checkbutton, var_key_name='remix_mode')
+        create_setting_row_ui("Variation Remix Mode", ttk.Checkbutton, var_key_name='remix_mode')
         ttk.Label(settings_content_grid,text="LLM Enhancer & Display",style=BOLD_TLABEL_STYLE).grid(row=current_row_idx,column=0,columnspan=2,sticky='w',pady=(15,5),padx=5); current_row_idx+=1
-        create_setting_row_ui("LLM Prompt Enhancer", tk.Checkbutton, var_key_name='llm_enhancer_enabled')
+        create_setting_row_ui("LLM Prompt Enhancer", ttk.Checkbutton, var_key_name='llm_enhancer_enabled')
         llm_provider_keys = list(self.llm_models_config.get('providers',{}).keys())
         create_setting_row_ui("LLM Provider", ttk.Combobox, llm_provider_keys, 'llm_provider')
         initial_llm_provider = self.config_manager.settings.get('llm_provider', llm_provider_keys[0] if llm_provider_keys else 'gemma')
