@@ -38,7 +38,7 @@ async def _ensure_ws_client_id():
         return
     
     print("WebSocket client_id not yet available. Waiting up to 5 seconds...")
-    for _ in range(10):
+    for _ in range(10): # 10 * 0.5s = 5s
         if ws_client.client_id:
             print(f"WebSocket client_id acquired: {ws_client.client_id}")
             return
@@ -669,6 +669,7 @@ async def process_rerun_request(context_user, context_channel, referenced_messag
         is_derivative_action=True 
     )
 
+
 async def process_kontext_edit_request(
     context_user: discord.User,
     context_channel: discord.abc.Messageable,
@@ -777,12 +778,14 @@ async def process_kontext_edit_request(
     sent_message = await safe_interaction_response(initial_interaction_obj, content=content, view=view)
     
     if sent_message:
+        
         job_data_for_qm = {
             "comfy_prompt_id": comfy_id, "channel_id": context_channel.id,
             "user_id": context_user.id, "user_name": context_user.name,
             "user_mention": context_user.mention, "message_id": sent_message.id,
             "enhancer_used": enhancer_info['used'], "llm_provider": enhancer_info['provider'],
             "original_prompt": instruction, "enhanced_prompt": enhanced_instruction,
+            "prompt": enhanced_instruction, # Add top-level prompt for consistency
             "enhancer_error": enhancer_info['error'], **job_details
         }
         queue_manager.add_job(job_id, job_data_for_qm)
