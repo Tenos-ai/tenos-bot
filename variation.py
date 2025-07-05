@@ -124,8 +124,9 @@ def modify_variation_prompt(
         if job_id_from_filename:
             original_job_data = queue_manager.get_job_data_by_id(job_id_from_filename)
 
-    original_prompt_text_unenhanced = None
-    prompt_for_variation_node = " " 
+    prompt_for_variation_node = " "
+    original_prompt_for_log = ""
+    enhanced_prompt_from_source = None
     original_style_from_source = "off"
     original_image_width_val = 1024 
     original_image_height_val = 1024 
@@ -134,13 +135,11 @@ def modify_variation_prompt(
     variation_job_steps = settings.get('steps', 32)
     variation_job_guidance_flux = settings.get('default_guidance', 3.5)
     variation_job_guidance_sdxl = settings.get('default_guidance_sdxl', 7.0)
-    original_unenhanced_prompt_from_source = None
-
+    
     if original_job_data:
-        original_unenhanced_prompt_from_source = original_job_data.get('original_prompt')
-        prompt_for_variation_node = original_job_data.get('enhanced_prompt') or \
-                                    original_unenhanced_prompt_from_source or \
-                                    original_job_data.get('prompt', " ") 
+        original_prompt_for_log = original_job_data.get('original_prompt', original_job_data.get('prompt', ''))
+        enhanced_prompt_from_source = original_job_data.get('enhanced_prompt')
+        prompt_for_variation_node = enhanced_prompt_from_source or original_prompt_for_log or " "
         original_style_from_source = original_job_data.get('style', original_style_from_source)
         
         width_from_job = original_job_data.get('width') or original_job_data.get('original_width')
@@ -177,17 +176,40 @@ def modify_variation_prompt(
             original_aspect_ratio_str_from_source = "1:1"
             print(f"Variation: No job data and failed to get dimensions from URL. Defaulting to {original_image_width_val}x{original_image_height_val}.")
     
-    if edited_prompt is not None:
-        prompt_for_variation_node = edited_prompt.strip() if edited_prompt.strip() else " "
-
+    # **FIX START**: Parse the edited prompt to extract parameters correctly
+    param_pattern = r'\s--(\w+)(?:\s+("([^"]*)"|((?:(?!--|\s--).)+)|([^\s]+)))?'
     variation_seed = generate_seed()
     style_for_this_variation = original_style_from_source
     
-    if edited_prompt is None and isinstance(message_content_or_obj, str):
-        style_match_reply = re.search(r'--style\s+([\w-]+)', message_content_or_obj, re.IGNORECASE)
-        if style_match_reply:
-            requested_style_reply = style_match_reply.group(1) 
-            if requested_style_reply in styles_config: style_for_this_variation = requested_style_reply
+    if edited_prompt is not None:
+        params_remix = {}
+        prompt_base_remix = edited_prompt
+        first_param_match_remix = re.search(r'\s--\w+', edited_prompt)
+        if first_param_match_remix:
+            prompt_base_remix = edited_prompt[:first_param_match_remix.start()].strip()
+            param_string_remix = edited_prompt[first_param_match_remix.start():]
+            param_matches_remix = re.findall(param_pattern, param_string_remix)
+            for key, _, quoted_val, unquoted_compound, unquoted_single in param_matches_remix:
+                value = quoted_val if quoted_val else (unquoted_compound if unquoted_compound else unquoted_single)
+                params_remix[key.lower()] = value.strip() if value else True
+
+        prompt_for_variation_node = prompt_base_remix.strip() if prompt_base_remix.strip() else " "
+        original_prompt_for_log = prompt_for_variation_node # For remixed jobs, the original prompt is what the user typed.
+
+        if 'style' in params_remix and params_remix['style'] in styles_config:
+            style_for_this_variation = params_remix['style']
+        
+        if 'seed' in params_remix:
+            try: variation_seed = int(params_remix['seed'])
+            except (ValueError, TypeError): pass # Keep the generated seed if parsing fails
+    else: # No remixed prompt, use original logic
+        if isinstance(message_content_or_obj, str):
+            style_match_reply = re.search(r'--style\s+([\w-]+)', message_content_or_obj, re.IGNORECASE)
+            if style_match_reply:
+                requested_style_reply = style_match_reply.group(1) 
+                if requested_style_reply in styles_config: style_for_this_variation = requested_style_reply
+    # **FIX END**
+
     if style_for_this_variation not in styles_config: style_for_this_variation = "off"
 
     style_warning_message_var = None
@@ -215,6 +237,7 @@ def modify_variation_prompt(
     else: template_to_use = flux_weakvary_template if variation_type == 'weak' else flux_strongvary_template
     modified_variation_prompt = json.loads(json.dumps(template_to_use))
 
+    # Apply settings to the chosen template
     if base_model_type_for_variation_workflow == "flux":
         modified_variation_prompt["8"]["inputs"]["text"] = prompt_for_variation_node 
         modified_variation_prompt["33"]["inputs"]["url_or_path"] = target_image_url
@@ -235,7 +258,6 @@ def modify_variation_prompt(
     os.makedirs(VARIATIONS_DIR, exist_ok=True)
     variation_char = variation_type[0].upper()
     filename_suffix_detail_var = f"_{variation_char}_from_img{image_index}_srcID{source_job_id_for_tracking_var}"
-    # Standardized prefix for variations
     file_prefix_base_var = "GEN_VAR_"
     final_filename_prefix_var = normalize_path_for_comfyui(
         os.path.join(VARIATIONS_DIR, f"{file_prefix_base_var}{variation_job_id}{filename_suffix_detail_var}")
@@ -304,9 +326,10 @@ def modify_variation_prompt(
             enhancer_ref_text = f"\n> `(Based on Enhanced Prompt via {provider_enh})`"
 
     job_details_dict_var = {
-        "job_id": variation_job_id, "prompt": prompt_for_variation_node,
-        "original_prompt": original_unenhanced_prompt_from_source,
-        "enhanced_prompt": original_job_data.get('enhanced_prompt') if original_job_data else None,
+        "job_id": variation_job_id,
+        "prompt": prompt_for_variation_node,
+        "original_prompt": original_prompt_for_log,
+        "enhanced_prompt": enhanced_prompt_from_source if edited_prompt is None else None,
         "negative_prompt": final_negative_prompt_for_sdxl_variation if base_model_type_for_variation_workflow == "sdxl" else None,
         "seed": variation_seed, "steps": variation_job_steps, 
         "guidance": variation_job_guidance_flux if base_model_type_for_variation_workflow == 'flux' else None, 
@@ -325,7 +348,8 @@ def modify_variation_prompt(
             "denoise": denoise_for_ksampler_variation, "variation_strength": variation_type,
             "base_model_type_workflow": base_model_type_for_variation_workflow, 
             "base_model_filename": actual_base_model_filename_for_variation,
-            "source_job_id": source_job_id_for_tracking_var
+            "source_job_id": source_job_id_for_tracking_var,
+            "is_remix": edited_prompt is not None
         }
     }
     return variation_job_id, modified_variation_prompt, response_status_msg_var, job_details_dict_var
