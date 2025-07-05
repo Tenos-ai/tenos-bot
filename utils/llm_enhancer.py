@@ -111,7 +111,7 @@ async def _enhance_with_gemini(original_prompt: str, model_name: str, system_ins
 async def _enhance_with_groq(original_prompt: str, model_name: str, system_instruction_text: str, image_urls: list | None = None) -> tuple[str | None, str | None]:
     if not GROQ_API_KEY:
         return None, "Groq API key is missing in config.json."
-    
+    # Groq does not support vision, so image_urls is ignored.
     API_URL = "https://api.groq.com/openai/v1/chat/completions"
     headers = {'Authorization': f'Bearer {GROQ_API_KEY}', 'Content-Type': 'application/json'}
     payload = {"messages": [{"role": "system", "content": system_instruction_text}, {"role": "user", "content": original_prompt}], "model": model_name, "temperature": 1, "max_tokens": 2048}
@@ -131,18 +131,15 @@ async def _enhance_with_openai(original_prompt: str, model_name: str, system_ins
     if not OPENAI_API_KEY:
         return None, "OpenAI API key is missing."
 
-    
     if image_urls and "vision" not in model_name and "o" not in model_name:
         model_name = "gpt-4o"
 
     API_URL = "https://api.openai.com/v1/chat/completions"
     headers = {'Authorization': f'Bearer {OPENAI_API_KEY}', 'Content-Type': 'application/json'}
 
-    
     content_list = [{"type": "text", "text": original_prompt}]
     if image_urls:
         for url in image_urls:
-            
             content_list.append({"type": "image_url", "image_url": {"url": url}})
 
     payload = {"model": model_name, "messages": [{"role": "system", "content": system_instruction_text}, {"role": "user", "content": content_list}], "max_tokens": 2048}
@@ -160,6 +157,7 @@ async def _enhance_with_openai(original_prompt: str, model_name: str, system_ins
         return None, f"Error with OpenAI API: {e}"
 
 
+# **FIX START**: Function modified to prepend image context to the prompt.
 async def enhance_prompt(original_prompt: str, system_prompt_text_override: str | None = None, target_model_type: str = "flux", image_urls: list | None = None) -> tuple[str | None, str | None]:
     from settings_manager import load_settings
     settings = load_settings()
@@ -167,6 +165,12 @@ async def enhance_prompt(original_prompt: str, system_prompt_text_override: str 
 
     if not original_prompt:
         return None, "Invalid original prompt provided."
+
+    # Prepend image context to the prompt if URLs are provided
+    final_prompt_for_llm = original_prompt
+    if image_urls and len(image_urls) > 0:
+        image_references = ", ".join([f"image{i+1}" for i in range(len(image_urls))])
+        final_prompt_for_llm = f"Based on the provided images ({image_references}), please follow this instruction: {original_prompt}"
 
     system_instruction_to_use = system_prompt_text_override
     if not system_instruction_to_use:
@@ -182,12 +186,13 @@ async def enhance_prompt(original_prompt: str, system_prompt_text_override: str 
 
     if provider == 'gemini':
         model_name = settings.get('llm_model_gemini', 'gemini-1.5-flash-latest')
-        return await _enhance_with_gemini(original_prompt, model_name, system_instruction_to_use, image_urls)
+        return await _enhance_with_gemini(final_prompt_for_llm, model_name, system_instruction_to_use, image_urls)
     elif provider == 'groq':
         model_name = settings.get('llm_model_groq', 'llama3-8b-8192')
-        return await _enhance_with_groq(original_prompt, model_name, system_instruction_to_use, image_urls)
+        return await _enhance_with_groq(final_prompt_for_llm, model_name, system_instruction_to_use, image_urls)
     elif provider == 'openai':
         model_name = settings.get('llm_model_openai', 'gpt-4o')
-        return await _enhance_with_openai(original_prompt, model_name, system_instruction_to_use, image_urls)
+        return await _enhance_with_openai(final_prompt_for_llm, model_name, system_instruction_to_use, image_urls)
     else:
         return None, f"Unknown LLM provider '{provider}' selected in settings."
+    
