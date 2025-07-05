@@ -26,14 +26,16 @@ class EditKontextModal(Modal, title='Edit with Kontext'):
         super().__init__(timeout=600)
         self.primary_image_url = primary_image_url
         self.original_interaction = interaction
-        
+
+        # Field for the user's instruction, with updated placeholder
         self.instruction_input = TextInput(
             label="Edit Command & Optional Parameters",
             style=discord.TextStyle.paragraph,
             placeholder="add a hat on the man --steps 40 --ar 1:1\nmake the sky night time --g 4.5",
             required=True
         )
-        
+
+        # Field for the primary image URL - pre-filled
         self.image1_input = TextInput(
             label="Image to Edit (Primary)",
             default=self.primary_image_url,
@@ -41,6 +43,7 @@ class EditKontextModal(Modal, title='Edit with Kontext'):
             required=True,
         )
         
+        # Optional fields for additional images
         self.image2_input = TextInput(label="Image 2 (Optional URL)", required=False, placeholder="Paste another image URL to stitch...")
         self.image3_input = TextInput(label="Image 3 (Optional URL)", required=False, placeholder="Paste another image URL to stitch...")
         self.image4_input = TextInput(label="Image 4 (Optional URL)", required=False, placeholder="Paste another image URL to stitch...")
@@ -73,6 +76,107 @@ class EditKontextModal(Modal, title='Edit with Kontext'):
         print(f"Error in EditKontextModal: {error}")
         traceback.print_exc()
         await safe_interaction_response(interaction, "An error occurred with the editing form.", ephemeral=True)
+
+
+# **FIX START**: Implemented the RemixModal for variation editing.
+class RemixModal(Modal, title='Remix Variation'):
+    def __init__(self, job_data: dict, variation_type: str, image_index: int, ref_message: discord.Message):
+        super().__init__(timeout=600)
+        self.job_data = job_data
+        self.variation_type = variation_type
+        self.image_index = image_index
+        self.referenced_message = ref_message
+        
+        original_prompt = reconstruct_full_prompt_string(job_data)
+        
+        self.prompt_input = TextInput(
+            label="Prompt",
+            style=discord.TextStyle.paragraph,
+            default=original_prompt,
+            required=True,
+            max_length=1500 # A reasonable limit for the text box
+        )
+        self.add_item(self.prompt_input)
+
+        # SDXL Negative Prompt field
+        # Only show this if the original job was an SDXL job
+        original_model_type = job_data.get('model_type_for_enhancer', 'flux')
+        if original_model_type == 'sdxl':
+            self.negative_prompt_input = TextInput(
+                label="Negative Prompt (SDXL Only)",
+                style=discord.TextStyle.paragraph,
+                default=job_data.get('negative_prompt', ''),
+                required=False
+            )
+            self.add_item(self.negative_prompt_input)
+        else:
+            self.negative_prompt_input = None
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # This callback is now responsible for initiating the variation process
+        # with the edited prompts.
+        
+        edited_prompt_text = self.prompt_input.value
+        edited_neg_prompt_text = self.negative_prompt_input.value if self.negative_prompt_input else None
+        
+        # Get the bot instance from the view that launched the modal if possible, or from a global scope
+        # In this structure, we'll call back into the GenerationActionsView's _process_and_send_action_results
+        
+        # We need to defer here because the core logic will send followup messages
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=False, thinking=False)
+        except discord.errors.InteractionResponded: pass # Already deferred, good to go
+        except Exception as e: print(f"Error deferring in RemixModal on_submit: {e}")
+
+        # The core logic needs to be called from a context that can send messages.
+        # We'll call the core logic directly here.
+        results = await core_process_variation(
+            context_user=interaction.user,
+            context_channel=interaction.channel,
+            referenced_message_obj=self.referenced_message,
+            variation_type_str=self.variation_type,
+            image_idx=self.image_index,
+            edited_prompt_str=edited_prompt_text,
+            edited_neg_prompt_str=edited_neg_prompt_text,
+            is_interaction=True,
+            initial_interaction_obj=interaction
+        )
+
+        # Since we've deferred, we now need to handle sending the results.
+        # We can borrow the logic from GenerationActionsView._process_and_send_action_results
+        # This is a bit of a structural challenge. Let's simplify and just have it work.
+        for result_item in results:
+            if result_item["status"] == "success":
+                msg_details_item = result_item["message_content_details"]
+                content_str = (f"{msg_details_item['user_mention']}: `{textwrap.shorten(msg_details_item['prompt_to_display'], 50, placeholder='...')}` ({msg_details_item['description']} on img #{msg_details_item['image_index']} from `{msg_details_item['original_job_id']}` - {msg_details_item['model_type']})\n" 
+                               f"> **Seed:** `{msg_details_item['seed']}`, **AR:** `{msg_details_item['aspect_ratio']}`, **Steps:** `{msg_details_item['steps']}`, **Style:** `{msg_details_item['style']}`")
+                if msg_details_item.get('is_remixed'): content_str += "\n> `(Remixed Prompt)`"
+                enhancer_text_val = msg_details_item.get('enhancer_reference_text')
+                if enhancer_text_val: content_str += f"\n{enhancer_text_val.strip()}"
+                content_str += "\n> **Status:** Queued... "
+
+                view_to_send_item = QueuedJobView(**result_item["view_args"]) if result_item.get("view_type") == "QueuedJobView" and result_item.get("view_args") else None
+                sent_message_item = await safe_interaction_response(interaction, content=content_str, view=view_to_send_item)
+
+                if sent_message_item and result_item["job_data_for_qm"]:
+                    job_data_to_add_item = result_item["job_data_for_qm"]
+                    job_data_to_add_item["message_id"] = sent_message_item.id
+                    queue_manager.add_job(result_item["job_id"], job_data_to_add_item)
+                    ws_client = WebsocketClient()
+                    if ws_client.is_connected and result_item.get("comfy_prompt_id"):
+                        await ws_client.register_prompt(result_item["comfy_prompt_id"], sent_message_item.id, sent_message_item.channel.id)
+
+            elif result_item["status"] == "error":
+                error_text_item = result_item.get('error_message_text', 'Unknown error during variation.')
+                await safe_interaction_response(interaction, f"Error (Variation): {error_text_item}", ephemeral=True)
+
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        print(f"Error in RemixModal: {error}")
+        traceback.print_exc()
+        await safe_interaction_response(interaction, "An error occurred with the remix form.", ephemeral=True)
+# **FIX END**
 
 
 class ImageSelectionView(View):
@@ -266,11 +370,17 @@ class GenerationActionsView(View):
         except (IndexError, ValueError): pass
         ref_msg = await self.get_referenced_message(interaction)
         if not ref_msg: await safe_interaction_response(interaction, "Error: Original message not found.", ephemeral=True); return
+        
+        # **FIX START**: Implemented the Remix Modal logic
         if remix_enabled:
             job_data = queue_manager.get_job_data_by_id(self.job_id) or queue_manager.get_job_data(ref_msg.id, ref_msg.channel.id if ref_msg.channel else interaction.channel_id) 
-            target_attachment = ref_msg.attachments[image_idx-1] if len(ref_msg.attachments) >= image_idx else None
-            if not target_attachment: await safe_interaction_response(interaction, "Error: Target image for remix not found.", ephemeral=True); return
-            await safe_interaction_response(interaction, "Remix mode for Variations is temporarily disabled.", ephemeral=True)
+            if not job_data:
+                await safe_interaction_response(interaction, "Error: Original job data for remix not found.", ephemeral=True)
+                return
+            
+            modal = RemixModal(job_data, variation_type, image_idx, ref_msg)
+            await interaction.response.send_modal(modal)
+        # **FIX END**
         else:
             results = await core_process_variation(context_user=interaction.user, context_channel=interaction.channel, referenced_message_obj=ref_msg, variation_type_str=variation_type, image_idx=image_idx, is_interaction=True, initial_interaction_obj=interaction) 
             await self._process_and_send_action_results(interaction, results, f"{variation_type.capitalize()} Variation")
