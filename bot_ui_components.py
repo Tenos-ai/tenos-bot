@@ -17,9 +17,9 @@ from bot_core_logic import (
     process_variation_request as core_process_variation,
     process_rerun_request as core_process_rerun,
     process_cancel_request,
-    process_kontext_edit_request
+    process_kontext_edit_request,
+    execute_generation_logic
 )
-
 
 class EditKontextModal(Modal, title='Edit with Kontext'):
     def __init__(self, primary_image_url: str, interaction: discord.Interaction):
@@ -78,7 +78,6 @@ class EditKontextModal(Modal, title='Edit with Kontext'):
         await safe_interaction_response(interaction, "An error occurred with the editing form.", ephemeral=True)
 
 
-# **FIX START**: Implemented the RemixModal for variation editing.
 class RemixModal(Modal, title='Remix Variation'):
     def __init__(self, job_data: dict, variation_type: str, image_index: int, ref_message: discord.Message):
         super().__init__(timeout=600)
@@ -94,12 +93,10 @@ class RemixModal(Modal, title='Remix Variation'):
             style=discord.TextStyle.paragraph,
             default=original_prompt,
             required=True,
-            max_length=1500 # A reasonable limit for the text box
+            max_length=1500
         )
         self.add_item(self.prompt_input)
 
-        # SDXL Negative Prompt field
-        # Only show this if the original job was an SDXL job
         original_model_type = job_data.get('model_type_for_enhancer', 'flux')
         if original_model_type == 'sdxl':
             self.negative_prompt_input = TextInput(
@@ -113,24 +110,16 @@ class RemixModal(Modal, title='Remix Variation'):
             self.negative_prompt_input = None
 
     async def on_submit(self, interaction: discord.Interaction):
-        # This callback is now responsible for initiating the variation process
-        # with the edited prompts.
         
         edited_prompt_text = self.prompt_input.value
         edited_neg_prompt_text = self.negative_prompt_input.value if self.negative_prompt_input else None
         
-        # Get the bot instance from the view that launched the modal if possible, or from a global scope
-        # In this structure, we'll call back into the GenerationActionsView's _process_and_send_action_results
-        
-        # We need to defer here because the core logic will send followup messages
         try:
             if not interaction.response.is_done():
                 await interaction.response.defer(ephemeral=False, thinking=False)
-        except discord.errors.InteractionResponded: pass # Already deferred, good to go
+        except discord.errors.InteractionResponded: pass
         except Exception as e: print(f"Error deferring in RemixModal on_submit: {e}")
 
-        # The core logic needs to be called from a context that can send messages.
-        # We'll call the core logic directly here.
         results = await core_process_variation(
             context_user=interaction.user,
             context_channel=interaction.channel,
@@ -143,9 +132,6 @@ class RemixModal(Modal, title='Remix Variation'):
             initial_interaction_obj=interaction
         )
 
-        # Since we've deferred, we now need to handle sending the results.
-        # We can borrow the logic from GenerationActionsView._process_and_send_action_results
-        # This is a bit of a structural challenge. Let's simplify and just have it work.
         for result_item in results:
             if result_item["status"] == "success":
                 msg_details_item = result_item["message_content_details"]
@@ -176,7 +162,6 @@ class RemixModal(Modal, title='Remix Variation'):
         print(f"Error in RemixModal: {error}")
         traceback.print_exc()
         await safe_interaction_response(interaction, "An error occurred with the remix form.", ephemeral=True)
-# **FIX END**
 
 
 class ImageSelectionView(View):
@@ -371,7 +356,6 @@ class GenerationActionsView(View):
         ref_msg = await self.get_referenced_message(interaction)
         if not ref_msg: await safe_interaction_response(interaction, "Error: Original message not found.", ephemeral=True); return
         
-        # **FIX START**: Implemented the Remix Modal logic
         if remix_enabled:
             job_data = queue_manager.get_job_data_by_id(self.job_id) or queue_manager.get_job_data(ref_msg.id, ref_msg.channel.id if ref_msg.channel else interaction.channel_id) 
             if not job_data:
@@ -380,7 +364,6 @@ class GenerationActionsView(View):
             
             modal = RemixModal(job_data, variation_type, image_idx, ref_msg)
             await interaction.response.send_modal(modal)
-        # **FIX END**
         else:
             results = await core_process_variation(context_user=interaction.user, context_channel=interaction.channel, referenced_message_obj=ref_msg, variation_type_str=variation_type, image_idx=image_idx, is_interaction=True, initial_interaction_obj=interaction) 
             await self._process_and_send_action_results(interaction, results, f"{variation_type.capitalize()} Variation")
