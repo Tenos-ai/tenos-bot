@@ -114,7 +114,7 @@ class ConfigEditor:
         self.lora_styles_tab_manager = LoraStylesTab(self, self.notebook)
         self.favorites_tab_manager = FavoritesTab(self, self.notebook)
         self.llm_prompts_tab_manager = LLMPromptsTab(self, self.notebook)
-        self.bot_control_tab_manager = BotControlTab(self, self.notebook)
+        self.bot_control_tab_manager = BotControlTab(self, self.notebook) # **FIX**: This now creates the log widget
 
         # Now that all widgets are created, populate them with data
         self.refresh_all_ui_tabs()
@@ -222,7 +222,6 @@ class ConfigEditor:
     def populate_main_config_sub_tabs(self):
         self.config_vars.clear()
         
-        # Destroy old widgets before repopulating
         for parent_frame in [self.paths_tab_frame, self.endpoints_tab_frame, self.api_keys_tab_frame, self.app_settings_tab_frame]:
             for widget in parent_frame.winfo_children():
                 widget.destroy()
@@ -456,7 +455,7 @@ class ConfigEditor:
         except Exception: pass
         if log_msgs_batch:
             try:
-                if self.log_display and self.log_display.winfo_exists():
+                if self.log_display and self.log_display.winfo_exists(): # **FIX**: Check for existence
                     self.log_display.config(state='normal')
                     for src_disp, line_disp in log_msgs_batch: self.log_display.insert(tk.END, line_disp, (src_disp if src_disp in ["stdout","stderr","info","worker"] else "stdout",))
                     self.log_display.see(tk.END); self.log_display.config(state='disabled')
