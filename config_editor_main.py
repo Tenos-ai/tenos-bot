@@ -106,7 +106,7 @@ class ConfigEditor:
         self.notebook = ttk.Notebook(self.master, style="Tenos.TNotebook")
         self.notebook.pack(expand=True, fill="both", padx=10, pady=10)
 
-        
+        # Create all tab structures first
         self._create_main_config_tab_structure()
         self.admin_control_tab_manager = AdminControlTab(self, self.notebook)
         self._create_bot_settings_tab_structure()
@@ -116,7 +116,7 @@ class ConfigEditor:
         self._initialize_shared_log_display_widget()
         self.bot_control_tab_manager = BotControlTab(self, self.notebook)
 
-        
+        # Now that all widgets are created, populate them with data
         self.refresh_all_ui_tabs()
 
         if self.master.winfo_exists():
@@ -523,19 +523,18 @@ class ConfigEditor:
         self.log_queue.put(("info",f"--- Finished {task_name_ui} (Success: {success_flag_worker}) ---\n"))
 
     def _worker_update_application(self):
-        """Worker task to update the application from Git using a more robust pull-and-check method."""
+        """Worker task to update the application from Git using a fetch/compare/reset strategy."""
         try:
             repo = git.Repo(search_parent_directories=True)
             self.log_queue.put(("worker", f"Found Git repository at: {repo.working_dir}\n"))
         except git.InvalidGitRepositoryError:
-            msg = "Application directory is not a Git repository. Cannot auto-update. Please re-download from GitHub."
+            msg = "Application directory is not a Git repository. Cannot auto-update."
             self.log_queue.put(("stderr", msg + "\n"))
             return msg
 
         try:
             origin = repo.remotes.origin
             
-            # --- State Correction Logic (unchanged) ---
             if repo.head.is_detached or not repo.head.reference.tracking_branch():
                 self.log_queue.put(("worker", "Detached HEAD or non-tracking branch detected. Attempting to fix...\n"))
                 default_branch = None
@@ -563,7 +562,7 @@ class ConfigEditor:
                     return msg
 
             if repo.is_dirty(untracked_files=True):
-                self.log_queue.put(("stderr", "Warning: Local changes detected. Stashing changes before update...\n"))
+                self.log_queue.put(("stderr", "Warning: Local changes detected. Stashing before update...\n"))
                 try:
                     repo.git.stash()
                     self.log_queue.put(("worker", "Local changes stashed.\n"))
@@ -572,20 +571,26 @@ class ConfigEditor:
                     self.log_queue.put(("stderr", msg + "\n"))
                     return msg
 
-            self.log_queue.put(("worker", "Pulling latest changes from origin...\n"))
-            pull_result = origin.pull()[0]
-            
-            # **FIXED**: Check the flags to see if an update happened
-            if pull_result.flags & git.remote.FetchInfo.HEAD_UPTODATE:
+            self.log_queue.put(("worker", "Fetching updates from origin...\n"))
+            origin.fetch()
+
+            local_commit = repo.head.commit
+            remote_commit = repo.remotes.origin.refs[repo.active_branch.name].commit
+
+            if local_commit == remote_commit:
                 msg = "Application is already up to date."
                 self.log_queue.put(("info", msg + "\n"))
                 return msg
-            
-            # If we reach here, an update happened.
-            msg = "Application updated successfully! Restarting automatically in 3 seconds..."
-            self.log_queue.put(("info", msg + "\n"))
-            self.worker_queue.put({"type": "restart_required"})
-            return msg
+            else:
+                self.log_queue.put(("worker", f"Updates found. Local: {local_commit.hexsha[:7]}, Remote: {remote_commit.hexsha[:7]}\n"))
+                self.log_queue.put(("worker", "Resetting local branch to match remote...\n"))
+                
+                repo.git.reset('--hard', f'origin/{repo.active_branch.name}')
+                
+                msg = "Application updated successfully! Restarting automatically in 3 seconds..."
+                self.log_queue.put(("info", msg + "\n"))
+                self.worker_queue.put({"type": "restart_required"})
+                return msg
 
         except (git.GitCommandError, TypeError) as e:
             error_msg = f"Git command failed: {getattr(e, 'stderr', str(e))}"
