@@ -19,7 +19,7 @@ from websocket_client import WebsocketClient
 
 from image_generation import modify_prompt as ig_modify_prompt
 from upscaling import modify_upscale_prompt as up_modify_upscale_prompt, get_image_dimensions
-from variation import modify_weak_variation_prompt, modify_strong_variation_prompt
+from variation import modify_variation_prompt
 from kontext_editing import modify_kontext_prompt
 from utils.seed_utils import generate_seed
 from utils.show_prompt import reconstruct_full_prompt_string
@@ -196,10 +196,13 @@ async def process_completed_job(bot, job_id, job_data, file_paths: list):
             except Exception as e_send_prep_err_attach: print(f"Error sending/editing msg for file prep fail: {e_send_prep_err_attach}")
             return
         current_settings = load_settings(); display_preference = current_settings.get('display_prompt_preference', 'enhanced')
-        prompt_to_display_text = job_data.get('prompt', '[No Prompt Provided]')
-        if display_preference == 'enhanced' and job_data.get('enhanced_prompt'): prompt_to_display_text = job_data.get('enhanced_prompt')
-        elif display_preference == 'original' and job_data.get('original_prompt'): prompt_to_display_text = job_data.get('original_prompt')
-        elif job_data.get('enhanced_prompt'): prompt_to_display_text = job_data.get('enhanced_prompt')
+        # FIX: Ensure prompt display logic correctly handles all cases and falls back gracefully
+        prompt_to_use_for_display = job_data.get('prompt', '[No Prompt Provided]')
+        if display_preference == 'enhanced' and job_data.get('enhanced_prompt'):
+            prompt_to_use_for_display = job_data.get('enhanced_prompt')
+        elif display_preference == 'original' and job_data.get('original_prompt'):
+            prompt_to_use_for_display = job_data.get('original_prompt')
+
         enhancer_was_used = job_data.get('enhancer_used', False); enhancer_had_error = job_data.get('enhancer_error'); llm_provider_used = job_data.get('llm_provider')
         aspect_ratio_display = job_data.get("aspect_ratio_str", "?:?"); seed_display = job_data.get('seed', 'N/A'); style_display = job_data.get('style', 'off'); job_type_display_str = job_data.get('type', 'generate').capitalize()
         if job_type_display_str.lower() == 'upscale': steps_display = 'N/A (Upscale)'; guidance_display = 'N/A (Upscale)'; sdxl_guidance_display = 'N/A (Upscale)'; mp_size_display = 'N/A (Upscale)'
@@ -210,7 +213,7 @@ async def process_completed_job(bot, job_id, job_data, file_paths: list):
             try: sdxl_guidance_display = f"{float(guidance_val_sdxl):.1f}" if guidance_val_sdxl is not None else 'N/A'
             except (ValueError, TypeError): sdxl_guidance_display = '?'
             mp_size_display = job_data.get("parameters_used", {}).get("mp", job_data.get("default_mp_size", "N/A"))
-        final_content = f"{user_mention}: `{textwrap.shorten(prompt_to_display_text, 1500, placeholder='...')}`"
+        final_content = f"{user_mention}: `{textwrap.shorten(prompt_to_use_for_display, 1500, placeholder='...')}`"
         if enhancer_was_used and display_preference == 'enhanced': final_content += " ✨"
         final_content += f"\n> **Seed:** `{seed_display}`"
         if job_type_display_str.lower() != 'upscale': final_content += f", **AR:** `{aspect_ratio_display}`, **MP:** `{mp_size_display}`"
@@ -596,10 +599,8 @@ async def process_variation_request(context_user, context_channel, referenced_me
     original_job_id_var = extract_job_id(target_attachment_var.filename)
     message_content_var = initial_interaction_obj.message.content if is_interaction and initial_interaction_obj and initial_interaction_obj.message else ""
 
-    modify_func_var = modify_weak_variation_prompt if variation_type_str == 'weak' else modify_strong_variation_prompt
-    
-    job_id_var, mod_prompt_var, resp_status_var, job_details_var = modify_func_var(
-        message_content_var, referenced_message_obj, target_attachment_var.url, image_idx, edited_prompt_str, edited_neg_prompt_str
+    job_id_var, mod_prompt_var, resp_status_var, job_details_var = modify_variation_prompt(
+        message_content_var, referenced_message_obj, variation_type_str, target_attachment_var.url, image_idx, edited_prompt_str, edited_neg_prompt_str
     )
     if not job_id_var: return [{"status": "error", "error_message_text": resp_status_var or "Failed to prepare variation."}]
     
@@ -668,7 +669,6 @@ async def process_rerun_request(context_user, context_channel, referenced_messag
         model_type_override=model_type_for_rerun, 
         is_derivative_action=True 
     )
-
 
 async def process_kontext_edit_request(
     context_user: discord.User,
@@ -778,14 +778,14 @@ async def process_kontext_edit_request(
     sent_message = await safe_interaction_response(initial_interaction_obj, content=content, view=view)
     
     if sent_message:
-        
         job_data_for_qm = {
             "comfy_prompt_id": comfy_id, "channel_id": context_channel.id,
             "user_id": context_user.id, "user_name": context_user.name,
             "user_mention": context_user.mention, "message_id": sent_message.id,
             "enhancer_used": enhancer_info['used'], "llm_provider": enhancer_info['provider'],
-            "original_prompt": instruction, "enhanced_prompt": enhanced_instruction,
-            "prompt": enhanced_instruction, # Add top-level prompt for consistency
+            "original_prompt": instruction, 
+            "enhanced_prompt": enhanced_instruction,
+            "prompt": enhanced_instruction,
             "enhancer_error": enhancer_info['error'], **job_details
         }
         queue_manager.add_job(job_id, job_data_for_qm)
