@@ -67,6 +67,7 @@ class ConfigEditor:
         self.config_vars = {}
         self.settings_vars = {}
         self.bot_settings_widgets = {}
+        self.log_display = None # **FIX**: Initialize as None
 
         def silence_bell_global(): pass
         self.master.bell = silence_bell_global
@@ -113,7 +114,6 @@ class ConfigEditor:
         self.lora_styles_tab_manager = LoraStylesTab(self, self.notebook)
         self.favorites_tab_manager = FavoritesTab(self, self.notebook)
         self.llm_prompts_tab_manager = LLMPromptsTab(self, self.notebook)
-        self._initialize_shared_log_display_widget()
         self.bot_control_tab_manager = BotControlTab(self, self.notebook)
 
         # Now that all widgets are created, populate them with data
@@ -168,13 +168,6 @@ class ConfigEditor:
         restart_note_frame = ttk.Frame(self.master, style="Tenos.TFrame")
         restart_note_frame.pack(fill=tk.X, padx=10, pady=(5,0))
         ttk.Label(restart_note_frame, text="Note: Changes to paths (Main Config) or API Keys require a bot restart to take effect.", style="Tenos.TLabel", font=('Arial', 9, 'italic'), foreground=TENOS_LIGHT_BLUE_ACCENT2).pack(side=tk.LEFT)
-
-    def _initialize_shared_log_display_widget(self):
-        self.log_display = scrolledtext.ScrolledText( self.master, state='disabled', wrap=tk.WORD, height=1, width=1, font=("Consolas", 9), bg=ENTRY_BG_COLOR, fg=TEXT_COLOR_NORMAL, insertbackground=ENTRY_INSERT_COLOR, selectbackground=SELECT_BG_COLOR, selectforeground=SELECT_FG_COLOR, borderwidth=1, relief="sunken" )
-        self.log_display.tag_configure("stdout", foreground=LOG_STDOUT_FG)
-        self.log_display.tag_configure("stderr", foreground=LOG_STDERR_FG)
-        self.log_display.tag_configure("info", foreground=LOG_INFO_FG, font=("Consolas", 9, "italic"))
-        self.log_display.tag_configure("worker", foreground=LOG_WORKER_FG, font=("Consolas", 9, "bold"))
 
     def _configure_main_editor_style(self):
         s = self.style; s.theme_use('default')
@@ -463,7 +456,7 @@ class ConfigEditor:
         except Exception: pass
         if log_msgs_batch:
             try:
-                if hasattr(self,'log_display') and self.log_display.winfo_exists():
+                if self.log_display and self.log_display.winfo_exists():
                     self.log_display.config(state='normal')
                     for src_disp, line_disp in log_msgs_batch: self.log_display.insert(tk.END, line_disp, (src_disp if src_disp in ["stdout","stderr","info","worker"] else "stdout",))
                     self.log_display.see(tk.END); self.log_display.config(state='disabled')
@@ -605,7 +598,7 @@ class ConfigEditor:
     def _worker_install_custom_nodes(self):
         custom_nodes_path_str = self.config_manager.config.get('NODES',{}).get('CUSTOM_NODES')
         if not (custom_nodes_path_str and isinstance(custom_nodes_path_str,str) and os.path.isdir(custom_nodes_path_str)):
-            msg_err = "Custom Nodes path not set or invalid in Main Config."; self.log_queue.put(("stderr", f"Install Custom Nodes Error: {msg_err}\n")); return msg_err
+            msg_err = "Custom Nodes path not set/invalid in Main Config."; self.log_queue.put(("stderr", f"Install Custom Nodes Error: {msg_err}\n")); return msg_err
         repositories_to_install = ["https://github.com/rgthree/rgthree-comfy.git", "https://github.com/ssitu/ComfyUI_UltimateSDUpscale.git", "https://github.com/jamesWalker55/comfyui-various.git", "https://github.com/city96/ComfyUI-GGUF.git", "https://github.com/tsogzark/ComfyUI-load-image-from-url.git","https://github.com/BobsBlazed/Bobs_Latent_Optimizer.git","https://github.com/Tenos-ai/Tenos-Resize-to-1-M-Pixels.git"]
         installation_results = []; errors_encountered_install = False
         for idx, repo_url_str in enumerate(repositories_to_install):
@@ -657,8 +650,14 @@ class ConfigEditor:
                 response = requests.get("https://api.openai.com/v1/models", headers=headers, timeout=10)
                 response.raise_for_status()
                 models = response.json().get('data', [])
+                
                 chat_model_prefixes = ['gpt-4', 'gpt-3.5', 'o1', 'o3', 'o4']
-                openai_model_ids = sorted([m['id'] for m in models if any(m['id'].startswith(p) for p in chat_model_prefixes)])
+                
+                openai_model_ids = sorted([
+                    m['id'] for m in models 
+                    if any(m['id'].startswith(p) for p in chat_model_prefixes)
+                ])
+                
                 updated_models_data['providers']['openai']['models'] = openai_model_ids
                 results_log.append(f"OpenAI: Found {len(openai_model_ids)} chat models.")
             except Exception as e:
@@ -672,6 +671,7 @@ class ConfigEditor:
                 response = requests.get("https://api.groq.com/openai/v1/models", headers=headers, timeout=10)
                 response.raise_for_status()
                 models = response.json().get('data', [])
+                
                 groq_model_ids = sorted([m['id'] for m in models])
                 updated_models_data['providers']['groq']['models'] = groq_model_ids
                 results_log.append(f"Groq: Found {len(groq_model_ids)} chat models.")
@@ -685,7 +685,11 @@ class ConfigEditor:
                 response = requests.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_key}", timeout=10)
                 response.raise_for_status()
                 models = response.json().get('models', [])
-                gemini_model_ids = sorted([m['name'].replace('models/', '') for m in models if 'generateContent' in m.get('supportedGenerationMethods', [])])
+                
+                gemini_model_ids = sorted([
+                    m['name'].replace('models/', '') for m in models 
+                    if any('generateContent' in method for method in m.get('supportedGenerationMethods', []))
+                ])
                 updated_models_data['providers']['gemini']['models'] = gemini_model_ids
                 results_log.append(f"Gemini: Found {len(gemini_model_ids)} chat models.")
             except Exception as e:
