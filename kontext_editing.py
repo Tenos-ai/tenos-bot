@@ -1,4 +1,3 @@
-# --- START OF FILE kontext_editing.py ---
 import json
 import uuid
 import os
@@ -18,7 +17,7 @@ try:
         config_data_kontext = json.load(config_file)
     if not isinstance(config_data_kontext, dict):
         raise ValueError("config.json is not a valid dictionary in kontext_editing.py.")
-    # Use a specific output directory for Kontext edits, falling back to GENERATIONS
+    
     KONTEXT_EDITS_DIR = config_data_kontext.get('OUTPUTS', {}).get('KONTEXT_EDITS', 
                         config_data_kontext.get('OUTPUTS', {}).get('GENERATIONS', 
                         os.path.join('output', 'TENOSAI-BOT', 'GENERATIONS')))
@@ -81,8 +80,6 @@ def modify_kontext_prompt(
         for i in range(num_images):
             workflow[f"load_image_{i+1}"]["inputs"]["url_or_path"] = image_urls[i]
         
-        if num_images == 3:
-             workflow["load_image_4"]["inputs"]["url_or_path"] = image_urls[2]
 
         workflow["instruction_encoder"]["inputs"]["text"] = instruction
         workflow["ksampler"]["inputs"]["seed"] = base_seed
@@ -113,4 +110,3 @@ def modify_kontext_prompt(
         print(f"CRITICAL ERROR in modify_kontext_prompt: {e}")
         traceback.print_exc()
         return None, None, "An internal error occurred while building the Kontext workflow.", None
-# --- END OF FILE kontext_editing.py ---
