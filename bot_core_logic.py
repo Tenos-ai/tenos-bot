@@ -213,7 +213,7 @@ async def process_completed_job(bot, job_id, job_data, file_paths: list):
             try: sdxl_guidance_display = f"{float(guidance_val_sdxl):.1f}" if guidance_val_sdxl is not None else 'N/A'
             except (ValueError, TypeError): sdxl_guidance_display = '?'
             mp_size_display = job_data.get("parameters_used", {}).get("mp", job_data.get("default_mp_size", "N/A"))
-        final_content = f"{user_mention}: `{textwrap.shorten(prompt_to_use_for_display, 1500, placeholder='...')}`"
+        final_content = f"{user_mention}: `{textwrap.shorten(prompt_to_use_for_display, 1000, placeholder='...')}`"
         if enhancer_was_used and display_preference == 'enhanced': final_content += " ✨"
         final_content += f"\n> **Seed:** `{seed_display}`"
         if job_type_display_str.lower() != 'upscale': final_content += f", **AR:** `{aspect_ratio_display}`, **MP:** `{mp_size_display}`"
