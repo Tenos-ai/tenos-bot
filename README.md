@@ -25,7 +25,7 @@
 |||
 |---|---|
 |![Screenshot 2025-06-25 191115](https://github.com/user-attachments/assets/3708790d-1bc8-49cf-aca1-465b739dd0d8)|![Screenshot 2025-06-25 191205](https://github.com/user-attachments/assets/11efb49e-e66d-4748-8d0d-f6980288ad66)|
-|![Screenshot 2025-06-25 190919](https://github.com/user-attachments/assets/a6029416-32c5-45b6-906b-5985e1eaef6b)|![Screenshot 2025-06-25 190957](https://github.com/user-attachments/assets/d5edf35e-bec3-4da5-9b09-da7d2393c481)|
+|![image](https://github.com/user-attachments/assets/ae767ff0-edbc-4164-a218-a874c96c12ff)|![image](https://github.com/user-attachments/assets/c7f21488-9351-4ab1-93f5-a0f545aec8fb)|
 
 ## First-Time Setup
 
