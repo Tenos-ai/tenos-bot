@@ -1,8 +1,9 @@
+# --- START OF FILE bot_events.py ---
 import discord
 import traceback
-import re
-import asyncio
-import textwrap
+import re # For reply command parsing
+import asyncio # For validate_models_against_comfyui
+import textwrap # For message construction
 import os
 import json
 
@@ -94,7 +95,7 @@ async def on_bot_message(bot, message: discord.Message):
     if message.author == bot.user or message.author.bot: return
     if message.author.id in BLOCKED_USER_IDS: return
 
-    
+    # Admin check by ID
     is_admin = str(message.author.id) == str(ADMIN_ID)
 
     if message.content.startswith('/gen '):
@@ -116,7 +117,7 @@ async def on_bot_message(bot, message: discord.Message):
         for idx, result in enumerate(job_results_list):
             if result["status"] == "success":
                 msg_details = result["message_content_details"]
-                content = (f"{msg_details['user_mention']}: `{textwrap.shorten(msg_details['prompt_to_display'], 1500, placeholder='...')}`")
+                content = (f"{msg_details['user_mention']}: `{textwrap.shorten(msg_details['prompt_to_display'], 1000, placeholder='...')}`")
                 if msg_details['enhancer_used'] and msg_details['display_preference'] == 'enhanced': content += " ✨"
                 if msg_details['total_runs'] > 1: content += f" (Job {msg_details['run_number']}/{msg_details['total_runs']} - {msg_details['model_type'].upper()})"
                 else: content += f" ({msg_details['model_type'].upper()})"
