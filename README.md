@@ -4,6 +4,9 @@
 
 **COMPLETED UPDATES**
 
+- **Update 3**:
+  - fixed a few bugs, offical V1.2.3 update now has all features working with no bugs, as of today this will be stable release 1. Update tool will pull updates on the next numbered release (1.2.4).
+
 **7/4/25**
 - **Update 2**:
   - added auto update feature so the app and repo stay in sync without needing to download the zip over and over as I add features. The automatic update on startup can be turned on and off in `main config` > `app settings`. Updates can also be triggered manually via `Tools` > `Update Application`.
