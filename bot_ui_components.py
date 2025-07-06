@@ -87,11 +87,13 @@ class RemixModal(Modal, title='Remix Variation'):
         self.referenced_message = ref_message
         
         original_prompt = reconstruct_full_prompt_string(job_data)
-        
+        # Truncate the prompt to a safe length for the modal text input
+        truncated_prompt = textwrap.shorten(original_prompt, 1400, placeholder="... (prompt too long)")
+
         self.prompt_input = TextInput(
             label="Prompt",
             style=discord.TextStyle.paragraph,
-            default=original_prompt,
+            default=truncated_prompt, # Use the truncated prompt
             required=True,
             max_length=1500
         )
@@ -308,7 +310,7 @@ class GenerationActionsView(View):
                     if enhancer_text_val: content_str += f"\n{enhancer_text_val.strip()}"
                     content_str += "\n> **Status:** Queued... "
                 elif job_type_item == "generate": 
-                    content_str = (f"{msg_details_item['user_mention']}: `{textwrap.shorten(msg_details_item['prompt_to_display'], 1500, placeholder='...')}`")
+                    content_str = (f"{msg_details_item['user_mention']}: `{textwrap.shorten(msg_details_item['prompt_to_display'], 1000, placeholder='...')}`")
                     if msg_details_item.get('enhancer_used') and msg_details_item.get('display_preference') == 'enhanced': content_str += " ✨"
                     run_times = msg_details_item.get('total_runs', 1); run_num = msg_details_item.get('run_number', 1)
                     if run_times > 1: content_str += f" (Rerun {run_num}/{run_times} - {msg_details_item['model_type'].upper()})" 
