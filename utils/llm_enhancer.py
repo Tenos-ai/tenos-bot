@@ -100,11 +100,21 @@ async def _enhance_with_gemini(original_prompt: str, model_name: str, system_ins
         response = await asyncio.to_thread(requests.post, API_URL, headers=headers, params=params, json=payload, timeout=45)
         response.raise_for_status()
         response_json = response.json()
+        
         if 'candidates' in response_json and response_json['candidates']:
-            enhanced_prompt = response_json['candidates'][0].get('content', {}).get('parts', [{}])[0].get('text', '').strip()
-            if enhanced_prompt:
-                return enhanced_prompt.strip('`"\' '), None
-        return None, f"Google Gemini API response format unexpected: {response_json}"
+            candidate = response_json['candidates'][0]
+            finish_reason = candidate.get('finishReason')
+
+            if finish_reason == 'STOP':
+                enhanced_prompt = candidate.get('content', {}).get('parts', [{}])[0].get('text', '').strip()
+                if enhanced_prompt:
+                    return enhanced_prompt.strip('`"\' '), None
+            elif finish_reason:
+                # Provide a clearer error message for known non-STOP reasons
+                return None, f"Gemini API generation stopped. Reason: {finish_reason}."
+
+        # Fallback for truly unexpected formats or empty candidates
+        return None, f"Google Gemini API response format unexpected or empty. Full response: {response_json}"
     except Exception as e:
         return None, f"Error with Gemini API: {e}"
 
@@ -195,4 +205,3 @@ async def enhance_prompt(original_prompt: str, system_prompt_text_override: str 
         return await _enhance_with_openai(final_prompt_for_llm, model_name, system_instruction_to_use, image_urls)
     else:
         return None, f"Unknown LLM provider '{provider}' selected in settings."
-    
