@@ -28,7 +28,7 @@ from prompt_templates import (
 from utils.seed_utils import parse_seed_from_message, generate_seed
 from settings_manager import load_settings, _get_default_settings, load_styles_config
 from modelnodes import get_model_node
-from comfyui_api import get_available_comfyui_models as check_available_models_api
+from comfyui_api import get_available_comfyui_models as check_available_models_api # suppress_summary_print will be passed as True
 from utils.llm_enhancer import enhance_prompt, FLUX_ENHANCER_SYSTEM_PROMPT, SDXL_ENHANCER_SYSTEM_PROMPT
 
 
@@ -81,7 +81,7 @@ async def modify_prompt(
     enhancer_info: dict,
     is_img2img: bool,
     explicit_seed: int | None = None,
-    selected_model_name_with_prefix: str | None = None,
+    selected_model_name_with_prefix: str | None = None, # This is the CURRENTLY selected model from settings
     negative_prompt_text: str | None = None 
 ):
     job_id = str(uuid.uuid4())[:8]
@@ -89,7 +89,7 @@ async def modify_prompt(
     actual_model_name = None 
     styles_config = load_styles_config() 
 
-    
+    # Determine model_type and actual_model_name based on selected_model_name_with_prefix (current setting)
     if selected_model_name_with_prefix:
         if selected_model_name_with_prefix.startswith("Flux: "):
             model_type = "flux"
@@ -104,12 +104,18 @@ async def modify_prompt(
             else: 
                 model_type = "sdxl"
             actual_model_name = selected_model_name_with_prefix.strip()
-    else: 
+    else: # Fallback if no model selected in settings (should be rare)
         print("image_generation: No model selected in settings. Defaulting to Flux.")
         model_type = "flux"
-        
+        # actual_model_name will be None, ComfyUI might use its default or error.
 
     text_for_generation = enhancer_info.get('enhanced_text') if enhancer_info.get('used') else original_prompt_text
+    
+    print("-" * 30)
+    print(f"Preparing Job: {job_id} ({model_type.upper()}{' Img2Img' if is_img2img else ''})")
+    print(f"  User Prompt: {original_prompt_text}")
+    if enhancer_info.get('used'): print(f"  LLM Enhanced: {text_for_generation}")
+    if enhancer_info.get('error'): print(f"  LLM Error: {enhancer_info['error']}")
 
     try:
         settings = load_settings()
@@ -124,7 +130,7 @@ async def modify_prompt(
             except (ValueError, TypeError): seed = generate_seed()
         else: seed = generate_seed() 
 
-    
+    # Use guidance from current settings, overridden by params if provided
     default_flux_guidance = settings.get('default_guidance', 3.5)
     default_sdxl_guidance = settings.get('default_guidance_sdxl', 7.0)
     guidance_to_use = default_sdxl_guidance if model_type == "sdxl" else default_flux_guidance
@@ -140,6 +146,7 @@ async def modify_prompt(
         except (ValueError, TypeError): print(f"  Warn: Invalid --g value. Using Flux default: {default_flux_guidance:.1f}")
 
     final_negative_prompt_for_sdxl = negative_prompt_text if model_type == "sdxl" and negative_prompt_text is not None else ""
+    if model_type == "sdxl": print(f"  Negative Prompt: {final_negative_prompt_for_sdxl}")
 
     aspect_ratio_str = "1:1" 
     mp_size_str = settings.get('default_mp_size', "1") 
@@ -233,13 +240,17 @@ async def modify_prompt(
     if style_to_apply != 'off':
         style_data = styles_config.get(style_to_apply, {})
         style_model_type = style_data.get('model_type', 'all')
-        if style_model_type != 'all' and style_model_type != model_type: 
+        if style_model_type != 'all' and style_model_type != model_type: # model_type is the CURRENTLY selected model type
             style_warning_message = f"Style '{style_to_apply}' is for {style_model_type.upper()} models only. Your current model is {model_type.upper()}. The style was disabled for this generation."
             print(f"Style Warning for job {job_id}: {style_warning_message}")
             style_to_apply = 'off'
 
-    steps_for_ksampler = settings.get('steps', 32) 
+    steps_for_ksampler = settings.get('steps', 32) # Use current settings for steps
     default_batch_size_from_settings = settings.get('default_batch_size', 1)
+
+    print(f"  Seed: {seed}, Steps: {steps_for_ksampler}, Guidance: {guidance_to_use:.1f}, Style: {style_to_apply}")
+    if not is_img2img: print(f"  AR: {aspect_ratio_str}, MP: {mp_size_str}, Batch: {default_batch_size_from_settings}")
+    else: print(f"  Img2Img: Strength {img_strength_percent_for_job}%, Denoise {denoise_for_ksampler:.2f}")
 
     template_to_use = None
     if model_type == "sdxl":
@@ -330,7 +341,7 @@ async def modify_prompt(
 
     try:
         os.makedirs(GENERATIONS_DIR, exist_ok=True)
-        
+        # Standardized prefix based on operation type, not model type
         filename_prefix_base = "GEN_I2I_" if is_img2img else "GEN_"
         
         filename_prefix_full = normalize_path_for_comfyui(os.path.join(GENERATIONS_DIR, f"{filename_prefix_base}{job_id}"))
@@ -360,7 +371,7 @@ async def modify_prompt(
         if is_actual_model_valid_in_comfy and actual_model_name:
             model_loader_node_id_target = str(SDXL_CHECKPOINT_LOADER_NODE) if model_type == "sdxl" else str(GENERATION_MODEL_NODE) 
             if model_loader_node_id_target in modified_prompt:
-                
+                # selected_model_name_with_prefix IS the current setting (e.g. "Flux: model.gguf")
                 model_node_update_dict = get_model_node(selected_model_name_with_prefix, model_loader_node_id_target)
                 if model_loader_node_id_target in model_node_update_dict:
                      modified_prompt[model_loader_node_id_target] = model_node_update_dict[model_loader_node_id_target]
@@ -458,15 +469,15 @@ async def modify_prompt(
         "denoise": denoise_for_ksampler, 
         "style": style_to_apply,
         "batch_size": final_batch_size_for_job_details, 
-        "selected_model": selected_model_name_with_prefix,
+        "selected_model": selected_model_name_with_prefix, # This is the CURRENTLY selected model from settings
         "sel_t5": settings.get('selected_t5_clip'), 
         "sel_cl": settings.get('selected_clip_l'),   
         "parameters_used": params_dict, 
-        "model_used": actual_model_name or "Unknown/Template Default",
+        "model_used": actual_model_name or "Unknown/Template Default", # actual_model_name is from CURRENT setting
         "t5_clip_used": settings.get('selected_t5_clip') if model_type == "flux" else "N/A",
         "clip_l_used": settings.get('selected_clip_l') if model_type == "flux" else "N/A",
         "type": "img2img" if is_img2img else "generate",
-        "model_type_for_enhancer": model_type,
+        "model_type_for_enhancer": model_type, # This is the model_type used for THIS job
         "enhancer_used": enhancer_info.get('used', False),
         "llm_provider": enhancer_info.get('provider'),
         "original_prompt": original_prompt_text, 
