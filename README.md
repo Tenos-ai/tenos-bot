@@ -4,6 +4,7 @@
 
 **COMPLETED UPDATES**
 
+**7/6/25**
 - **Update 3**:
   - fixed a few bugs, offical V1.2.3 update now has all features working with no bugs, as of today this will be stable release 1. Update tool will pull updates on the next numbered release (1.2.4).
 
@@ -16,9 +17,15 @@
 - **Update 1**: Integrated **FLUX Kontext** for powerful instruction-based image editing and stitching via the new `/edit` command. The LLM Enhancer now supports multi-modal vision to better interpret edit instructions.
 - **Hotfix 1**: Fixed a job cancellation issue, improved first-time setup with venv creation, enhanced LLM support for new models, and added a tool to pull complete LLM model lists from the GUI.
 
+----------
+**KNOWN BUGS**
+
+- when `Remix` mode is `ON` original guidance value is reused even if changed in remix modal
+
 **PLANED UPDATES**
 
 - New GUI
+- Metadata `on/off` toggle for all jobs
 
 ----------
 
