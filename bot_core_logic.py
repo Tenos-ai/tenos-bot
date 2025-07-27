@@ -196,7 +196,6 @@ async def process_completed_job(bot, job_id, job_data, file_paths: list):
             except Exception as e_send_prep_err_attach: print(f"Error sending/editing msg for file prep fail: {e_send_prep_err_attach}")
             return
         current_settings = load_settings(); display_preference = current_settings.get('display_prompt_preference', 'enhanced')
-        # FIX: Ensure prompt display logic correctly handles all cases and falls back gracefully
         prompt_to_use_for_display = job_data.get('prompt', '[No Prompt Provided]')
         if display_preference == 'enhanced' and job_data.get('enhanced_prompt'):
             prompt_to_use_for_display = job_data.get('enhanced_prompt')
@@ -205,28 +204,39 @@ async def process_completed_job(bot, job_id, job_data, file_paths: list):
 
         enhancer_was_used = job_data.get('enhancer_used', False); enhancer_had_error = job_data.get('enhancer_error'); llm_provider_used = job_data.get('llm_provider')
         aspect_ratio_display = job_data.get("aspect_ratio_str", "?:?"); seed_display = job_data.get('seed', 'N/A'); style_display = job_data.get('style', 'off'); job_type_display_str = job_data.get('type', 'generate').capitalize()
-        if job_type_display_str.lower() == 'upscale': steps_display = 'N/A (Upscale)'; guidance_display = 'N/A (Upscale)'; sdxl_guidance_display = 'N/A (Upscale)'; mp_size_display = 'N/A (Upscale)'
+        
+        if job_type_display_str.lower() == 'upscale': 
+            steps_display = 'N/A (Upscale)'; guidance_display = 'N/A (Upscale)'; sdxl_guidance_display = 'N/A (Upscale)'; mp_size_display = 'N/A (Upscale)'
+        elif job_type_display_str.lower() == 'kontext_edit':
+            steps_display = str(job_data.get('steps', '?')); guidance_display = f"{float(job_data.get('guidance', 0.0)):.1f}"; sdxl_guidance_display = 'N/A (Kontext)'; mp_size_display = job_data.get("mp_size", "N/A")
         else:
             steps_display = str(job_data.get('steps', '?')); guidance_val_flux = job_data.get('guidance'); guidance_val_sdxl = job_data.get('guidance_sdxl')
             try: guidance_display = f"{float(guidance_val_flux):.1f}" if guidance_val_flux is not None else 'N/A'
             except (ValueError, TypeError): guidance_display = '?'
             try: sdxl_guidance_display = f"{float(guidance_val_sdxl):.1f}" if guidance_val_sdxl is not None else 'N/A'
             except (ValueError, TypeError): sdxl_guidance_display = '?'
-            mp_size_display = job_data.get("parameters_used", {}).get("mp", job_data.get("default_mp_size", "N/A"))
+            mp_size_display = job_data.get("mp_size", "N/A")
+
         final_content = f"{user_mention}: `{textwrap.shorten(prompt_to_use_for_display, 1000, placeholder='...')}`"
         if enhancer_was_used and display_preference == 'enhanced': final_content += " ✨"
         final_content += f"\n> **Seed:** `{seed_display}`"
+        
         if job_type_display_str.lower() != 'upscale': final_content += f", **AR:** `{aspect_ratio_display}`, **MP:** `{mp_size_display}`"
+        
         final_content += f", **Steps:** `{steps_display}`"
+        
         if job_model_type == "sdxl": final_content += f", **Guidance:** `{sdxl_guidance_display}`"
         else: final_content += f", **Guidance:** `{guidance_display}`"
+        
         final_content += f"\n> **Style:** `{style_display}`"
-        job_type_info_str = f" ({job_model_type.upper()})"
+        
+        job_type_info_str = f" ({job_model_type.upper()})" if job_model_type else ""
         if job_type_display_str.lower() == 'upscale': job_type_info_str = f" (Upscaled {job_data.get('upscale_factor', '?x')}{job_type_info_str})"
         elif job_type_display_str.lower() == 'variation': job_type_info_str = f" ({job_data.get('variation_type', '?').capitalize()} Variation{job_type_info_str})"
         elif job_type_display_str.lower() == 'kontext_edit': job_type_info_str = f" (Kontext Edit)"
         elif batch_size > 1: job_type_info_str += f", **Batch:** `{batch_size}`"
         final_content += job_type_info_str
+
         if job_model_type == "sdxl" and job_data.get('negative_prompt'): final_content += f"\n> **No:** `{textwrap.shorten(job_data['negative_prompt'], 100, placeholder='...')}`"
         if enhancer_was_used and display_preference == 'original': final_content += f"\n> `(Prompt enhanced via {llm_provider_used.capitalize() if llm_provider_used else 'LLM'})`"
         elif enhancer_had_error: final_content += f"\n> `(Enhancer Error ({llm_provider_used.capitalize() if llm_provider_used else 'LLM'}): {enhancer_had_error})`"
@@ -539,7 +549,7 @@ async def execute_generation_logic(
                 "steps": str(job_details_current_gen.get('steps', '?')),
                 "guidance_flux": f"{float(job_details_current_gen.get('guidance')):.1f}" if job_details_current_gen.get('guidance') is not None else 'N/A',
                 "guidance_sdxl": f"{float(job_details_current_gen.get('guidance_sdxl')):.1f}" if job_details_current_gen.get('guidance_sdxl') is not None else 'N/A',
-                "mp_size": job_details_current_gen.get("default_mp_size", "N/A") if not is_img2img_gen else None, 
+                "mp_size": job_details_current_gen.get("mp_size", "N/A"),
                 "style": job_details_current_gen.get('style', 'off'), "is_img2img": is_img2img_gen,
                 "img_strength_percent": job_details_current_gen.get('img_strength_percent') if is_img2img_gen else None,
                 "negative_prompt": job_details_current_gen.get('negative_prompt') if current_model_type_for_job == "sdxl" else None,
@@ -723,14 +733,20 @@ async def process_kontext_edit_request(
     if params_dict.get('ar') and re.match(r'^\d+:\d+$', str(params_dict['ar'])):
         final_aspect_ratio = str(params_dict['ar'])
 
-    final_steps = settings.get('steps', 32)
+    final_steps = settings.get('kontext_steps', 32)
     if params_dict.get('steps') and str(params_dict.get('steps')).isdigit():
         final_steps = int(params_dict['steps'])
 
-    final_guidance = 3.0
+    final_guidance = settings.get('kontext_guidance', 3.0)
     if params_dict.get('g'):
         try:
             final_guidance = float(params_dict['g'])
+        except (ValueError, TypeError): pass
+    
+    final_mp_size = settings.get('kontext_mp_size', 1.15)
+    if params_dict.get('mp'):
+        try:
+            final_mp_size = float(params_dict['mp'])
         except (ValueError, TypeError): pass
 
     seed = generate_seed()
@@ -746,6 +762,7 @@ async def process_kontext_edit_request(
         aspect_ratio=final_aspect_ratio,
         steps_override=final_steps,
         guidance_override=final_guidance,
+        mp_size_override=final_mp_size,
         source_job_id=source_job_id
     )
     
@@ -768,7 +785,7 @@ async def process_kontext_edit_request(
     
     content = (f"{context_user.mention}: Editing with Kontext...\n"
                f"> **Instruction:** `{textwrap.shorten(instruction, 100, placeholder='...')}`\n"
-               f"> **Images:** {len(image_urls)}, **AR:** `{final_aspect_ratio}`, **Seed:** `{seed}`\n"
+               f"> **Images:** {len(image_urls)}, **AR:** `{final_aspect_ratio}`, **MP:** `{final_mp_size}`, **Seed:** `{seed}`\n"
                f"> **Status:** Queued...")
     
     if enhancer_info['used']:
