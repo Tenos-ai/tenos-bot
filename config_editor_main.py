@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+from tkinter import ttk, messagebox, scrolledtext, filedialog
 import os
 import json
 import traceback
@@ -67,7 +67,7 @@ class ConfigEditor:
         self.config_vars = {}
         self.settings_vars = {}
         self.bot_settings_widgets = {}
-        self.log_display = None # **FIX**: Initialize as None
+        self.log_display = None
 
         def silence_bell_global(): pass
         self.master.bell = silence_bell_global
@@ -107,16 +107,14 @@ class ConfigEditor:
         self.notebook = ttk.Notebook(self.master, style="Tenos.TNotebook")
         self.notebook.pack(expand=True, fill="both", padx=10, pady=10)
 
-        # Create all tab structures first
         self._create_main_config_tab_structure()
         self.admin_control_tab_manager = AdminControlTab(self, self.notebook)
         self._create_bot_settings_tab_structure()
         self.lora_styles_tab_manager = LoraStylesTab(self, self.notebook)
         self.favorites_tab_manager = FavoritesTab(self, self.notebook)
         self.llm_prompts_tab_manager = LLMPromptsTab(self, self.notebook)
-        self.bot_control_tab_manager = BotControlTab(self, self.notebook) # **FIX**: This now creates the log widget
+        self.bot_control_tab_manager = BotControlTab(self, self.notebook)
 
-        # Now that all widgets are created, populate them with data
         self.refresh_all_ui_tabs()
 
         if self.master.winfo_exists():
@@ -128,7 +126,6 @@ class ConfigEditor:
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing_main_window)
         
     def refresh_all_ui_tabs(self):
-        """A single method to refresh all data-dependent UI elements."""
         self.load_available_files()
         self.populate_main_config_sub_tabs()
         self.admin_control_tab_manager.populate_admin_tab()
@@ -150,6 +147,7 @@ class ConfigEditor:
         self.master.config(menu=self.menu_bar)
         file_menu = tk.Menu(self.menu_bar, tearoff=0, bg=WIDGET_BG, fg=TEXT_COLOR_NORMAL, relief="flat", activebackground=SELECT_BG_COLOR, activeforeground=SELECT_FG_COLOR)
         file_menu.add_command(label="Save All Configs", command=self.save_all_configurations_from_menu)
+        file_menu.add_command(label="Export Config & Settings", command=self.export_config_and_settings)
         file_menu.add_separator(background=BORDER_COLOR)
         file_menu.add_command(label="Exit", command=self.on_closing_main_window)
         self.menu_bar.add_cascade(label="File", menu=file_menu)
@@ -263,6 +261,9 @@ class ConfigEditor:
                                            variable=auto_update_var,
                                            style="Tenos.TCheckbutton")
         auto_update_check.pack(anchor='w', padx=5, pady=5)
+        # Add import/export buttons for config and settings in the App Settings tab
+        ttk.Button(self.app_settings_tab_frame, text="Import Config & Settings", command=self.import_config_and_settings).pack(anchor='w', padx=5, pady=5)
+        ttk.Button(self.app_settings_tab_frame, text="Export Config & Settings", command=self.export_config_and_settings).pack(anchor='w', padx=5, pady=5)
 
     def _browse_folder_for_main_config(self, section_name, key_name):
         var_lookup_key = f"{section_name}.{key_name}"
@@ -271,36 +272,76 @@ class ConfigEditor:
         if selected_folder_path and var_lookup_key in self.config_vars: self.config_vars[var_lookup_key].set(selected_folder_path)
 
     def _create_bot_settings_tab_structure(self):
-        self.bot_settings_tab_frame = ttk.Frame(self.notebook, padding="10", style="Tenos.TFrame")
+        self.bot_settings_tab_frame = ttk.Frame(self.notebook, padding="5", style="Tenos.TFrame")
         self.notebook.add(self.bot_settings_tab_frame, text=' Bot Settings ')
-        canvas = tk.Canvas(self.bot_settings_tab_frame, bg=CANVAS_BG_COLOR, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self.bot_settings_tab_frame, orient="vertical", command=canvas.yview, style="Tenos.Vertical.TScrollbar")
-        canvas.associated_scrollbar = scrollbar
-        self.scrollable_bot_settings_content_frame = ttk.Frame(canvas, style="Tenos.TFrame")
-        self.scrollable_bot_settings_content_frame.bind("<Configure>", lambda e, c=canvas: self._debounce_canvas_configure(c,e))
-        canvas.create_window((0,0), window=self.scrollable_bot_settings_content_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set); canvas.pack(side="left",fill="both",expand=True)
-        ttk.Button(self.bot_settings_tab_frame, text="Save Bot Settings", command=self.config_manager.save_bot_settings_data).pack(side="bottom",pady=10)
+        
+        self.bot_settings_notebook = ttk.Notebook(self.bot_settings_tab_frame, style="Tenos.TNotebook")
+        self.bot_settings_notebook.pack(expand=True, fill="both", padx=0, pady=5)
 
+        self.bot_settings_general_tab = ttk.Frame(self.bot_settings_notebook, padding="5", style="Tenos.TFrame")
+        self.bot_settings_flux_tab = ttk.Frame(self.bot_settings_notebook, padding="5", style="Tenos.TFrame")
+        self.bot_settings_sdxl_tab = ttk.Frame(self.bot_settings_notebook, padding="5", style="Tenos.TFrame")
+        self.bot_settings_kontext_tab = ttk.Frame(self.bot_settings_notebook, padding="5", style="Tenos.TFrame")
+        self.bot_settings_llm_tab = ttk.Frame(self.bot_settings_notebook, padding="5", style="Tenos.TFrame")
+        
+        self.bot_settings_notebook.add(self.bot_settings_general_tab, text=" General ")
+        self.bot_settings_notebook.add(self.bot_settings_flux_tab, text=" Flux ")
+        self.bot_settings_notebook.add(self.bot_settings_sdxl_tab, text=" SDXL ")
+        self.bot_settings_notebook.add(self.bot_settings_kontext_tab, text=" Kontext ")
+        self.bot_settings_notebook.add(self.bot_settings_llm_tab, text=" LLM ")
+
+        # Create the scrollable content frames for each sub-tab once
+        self.general_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_general_tab)
+        self.flux_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_flux_tab)
+        self.sdxl_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_sdxl_tab)
+        self.kontext_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_kontext_tab)
+        self.llm_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_llm_tab)
+
+        buttons_frame = ttk.Frame(self.bot_settings_tab_frame, style="Tenos.TFrame")
+        buttons_frame.pack(side="bottom", fill="x", pady=(10,0), padx=5)
+        ttk.Button(buttons_frame, text="Reset to Defaults", command=self.reset_bot_settings_to_defaults).pack(side="left", padx=(0,5))
+        ttk.Button(buttons_frame, text="Save Bot Settings", command=self.config_manager.save_bot_settings_data).pack(side="left")
+
+    def _create_scrollable_sub_tab_frame(self, parent_tab_frame):
+        for widget_child in parent_tab_frame.winfo_children():
+            widget_child.destroy()
+        container_frame = ttk.Frame(parent_tab_frame, style="Tenos.TFrame")
+        container_frame.pack(fill="both", expand=True)
+        canvas_widget = tk.Canvas(container_frame, bg=CANVAS_BG_COLOR, highlightthickness=0)
+        scrollbar_widget = ttk.Scrollbar(container_frame, orient="vertical", command=canvas_widget.yview, style="Tenos.Vertical.TScrollbar")
+        canvas_widget.associated_scrollbar = scrollbar_widget
+        scrollable_content_frame = ttk.Frame(canvas_widget, style="Tenos.TFrame")
+        scrollable_content_frame.bind(
+            "<Configure>", lambda event, c=canvas_widget: self._debounce_canvas_configure(c, event)
+        )
+        canvas_widget.create_window((0, 0), window=scrollable_content_frame, anchor="nw")
+        canvas_widget.configure(yscrollcommand=scrollbar_widget.set)
+        canvas_widget.pack(side="left", fill="both", expand=True)
+        return scrollable_content_frame
+        
     def populate_bot_settings_tab(self):
-        settings_content_grid = self.scrollable_bot_settings_content_frame.winfo_children()[0] if self.scrollable_bot_settings_content_frame.winfo_children() else None
-        if settings_content_grid:
-            for widget_item in settings_content_grid.winfo_children(): widget_item.destroy()
-        else:
-            settings_content_grid = ttk.Frame(self.scrollable_bot_settings_content_frame, padding=(10,5), style="Tenos.TFrame")
-            settings_content_grid.pack(fill="x",expand=True); settings_content_grid.columnconfigure(1,weight=1)
-        self.settings_vars.clear(); self.bot_settings_widgets.clear(); current_row_idx = 0
+        self.settings_vars.clear()
+        self.bot_settings_widgets.clear()
         current_settings_template_dict = self.config_manager.settings_template_factory()
-        def create_setting_row_ui(label_txt, widget_class, options_data=None, var_key_name=None, is_llm_model_selector_field=False, is_text_area_field=False, **widget_kwargs):
-            nonlocal current_row_idx
-            label_ui = ttk.Label(settings_content_grid, text=label_txt + ":", style="Tenos.TLabel")
-            label_ui.grid(row=current_row_idx, column=0, sticky="nw" if is_text_area_field else "w", padx=5, pady=5)
+
+        # Clear existing widgets from all content frames before repopulating
+        for frame in [self.general_settings_content_frame, self.flux_settings_content_frame, self.sdxl_settings_content_frame, self.kontext_settings_content_frame, self.llm_settings_content_frame]:
+            for widget in frame.winfo_children():
+                widget.destroy()
+
+        def create_setting_row_ui(parent_frame, label_txt, widget_class, options_data=None, var_key_name=None, is_llm_model_selector_field=False, is_text_area_field=False, **widget_kwargs):
+            container = ttk.Frame(parent_frame, style="Tenos.TFrame")
+            container.pack(fill='x', padx=5, pady=2)
+            label_ui = ttk.Label(container, text=label_txt + ":", style="Tenos.TLabel", width=25)
+            label_ui.pack(side='left', anchor='w', padx=(0, 10))
             if is_llm_model_selector_field: self.bot_settings_widgets['llm_model_label'] = label_ui
+            
             tk_var_instance = None
-            if var_key_name in ['default_guidance', 'upscale_factor', 'default_guidance_sdxl']: tk_var_instance = tk.DoubleVar()
-            elif var_key_name in ['steps', 'default_batch_size']: tk_var_instance = tk.IntVar()
+            if var_key_name in ['default_guidance', 'upscale_factor', 'default_guidance_sdxl', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']: tk_var_instance = tk.DoubleVar()
+            elif var_key_name in ['steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size']: tk_var_instance = tk.IntVar()
             elif var_key_name in ['remix_mode', 'llm_enhancer_enabled']: tk_var_instance = tk.BooleanVar()
             else: tk_var_instance = tk.StringVar()
+            
             current_setting_val = self.config_manager.settings.get(var_key_name)
             if current_setting_val is not None:
                 try:
@@ -308,68 +349,88 @@ class ConfigEditor:
                     elif var_key_name == 'display_prompt_preference': tk_var_instance.set(self.display_prompt_map.get(current_setting_val, current_setting_val))
                     else: tk_var_instance.set(current_setting_val)
                 except (ValueError, tk.TclError): tk_var_instance.set(current_settings_template_dict.get(var_key_name, ''))
+            
             ui_element = None
             if is_text_area_field:
-                ui_element = scrolledtext.ScrolledText(settings_content_grid, wrap=tk.WORD, height=3, width=40, font=("Arial",9),bg=ENTRY_BG_COLOR,fg=TEXT_COLOR_NORMAL,insertbackground=ENTRY_INSERT_COLOR,relief="sunken",borderwidth=1)
+                ui_element = scrolledtext.ScrolledText(container, wrap=tk.WORD, height=3, width=40, font=("Arial",9),bg=ENTRY_BG_COLOR,fg=TEXT_COLOR_NORMAL,insertbackground=ENTRY_INSERT_COLOR,relief="sunken",borderwidth=1)
                 ui_element.insert(tk.END, tk_var_instance.get() if tk_var_instance.get() else "")
             elif widget_class == ttk.Combobox:
                 safe_options_list = options_data if isinstance(options_data, list) else []
+                curr_str_val = str(current_setting_val) if current_setting_val is not None else ''
+                if curr_str_val and curr_str_val not in safe_options_list and var_key_name != 'llm_model':
+                    safe_options_list = [curr_str_val] + [opt for opt in safe_options_list if opt != curr_str_val]
+                
+                ui_element = ttk.Combobox(container, textvariable=tk_var_instance, values=safe_options_list, state="readonly", width=40, style="Tenos.TCombobox")
+                
                 if var_key_name == 'llm_provider':
                     disp_opts = [self.provider_display_map.get(k, k) for k in safe_options_list]
-                    ui_element = ttk.Combobox(settings_content_grid,textvariable=tk_var_instance,values=disp_opts,state="readonly",width=40,style="Tenos.TCombobox")
+                    ui_element.config(values=disp_opts)
                     tk_var_instance.trace_add("write", lambda *a, vk=var_key_name: self.on_llm_provider_change_for_editor(vk))
                 elif var_key_name == 'display_prompt_preference':
-                    ui_element = ttk.Combobox(settings_content_grid,textvariable=tk_var_instance,values=safe_options_list,state="readonly",width=40,style="Tenos.TCombobox")
-                else:
-                    curr_str_val = str(current_setting_val) if current_setting_val is not None else ''
-                    if curr_str_val and curr_str_val not in safe_options_list and var_key_name != 'llm_model':
-                        safe_options_list = [curr_str_val] + [opt for opt in safe_options_list if opt != curr_str_val]
-                    ui_element = ttk.Combobox(settings_content_grid,textvariable=tk_var_instance,values=safe_options_list,state="readonly",width=40,style="Tenos.TCombobox")
-                    if curr_str_val and curr_str_val not in options_data and var_key_name != 'llm_model': tk_var_instance.set(curr_str_val)
-                    elif not curr_str_val and safe_options_list: tk_var_instance.set(safe_options_list[0])
-            elif widget_class == ttk.Spinbox: ui_element = ttk.Spinbox(settings_content_grid,textvariable=tk_var_instance,wrap=True,width=10,style="Tenos.TSpinbox",**widget_kwargs)
-            elif widget_class == ttk.Checkbutton: ui_element = ttk.Checkbutton(settings_content_grid,variable=tk_var_instance,style="Tenos.TCheckbutton")
-            else: ui_element = ttk.Entry(settings_content_grid,textvariable=tk_var_instance,width=42,style="Tenos.TEntry")
-            ui_element.grid(row=current_row_idx,column=1,sticky="ew",padx=5,pady=5)
-            self.settings_vars[var_key_name] = tk_var_instance; self.bot_settings_widgets[var_key_name] = ui_element; current_row_idx +=1
-        ttk.Label(settings_content_grid,text="Core Defaults",style=BOLD_TLABEL_STYLE).grid(row=current_row_idx,column=0,columnspan=2,sticky='w',pady=(10,5),padx=5); current_row_idx+=1
-        combined_model_names = [f"Flux: {m}" for m in self.available_models] + [f"SDXL: {c}" for c in self.available_checkpoints]
-        create_setting_row_ui("Selected Model", ttk.Combobox, combined_model_names, 'selected_model')
-        create_setting_row_ui("Selected Kontext Model", ttk.Combobox, self.available_models, 'selected_kontext_model')
-        create_setting_row_ui("Selected T5 Clip", ttk.Combobox, self.available_clips_t5, 'selected_t5_clip')
-        create_setting_row_ui("Selected Clip-L", ttk.Combobox, self.available_clips_l, 'selected_clip_l')
-        create_setting_row_ui("Selected Upscale Model", ttk.Combobox, self.available_upscale_models, 'selected_upscale_model')
-        create_setting_row_ui("Selected VAE", ttk.Combobox, self.available_vaes, 'selected_vae')
-        style_key_names = sorted([str(k) for k in self.styles_config.keys()])
-        create_setting_row_ui("Default Style", ttk.Combobox, style_key_names, 'default_style')
-        create_setting_row_ui("Default Steps", ttk.Spinbox, var_key_name='steps', from_=4, to=128, increment=4)
-        create_setting_row_ui("Default Guidance (Flux)", ttk.Spinbox, var_key_name='default_guidance', from_=0.0, to=20.0, increment=0.1, format="%.1f")
-        create_setting_row_ui("Default Guidance (SDXL)", ttk.Spinbox, var_key_name='default_guidance_sdxl', from_=0.0, to=20.0, increment=0.1, format="%.1f")
-        create_setting_row_ui("Default SDXL Negative Prompt", scrolledtext.ScrolledText, var_key_name='default_sdxl_negative_prompt', is_text_area_field=True)
-        create_setting_row_ui("Default Batch Size", ttk.Spinbox, var_key_name='default_batch_size', from_=1, to=4, increment=1)
-        mp_size_val_options = ["0.25", "0.5", "1", "1.25", "1.5", "1.75", "2", "2.5", "3", "4"]
-        create_setting_row_ui("Default MP Target Size (Std Gen)", ttk.Combobox, mp_size_val_options, 'default_mp_size')
-        create_setting_row_ui("Default Upscale Factor", ttk.Spinbox, var_key_name='upscale_factor', from_=1.5, to=4.0, increment=0.05, format="%.2f")
-        ttk.Label(settings_content_grid,text="Variation Settings",style=BOLD_TLABEL_STYLE).grid(row=current_row_idx,column=0,columnspan=2,sticky='w',pady=(15,5),padx=5); current_row_idx+=1
-        create_setting_row_ui("Default Variation Mode", ttk.Combobox, ['weak','strong'], 'default_variation_mode')
-        create_setting_row_ui("Variation Remix Mode", ttk.Checkbutton, var_key_name='remix_mode')
-        ttk.Label(settings_content_grid,text="LLM Enhancer & Display",style=BOLD_TLABEL_STYLE).grid(row=current_row_idx,column=0,columnspan=2,sticky='w',pady=(15,5),padx=5); current_row_idx+=1
-        create_setting_row_ui("LLM Prompt Enhancer", ttk.Checkbutton, var_key_name='llm_enhancer_enabled')
+                    disp_opts = [self.display_prompt_map.get(k, k) for k in sorted(self.display_prompt_map.keys())]
+                    ui_element.config(values=disp_opts)
+                
+                if curr_str_val and curr_str_val not in options_data and var_key_name != 'llm_model': tk_var_instance.set(curr_str_val)
+                elif not curr_str_val and safe_options_list: tk_var_instance.set(safe_options_list[0])
+            elif widget_class == ttk.Spinbox: ui_element = ttk.Spinbox(container, textvariable=tk_var_instance, wrap=True, width=12, style="Tenos.TSpinbox", **widget_kwargs)
+            elif widget_class == ttk.Checkbutton: ui_element = ttk.Checkbutton(container, variable=tk_var_instance, style="Tenos.TCheckbutton")
+            else: ui_element = ttk.Entry(container, textvariable=tk_var_instance, width=42, style="Tenos.TEntry")
+            
+            ui_element.pack(side='left', fill='x', expand=True)
+            self.settings_vars[var_key_name] = tk_var_instance
+            self.bot_settings_widgets[var_key_name] = ui_element
+
+        # --- General Tab ---
+        create_setting_row_ui(self.general_settings_content_frame, "Selected Model", ttk.Combobox, [f"Flux: {m}" for m in self.available_models] + [f"SDXL: {c}" for c in self.available_checkpoints], 'selected_model')
+        create_setting_row_ui(self.general_settings_content_frame, "Selected T5 Clip", ttk.Combobox, self.available_clips_t5, 'selected_t5_clip')
+        create_setting_row_ui(self.general_settings_content_frame, "Selected Clip-L", ttk.Combobox, self.available_clips_l, 'selected_clip_l')
+        create_setting_row_ui(self.general_settings_content_frame, "Selected Upscale Model", ttk.Combobox, self.available_upscale_models, 'selected_upscale_model')
+        create_setting_row_ui(self.general_settings_content_frame, "Selected VAE", ttk.Combobox, self.available_vaes, 'selected_vae')
+        ttk.Separator(self.general_settings_content_frame, orient='horizontal').pack(fill='x', pady=10)
+        create_setting_row_ui(self.general_settings_content_frame, "Default Variation Mode", ttk.Combobox, ['weak','strong'], 'default_variation_mode')
+        create_setting_row_ui(self.general_settings_content_frame, "Variation Remix Mode", ttk.Checkbutton, var_key_name='remix_mode')
+        create_setting_row_ui(self.general_settings_content_frame, "Default Batch Size (Gen)", ttk.Spinbox, var_key_name='default_batch_size', from_=1, to=4, increment=1)
+        create_setting_row_ui(self.general_settings_content_frame, "Default Batch Size (Vary)", ttk.Spinbox, var_key_name='variation_batch_size', from_=1, to=4, increment=1)
+        create_setting_row_ui(self.general_settings_content_frame, "Default Upscale Factor", ttk.Spinbox, var_key_name='upscale_factor', from_=1.5, to=4.0, increment=0.05, format="%.2f")
+        create_setting_row_ui(self.general_settings_content_frame, "Default MP Size", ttk.Spinbox, var_key_name='default_mp_size', from_=0.1, to=8.0, increment=0.05, format="%.2f")
+
+        # --- Flux Tab ---
+        flux_styles = sorted([name for name, data in self.styles_config.items() if data.get('model_type', 'all') in ['all', 'flux']])
+        create_setting_row_ui(self.flux_settings_content_frame, "Default Style", ttk.Combobox, flux_styles, 'default_style_flux')
+        create_setting_row_ui(self.flux_settings_content_frame, "Default Steps", ttk.Spinbox, var_key_name='steps', from_=4, to=128, increment=4)
+        create_setting_row_ui(self.flux_settings_content_frame, "Default Guidance", ttk.Spinbox, var_key_name='default_guidance', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+        
+        # --- SDXL Tab ---
+        sdxl_styles = sorted([name for name, data in self.styles_config.items() if data.get('model_type', 'all') in ['all', 'sdxl']])
+        create_setting_row_ui(self.sdxl_settings_content_frame, "Default Style", ttk.Combobox, sdxl_styles, 'default_style_sdxl')
+        create_setting_row_ui(self.sdxl_settings_content_frame, "Default Guidance", ttk.Spinbox, var_key_name='default_guidance_sdxl', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+        create_setting_row_ui(self.sdxl_settings_content_frame, "Default Negative Prompt", scrolledtext.ScrolledText, var_key_name='default_sdxl_negative_prompt', is_text_area_field=True)
+
+        # --- Kontext Tab ---
+        create_setting_row_ui(self.kontext_settings_content_frame, "Selected Kontext Model", ttk.Combobox, self.available_models, 'selected_kontext_model')
+        create_setting_row_ui(self.kontext_settings_content_frame, "Default Steps", ttk.Spinbox, var_key_name='kontext_steps', from_=4, to=128, increment=4)
+        create_setting_row_ui(self.kontext_settings_content_frame, "Default Guidance", ttk.Spinbox, var_key_name='kontext_guidance', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+        create_setting_row_ui(self.kontext_settings_content_frame, "Default MP Size", ttk.Spinbox, var_key_name='kontext_mp_size', from_=0.1, to=8.0, increment=0.05, format="%.2f")
+
+        # --- LLM Tab ---
+        create_setting_row_ui(self.llm_settings_content_frame, "LLM Prompt Enhancer", ttk.Checkbutton, var_key_name='llm_enhancer_enabled')
         llm_provider_keys = list(self.llm_models_config.get('providers',{}).keys())
-        create_setting_row_ui("LLM Provider", ttk.Combobox, llm_provider_keys, 'llm_provider')
-        initial_llm_provider = self.config_manager.settings.get('llm_provider', llm_provider_keys[0] if llm_provider_keys else 'gemma')
+        create_setting_row_ui(self.llm_settings_content_frame, "LLM Provider", ttk.Combobox, llm_provider_keys, 'llm_provider')
+        initial_llm_provider = self.config_manager.settings.get('llm_provider', llm_provider_keys[0] if llm_provider_keys else 'gemini')
         initial_llm_models_for_provider = self.llm_models_config.get('providers',{}).get(initial_llm_provider,{}).get('models',[])
         initial_llm_provider_display_name = self.provider_display_map.get(initial_llm_provider, initial_llm_provider.capitalize())
-        create_setting_row_ui(f"LLM Model ({initial_llm_provider_display_name})", ttk.Combobox, initial_llm_models_for_provider, 'llm_model', is_llm_model_selector_field=True)
+        create_setting_row_ui(self.llm_settings_content_frame, f"LLM Model ({initial_llm_provider_display_name})", ttk.Combobox, initial_llm_models_for_provider, 'llm_model', is_llm_model_selector_field=True)
         if 'llm_model' in self.settings_vars:
             model_key_for_provider = f"llm_model_{initial_llm_provider}"
             initial_model_val_for_provider = self.config_manager.settings.get(model_key_for_provider, "")
             if initial_model_val_for_provider in initial_llm_models_for_provider: self.settings_vars['llm_model'].set(initial_model_val_for_provider)
             elif initial_llm_models_for_provider: self.settings_vars['llm_model'].set(initial_llm_models_for_provider[0])
             else: self.settings_vars['llm_model'].set("")
-        display_prompt_preference_options = [self.display_prompt_map[k_pref_disp] for k_pref_disp in sorted(self.display_prompt_map.keys())]
-        create_setting_row_ui("Prompt Display Preference", ttk.Combobox, display_prompt_preference_options, 'display_prompt_preference')
-        if self.scrollable_bot_settings_content_frame.winfo_exists(): self.scrollable_bot_settings_content_frame.event_generate("<Configure>")
+        create_setting_row_ui(self.llm_settings_content_frame, "Prompt Display Preference", ttk.Combobox, list(self.display_prompt_map.keys()), 'display_prompt_preference')
+        
+        for frame in [self.general_settings_content_frame, self.flux_settings_content_frame, self.sdxl_settings_content_frame, self.kontext_settings_content_frame, self.llm_settings_content_frame]:
+            if frame.winfo_exists():
+                frame.event_generate("<Configure>")
 
     def on_llm_provider_change_for_editor(self, var_key_name_that_changed):
         if var_key_name_that_changed != 'llm_provider': return
@@ -455,7 +516,7 @@ class ConfigEditor:
         except Exception: pass
         if log_msgs_batch:
             try:
-                if self.log_display and self.log_display.winfo_exists(): # **FIX**: Check for existence
+                if self.log_display and self.log_display.winfo_exists():
                     self.log_display.config(state='normal')
                     for src_disp, line_disp in log_msgs_batch: self.log_display.insert(tk.END, line_disp, (src_disp if src_disp in ["stdout","stderr","info","worker"] else "stdout",))
                     self.log_display.see(tk.END); self.log_display.config(state='disabled')
@@ -515,7 +576,6 @@ class ConfigEditor:
         self.log_queue.put(("info",f"--- Finished {task_name_ui} (Success: {success_flag_worker}) ---\n"))
 
     def _worker_update_application(self):
-        """Worker task to update the application from Git using a fetch/compare/reset strategy."""
         try:
             repo = git.Repo(search_parent_directories=True)
             self.log_queue.put(("worker", f"Found Git repository at: {repo.working_dir}\n"))
@@ -707,6 +767,7 @@ class ConfigEditor:
         silent_showinfo("About Tenos.ai Configurator", about_message, parent=self.master)
 
     def save_all_configurations_from_menu(self):
+        """Trigger save for all config-related entities."""
         if not silent_askyesno("Confirm Save All", "Save changes in ALL tabs?", parent=self.master): return
         self.config_manager.save_main_config_data()
         self.llm_prompts_tab_manager.save_llm_prompts_data()
@@ -715,6 +776,76 @@ class ConfigEditor:
         self.config_manager.save_bot_settings_data()
         self.admin_control_tab_manager._save_blocklist()
         silent_showinfo("Save All Triggered", "All save operations triggered. Check console/messages for status.", parent=self.master)
+
+    def reset_bot_settings_to_defaults(self):
+        """
+        Reset all bot settings to their default values defined in the settings template.
+        Prompts the user for confirmation before resetting, then refreshes the UI and saves.
+        """
+        if not silent_askyesno("Confirm Reset", "Are you sure you want to reset all bot settings to their default values?", parent=self.master):
+            return
+        try:
+            # Obtain a fresh copy of the default settings
+            default_settings = self.config_manager.settings_template_factory().copy()
+            # Update the config manager's in-memory settings
+            self.config_manager.settings = default_settings
+            # Refresh the UI to reflect the default values
+            self.populate_bot_settings_tab()
+            # Persist the default settings to disk
+            self.config_manager.save_bot_settings_data()
+            silent_showinfo("Reset Complete", "Bot settings have been reset to defaults.", parent=self.master)
+        except Exception as e_reset:
+            silent_showerror("Reset Error", f"Failed to reset settings to defaults:\n{e_reset}", parent=self.master)
+
+    def export_config_and_settings(self):
+        """Export the main config and bot settings to a single JSON file."""
+        try:
+            file_path = filedialog.asksaveasfilename(title="Export Config & Settings", defaultextension=".json", filetypes=[("JSON Files","*.json"), ("All Files","*.*")], parent=self.master)
+            if not file_path:
+                return
+            export_data = {
+                'config': self.config_manager.config,
+                'settings': self.config_manager.settings,
+                'styles_config': self.styles_config,
+                'llm_models': self.llm_models_config,
+                'llm_prompts': self.llm_prompts_config
+            }
+            with open(file_path, 'w', encoding='utf-8') as f_out:
+                json.dump(export_data, f_out, indent=2)
+            silent_showinfo("Export Complete", f"Exported configuration to {os.path.basename(file_path)}", parent=self.master)
+        except Exception as e_exp:
+            silent_showerror("Export Error", f"Failed to export configuration:\n{e_exp}", parent=self.master)
+
+    def import_config_and_settings(self):
+        """Import main config and bot settings from a previously exported JSON file."""
+        try:
+            file_path = filedialog.askopenfilename(title="Import Config & Settings", filetypes=[("JSON Files","*.json"), ("All Files","*.*")], parent=self.master)
+            if not file_path:
+                return
+            with open(file_path, 'r', encoding='utf-8') as f_in:
+                imported_data = json.load(f_in)
+            if not isinstance(imported_data, dict):
+                silent_showerror("Import Error", "Invalid file format. Expected a JSON object.", parent=self.master)
+                return
+            # Update config and settings
+            if 'config' in imported_data and isinstance(imported_data['config'], dict):
+                self.config_manager.config = imported_data['config']
+                save_json_config(CONFIG_FILE_NAME, self.config_manager.config, "main config")
+            if 'settings' in imported_data and isinstance(imported_data['settings'], dict):
+                self.config_manager.settings = imported_data['settings']
+                save_json_config(SETTINGS_FILE_NAME, self.config_manager.settings, "bot settings")
+            # Optional data
+            if 'styles_config' in imported_data and isinstance(imported_data['styles_config'], dict):
+                self.styles_config = imported_data['styles_config']
+            if 'llm_models' in imported_data and isinstance(imported_data['llm_models'], dict):
+                self.llm_models_config = imported_data['llm_models']
+            if 'llm_prompts' in imported_data and isinstance(imported_data['llm_prompts'], dict):
+                self.llm_prompts_config = imported_data['llm_prompts']
+            # Refresh UI
+            self.refresh_all_ui_tabs()
+            silent_showinfo("Import Complete", f"Imported configuration from {os.path.basename(file_path)}", parent=self.master)
+        except Exception as e_imp:
+            silent_showerror("Import Error", f"Failed to import configuration:\n{e_imp}", parent=self.master)
     
     def _restart_application(self):
         """Gracefully stops the bot and restarts the configurator application."""
