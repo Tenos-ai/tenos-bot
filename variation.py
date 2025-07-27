@@ -176,7 +176,6 @@ def modify_variation_prompt(
             original_aspect_ratio_str_from_source = "1:1"
             print(f"Variation: No job data and failed to get dimensions from URL. Defaulting to {original_image_width_val}x{original_image_height_val}.")
     
-    # **FIX START**: Parse the edited prompt to extract parameters correctly
     param_pattern = r'\s--(\w+)(?:\s+("([^"]*)"|((?:(?!--|\s--).)+)|([^\s]+)))?'
     variation_seed = generate_seed()
     style_for_this_variation = original_style_from_source
@@ -198,17 +197,42 @@ def modify_variation_prompt(
 
         if 'style' in params_remix and params_remix['style'] in styles_config:
             style_for_this_variation = params_remix['style']
-        
+ 
         if 'seed' in params_remix:
-            try: variation_seed = int(params_remix['seed'])
-            except (ValueError, TypeError): pass # Keep the generated seed if parsing fails
+            try:
+                variation_seed = int(params_remix['seed'])
+            except (ValueError, TypeError):
+                # If the seed cannot be parsed, fall back to the generated seed
+                pass
+
+        # Allow overriding the number of steps via --steps when remixing a prompt
+        if 'steps' in params_remix:
+            try:
+                variation_job_steps = int(params_remix['steps'])
+            except (ValueError, TypeError):
+                # Ignore invalid input and retain the original steps value
+                pass
+
+        # Unify guidance parameter across models: accept --g, --guidance, --g_flux, --g_sdxl or --cfg
+        guidance_value = None
+        for guidance_key in ['g','guidance','g_flux','g_sdxl','cfg']:
+            if guidance_key in params_remix:
+                try:
+                    guidance_value = float(params_remix[guidance_key])
+                except (ValueError, TypeError):
+                    guidance_value = None
+                break
+        if guidance_value is not None:
+            if base_model_type_for_variation_workflow == 'sdxl':
+                variation_job_guidance_sdxl = guidance_value
+            else:
+                variation_job_guidance_flux = guidance_value
     else: # No remixed prompt, use original logic
         if isinstance(message_content_or_obj, str):
             style_match_reply = re.search(r'--style\s+([\w-]+)', message_content_or_obj, re.IGNORECASE)
             if style_match_reply:
                 requested_style_reply = style_match_reply.group(1) 
                 if requested_style_reply in styles_config: style_for_this_variation = requested_style_reply
-    # **FIX END**
 
     if style_for_this_variation not in styles_config: style_for_this_variation = "off"
 
