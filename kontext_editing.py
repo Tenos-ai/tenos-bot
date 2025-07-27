@@ -17,7 +17,7 @@ try:
         config_data_kontext = json.load(config_file)
     if not isinstance(config_data_kontext, dict):
         raise ValueError("config.json is not a valid dictionary in kontext_editing.py.")
-    
+    # Use a specific output directory for Kontext edits, falling back to GENERATIONS
     KONTEXT_EDITS_DIR = config_data_kontext.get('OUTPUTS', {}).get('KONTEXT_EDITS', 
                         config_data_kontext.get('OUTPUTS', {}).get('GENERATIONS', 
                         os.path.join('output', 'TENOSAI-BOT', 'GENERATIONS')))
@@ -48,6 +48,7 @@ def modify_kontext_prompt(
     aspect_ratio: str,
     steps_override: int,
     guidance_override: float,
+    mp_size_override: float,
     source_job_id: str = "unknown"
 ) -> Tuple[str | None, Dict | None, str | None, Dict | None]:
     
@@ -80,11 +81,12 @@ def modify_kontext_prompt(
         for i in range(num_images):
             workflow[f"load_image_{i+1}"]["inputs"]["url_or_path"] = image_urls[i]
         
-
         workflow["instruction_encoder"]["inputs"]["text"] = instruction
         workflow["ksampler"]["inputs"]["seed"] = base_seed
-        workflow["latent_optimizer"]["inputs"]["aspect_ratio"] = aspect_ratio
         
+        workflow["latent_optimizer"]["inputs"]["aspect_ratio"] = aspect_ratio
+        workflow["latent_optimizer"]["inputs"]["mp_size_float"] = mp_size_override
+
         workflow["ksampler"]["inputs"]["steps"] = steps_override
         workflow["flux_guidance"]["inputs"]["guidance"] = guidance_override
         
@@ -99,6 +101,7 @@ def modify_kontext_prompt(
         job_details = {
             "job_id": kontext_job_id, "type": "kontext_edit", "prompt": instruction,
             "seed": base_seed, "steps": steps_override, "guidance": guidance_override,
+            "mp_size": mp_size_override,
             "aspect_ratio_str": aspect_ratio, "image_urls": image_urls,
             "kontext_model_used": kontext_model_name, "source_job_id": source_job_id,
             "batch_size": 1, "model_type_for_enhancer": "kontext" 
