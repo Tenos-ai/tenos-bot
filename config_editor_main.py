@@ -51,7 +51,7 @@ from editor_tab_admin_control import AdminControlTab
 class ConfigEditor:
     def __init__(self, master_tk_root):
         self.master = master_tk_root
-        self.master.title("Tenos.ai Configurator v1.2.3")
+        self.master.title("Tenos.ai Configurator v1.2.4")
         self.master.geometry("850x950")
         self.master.configure(bg=BACKGROUND_COLOR)
 
