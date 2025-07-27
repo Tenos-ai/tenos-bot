@@ -1,3 +1,6 @@
+# --- START OF FILE queue_manager.py ---
+# START OF FILE queue_manager.py
+
 import json
 import os
 from datetime import datetime, timedelta
@@ -82,9 +85,9 @@ class QueueManager:
             "user_name": job_data.get("user_name"), "user_mention": job_data.get("user_mention"),
             "prompt": job_data.get("prompt", "[No Prompt Text]"), "batch_size": job_data.get("batch_size", 1),
             "seed": job_data.get("seed"), "steps": job_data.get("steps"),
-            "guidance": job_data.get("guidance"),
-            "guidance_sdxl": job_data.get("guidance_sdxl"),
-            "negative_prompt": job_data.get("negative_prompt"),
+            "guidance": job_data.get("guidance"), # Flux guidance
+            "guidance_sdxl": job_data.get("guidance_sdxl"), # SDXL guidance
+            "negative_prompt": job_data.get("negative_prompt"), # SDXL negative prompt
             "style": job_data.get("style"), "width": job_data.get("width"), "height": job_data.get("height"),
             "aspect_ratio_str": job_data.get("aspect_ratio_str"),
             "model_used": job_data.get("model_used"), "parameters_used": job_data.get("parameters_used",{}),
@@ -98,7 +101,7 @@ class QueueManager:
             "enhanced_prompt": job_data.get("enhanced_prompt"),
             "enhancer_error": job_data.get("enhancer_error"),
             "model_type_for_enhancer": job_data.get("model_type_for_enhancer", "flux"),
-            "default_mp_size": job_data.get("default_mp_size")
+            "mp_size": job_data.get("mp_size")
         }
         self.pending_jobs[job_id_str] = full_job_data
         print(f"Added job {job_id_str} to pending queue.")
@@ -110,9 +113,8 @@ class QueueManager:
     def mark_job_complete(self, job_id, job_data, image_paths: list):
         job_id_str = str(job_id)
         if job_id_str in self.pending_jobs:
-            
             completed_job_data = job_data
-            self.pending_jobs.pop(job_id_str, None)
+            self.pending_jobs.pop(job_id_str, None) # Remove from pending
             
             completed_job_data["status"] = "complete"
             completed_job_data["completion_time"] = datetime.now().isoformat()
