@@ -1,3 +1,4 @@
+# --- START OF FILE bot_slash_commands.py ---
 import discord
 from discord import app_commands
 import textwrap
@@ -49,7 +50,7 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
         await handle_gen_command(interaction, prompt)
 
 
-    @tree.command(name="edit", description="Edit image(s) with an instruction using FLUX Kontext. Add --ar, --steps, --g.")
+    @tree.command(name="edit", description="Edit image(s) with an instruction using FLUX Kontext. Add --ar, --steps, --g, --mp.")
     @app_commands.describe(
         instruction="The command for editing the image (e.g., 'make the sky blue').",
         image1="The primary image to edit.",
@@ -300,7 +301,7 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
             "**🤖 Tenos.ai Bot Help! 🤖**\n\n"
             "**Core Commands:**\n"
             "`/gen [prompt] [opts]` - Generate image(s).\n"
-            "`/edit [instruction] [images] [opts]` - Edit image(s) with a command. Supports `--ar`, `--steps`, `--g`.\n"
+            "`/edit [instruction] [images] [opts]` - Edit image(s) with a command. Supports `--ar`, `--steps`, `--g`, `--mp`.\n"
             "`/please [prompt] [opts]` - Request an image generation from the admin.\n"
             "`/styles` - View available style presets.\n"
             "`/help` - Show this help message.\n\n"
