@@ -1,3 +1,4 @@
+# --- START OF FILE editor_config_manager.py ---
 import json
 import os
 import traceback
@@ -41,13 +42,18 @@ class EditorConfigManager:
              "selected_clip_l": None, 
              "selected_upscale_model": None, 
              "selected_vae": None,
-             "default_style": "off", 
+             "default_style_flux": "off",
+             "default_style_sdxl": "off",
              "default_variation_mode": "weak", 
+             "variation_batch_size": 1,
              "default_batch_size": 1,
              "default_guidance": 3.5, 
              "default_guidance_sdxl": 7.0,
              "default_sdxl_negative_prompt": "", 
-             "default_mp_size": "1",
+             "default_mp_size": 1.0,
+             "kontext_guidance": 3.0,
+             "kontext_steps": 32,
+             "kontext_mp_size": 1.15,
              "remix_mode": False, 
              "upscale_factor": 1.85,
              "llm_enhancer_enabled": False, 
@@ -137,7 +143,7 @@ class EditorConfigManager:
                 self.config = config_to_write
                 if show_success_message:
                     silent_showinfo("Success", "Main configuration saved successfully!", parent=self.editor_app.master)
-                    
+                    # After a successful manual save, trigger a full UI refresh in the main app
                     self.editor_app.master.after(50, self.editor_app.refresh_all_ui_tabs)
         except Exception as e_save:
             silent_showerror("Save Error", f"Failed to save main config: {str(e_save)}", parent=self.editor_app.master)
@@ -148,18 +154,22 @@ class EditorConfigManager:
         self.llm_models_data_for_settings_template = llm_models_data_param
         current_settings_template = self.settings_template_factory()
         loaded_settings_from_file = load_json_config(SETTINGS_FILE_NAME, lambda: current_settings_template.copy(), "bot settings")
+        
+        # Migrate old 'default_style' key
+        if 'default_style' in loaded_settings_from_file:
+            old_style = loaded_settings_from_file.pop('default_style')
+            if 'default_style_flux' not in loaded_settings_from_file:
+                loaded_settings_from_file['default_style_flux'] = old_style
+            if 'default_style_sdxl' not in loaded_settings_from_file:
+                loaded_settings_from_file['default_style_sdxl'] = old_style
+        
         merged_settings_result = current_settings_template.copy()
         was_settings_updated_during_load = False
         for key_template, template_default_val in current_settings_template.items():
             if key_template in loaded_settings_from_file:
                 value_from_loaded_file = loaded_settings_from_file[key_template]
                 try:
-                    if key_template == 'default_mp_size':
-                        str_val = str(value_from_loaded_file)
-                        allowed_mp = ["0.25", "0.5", "1", "1.25", "1.5", "1.75", "2", "2.5", "3", "4"]
-                        merged_settings_result[key_template] = str_val if str_val in allowed_mp else template_default_val
-                        if merged_settings_result[key_template] != str_val: was_settings_updated_during_load = True
-                    elif key_template == 'display_prompt_preference':
+                    if key_template == 'display_prompt_preference':
                         str_val = str(value_from_loaded_file).lower()
                         allowed_display = ['enhanced', 'original']
                         merged_settings_result[key_template] = str_val if str_val in allowed_display else template_default_val
