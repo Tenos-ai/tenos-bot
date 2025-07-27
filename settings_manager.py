@@ -97,6 +97,16 @@ def load_settings():
             except json.JSONDecodeError as e:
                 print(f"Error parsing {settings_file} (invalid JSON): {e}. Returning defaults.")
                 return _get_default_settings()
+        
+        # --- Migration for old 'default_style' key ---
+        if 'default_style' in settings:
+            old_style_value = settings.pop('default_style')
+            if 'default_style_flux' not in settings:
+                settings['default_style_flux'] = old_style_value
+            if 'default_style_sdxl' not in settings:
+                settings['default_style_sdxl'] = old_style_value
+            print("Migrated 'default_style' to 'default_style_flux' and 'default_style_sdxl'.")
+
 
         default_settings = _get_default_settings()
         updated = False
@@ -106,11 +116,9 @@ def load_settings():
                 settings[key] = default_value
                 updated = True
 
-        numeric_keys_float = ['default_guidance', 'default_guidance_sdxl', 'upscale_factor']
-        numeric_keys_int = ['steps', 'default_batch_size']
+        numeric_keys_float = ['default_guidance', 'default_guidance_sdxl', 'upscale_factor', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']
+        numeric_keys_int = ['steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size']
         bool_keys = ['remix_mode', 'llm_enhancer_enabled']
-        mp_size_key = 'default_mp_size'
-        allowed_mp_sizes = ["0.25", "0.5", "1", "1.25", "1.5", "1.75", "2", "2.5", "3", "4"]
         display_prompt_key = 'display_prompt_preference'
         allowed_display_prompt_options = ['enhanced', 'original']
 
@@ -150,17 +158,6 @@ def load_settings():
                     print(f"Warning: Setting '{key}' has invalid type ({type(settings[key])}). Resetting to default.")
                     settings[key] = default_settings[key]
                     updated = True
-
-        if mp_size_key in settings:
-            current_mp_value = str(settings[mp_size_key])
-            if current_mp_value not in allowed_mp_sizes:
-                print(f"Warning: Setting '{mp_size_key}' has invalid value '{current_mp_value}'. Resetting to default.")
-                settings[mp_size_key] = default_settings[mp_size_key]
-                updated = True
-            else:
-                settings[mp_size_key] = current_mp_value
-        else: # Should be added by the loop above if missing
-            pass
 
         if display_prompt_key in settings:
             current_display_pref = str(settings[display_prompt_key]).lower()
@@ -275,7 +272,6 @@ def load_settings():
             elif available_sdxl_checkpoints: settings['selected_model'] = f"SDXL: {next(iter(available_sdxl_checkpoints.values()))}"
             updated = True
             
-        # --- NEW: KONTEXT MODEL VALIDATION ---
         current_kontext_model = settings.get('selected_kontext_model')
         if current_kontext_model and isinstance(current_kontext_model, str):
             current_kontext_model_norm = current_kontext_model.strip()
@@ -334,8 +330,6 @@ def load_settings():
 
 
         selected_provider = settings.get('llm_provider', 'gemini') # Already stripped
-        # valid_provider_models_raw = llm_models_config.get('providers', {}).get(selected_provider, {}).get('models', [])
-        # valid_provider_models = {m.strip().lower(): m.strip() for m in valid_provider_models_raw} # Normalized map for active provider
 
         def validate_llm_model(provider_short_name):
             nonlocal updated
@@ -343,7 +337,6 @@ def load_settings():
             current_llm_model_setting = settings.get(model_key)
             current_llm_model = current_llm_model_setting.strip() if isinstance(current_llm_model_setting, str) else None
 
-            # Get models specifically for *this* provider_short_name being validated
             specific_provider_models_raw = llm_models_config.get('providers', {}).get(provider_short_name, {}).get('models', [])
             specific_provider_models_map = {m.strip().lower(): m.strip() for m in specific_provider_models_raw}
 
@@ -364,7 +357,6 @@ def load_settings():
         validate_llm_model('groq')
         validate_llm_model('openai')
 
-        # Default SDXL Negative Prompt
         if 'default_sdxl_negative_prompt' in settings and isinstance(settings['default_sdxl_negative_prompt'], str):
             settings['default_sdxl_negative_prompt'] = settings['default_sdxl_negative_prompt'].strip()
         elif 'default_sdxl_negative_prompt' not in settings: # Ensure key exists
@@ -422,19 +414,24 @@ def _get_default_settings():
 
     return {
         "selected_model": default_model_setting,
-        "selected_kontext_model": default_flux_model_raw, # NEW: Default to first available flux model
+        "selected_kontext_model": default_flux_model_raw,
         "steps": 32,
         "selected_t5_clip": default_t5,
         "selected_clip_l": default_l,
         "selected_upscale_model": None,
         "selected_vae": None,
-        "default_style": "off",
+        "default_style_flux": "off",
+        "default_style_sdxl": "off",
         "default_variation_mode": "weak",
+        "variation_batch_size": 1,
         "default_batch_size": 1,
         "default_guidance": 3.5,
         "default_guidance_sdxl": 7.0,
         "default_sdxl_negative_prompt": "",
-        "default_mp_size": "1",
+        "default_mp_size": 1.0,
+        "kontext_guidance": 3.0,
+        "kontext_steps": 32,
+        "kontext_mp_size": 1.15,
         "remix_mode": False,
         "upscale_factor": 1.85,
         "llm_enhancer_enabled": False,
@@ -448,17 +445,15 @@ def _get_default_settings():
 def save_settings(settings):
     settings_file = 'settings.json'
     try:
-        numeric_keys_float = ['default_guidance', 'default_guidance_sdxl', 'upscale_factor']
-        numeric_keys_int = ['steps', 'default_batch_size']
+        numeric_keys_float = ['default_guidance', 'default_guidance_sdxl', 'upscale_factor', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']
+        numeric_keys_int = ['steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size']
         bool_keys = ['remix_mode', 'llm_enhancer_enabled']
         string_keys_to_strip = [
             'llm_provider', 'llm_model_gemini', 'llm_model_groq', 'llm_model_openai',
             'selected_model', 'selected_t5_clip', 'selected_clip_l', 'selected_upscale_model',
-            'selected_vae', 'default_style', 'default_sdxl_negative_prompt',
-            'selected_kontext_model' # NEW
+            'selected_vae', 'default_style_flux', 'default_style_sdxl', 'default_sdxl_negative_prompt',
+            'selected_kontext_model'
         ]
-        mp_size_key = 'default_mp_size'
-        allowed_mp_sizes = ["0.25", "0.5", "1", "1.25", "1.5", "1.75", "2", "2.5", "3", "4"]
         display_prompt_key = 'display_prompt_preference'
         allowed_display_prompt_options = ['enhanced', 'original']
 
@@ -489,8 +484,7 @@ def save_settings(settings):
             if key in valid_settings and isinstance(valid_settings[key], str):
                 valid_settings[key] = valid_settings[key].strip()
             elif key in valid_settings and valid_settings[key] is None and key not in ['selected_model', 'selected_t5_clip', 'selected_clip_l', 'selected_upscale_model', 'selected_vae', 'selected_kontext_model']: # Allow None for model selections
-                # If it's None for other string keys that expect a value, reset to default
-                if defaults[key] is not None: # Only reset if default is not None itself
+                if defaults[key] is not None: 
                     print(f"Warning: '{key}' is None but expects a string. Resetting to default.")
                     valid_settings[key] = defaults[key]
 
@@ -499,11 +493,6 @@ def save_settings(settings):
         if not allowed_providers: allowed_providers = ['gemini']
         if valid_settings.get('llm_provider') not in allowed_providers:
             valid_settings['llm_provider'] = defaults['llm_provider']
-
-        if mp_size_key in valid_settings:
-            mp_val = str(valid_settings[mp_size_key])
-            if mp_val not in allowed_mp_sizes: valid_settings[mp_size_key] = defaults[mp_size_key]
-            else: valid_settings[mp_size_key] = mp_val
 
         if display_prompt_key in valid_settings:
             display_pref_val = str(valid_settings[display_prompt_key]).lower()
@@ -656,7 +645,7 @@ def get_clip_l_choices(settings): return get_clip_choices(settings, 'clip_L', 's
 
 def get_style_choices(settings):
     choices = []; styles = load_styles_config()
-    current_style = settings.get('default_style', 'off').strip()
+    current_style = settings.get('default_style', 'off').strip() # This key is now legacy, may need adjustment
     
     canonical_options = []
     favorite_styles = []
@@ -688,6 +677,8 @@ def get_style_choices(settings):
         canonical_options.append(off_option)
 
     for option_data in canonical_options:
+        # Note: This checks against a single 'default_style'. This UI element may need to be duplicated
+        # or rethought for separate Flux/SDXL default styles in Discord.
         is_default = (option_data['value'] == current_style)
         choices.append(discord.SelectOption(label=option_data['label'][:100], value=option_data['value'], default=is_default))
     
@@ -745,8 +736,8 @@ def get_remix_mode_choices(settings):
 def get_upscale_factor_choices(settings):
     try: current_factor = float(settings.get('upscale_factor', 1.85))
     except (ValueError, TypeError): current_factor = 1.85
-    factor_values_formatted = [f"{f:.1f}" for f in np.arange(1.5, 4.01, 0.5)]
-    current_factor_str = f"{current_factor:.1f}"
+    factor_values_formatted = [f"{f:.2f}" for f in np.arange(1.5, 4.01, 0.25)]
+    current_factor_str = f"{current_factor:.2f}"
     if current_factor_str not in factor_values_formatted:
         factor_values_formatted.append(current_factor_str); factor_values_formatted.sort(key=float)
     choices = [discord.SelectOption(label=f"Upscale Factor: {f}x", value=f, default=(abs(float(f) - current_factor) < 0.01)) for f in factor_values_formatted]
@@ -800,17 +791,34 @@ def get_llm_model_choices(settings, provider=None):
     return choices[:25]
 
 def get_mp_size_choices(settings):
-    current_size = str(settings.get('default_mp_size', "1")).strip()
-    allowed_sizes = ["0.25", "0.5", "1", "1.25", "1.5", "1.75", "2", "2.5", "3", "4"]
-    if current_size not in allowed_sizes:
-        try:
-            current_size_float = float(current_size)
-            for allowed in allowed_sizes:
-                if abs(float(allowed) - current_size_float) < 1e-6: current_size = allowed; break
-            else: current_size = "1"
-        except Exception: current_size = "1"
-    size_labels = {"0.25": "0.25MP (~512x512)", "0.5": "0.5MP (~768x768)", "1": "1MP (~1024x1024)", "1.25": "1.25MP (~1280x1024)", "1.5": "1.5MP (~1440x1024)", "1.75": "1.75MP (~1600x1024)", "2": "2MP (~1920x1080)", "2.5": "2.5MP (~1536x1536)", "3": "3MP (~1792x1792)", "4": "4MP (~2048x2048)"}
-    return [discord.SelectOption(label=size_labels.get(s, f"{s} MP"), value=s, default=(s == current_size)) for s in allowed_sizes]
+    try:
+        current_size_float = float(settings.get('default_mp_size', 1.0))
+    except (ValueError, TypeError):
+        current_size_float = 1.0
+
+    allowed_sizes = ["0.25", "0.5", "1.0", "1.25", "1.5", "1.75", "2.0", "2.5", "3.0", "4.0"]
+    current_size_str = f"{current_size_float:.2f}".rstrip('0').rstrip('.')
+    if current_size_str + ".0" in allowed_sizes: current_size_str += ".0" # Normalize for matching
+    if current_size_str not in allowed_sizes:
+         allowed_sizes.append(current_size_str)
+         allowed_sizes.sort(key=float)
+
+    size_labels = {
+        "0.25": "0.25MP (~512x512)", "0.5": "0.5MP (~768x768)", "1.0": "1.0MP (~1024x1024)",
+        "1.25": "1.25MP (~1280x1024)", "1.5": "1.5MP (~1440x1024)", "1.75": "1.75MP (~1600x1024)",
+        "2.0": "2.0MP (~1920x1080)", "2.5": "2.5MP (~1536x1536)", "3.0": "3.0MP (~1792x1792)", "4.0": "4.0MP (~2048x2048)"
+    }
+    
+    choices = []
+    for s in allowed_sizes:
+        is_default = abs(float(s) - current_size_float) < 1e-6
+        label = size_labels.get(s, f"{s} MP")
+        choices.append(discord.SelectOption(label=label, value=s, default=is_default))
+
+    if choices and not any(o.default for o in choices):
+        choices[0].default = True
+
+    return choices[:25]
 
 def get_upscale_model_choices(settings):
     choices = []; models_data = {}; # Changed var name to avoid conflict
@@ -925,4 +933,3 @@ def get_kontext_model_choices(settings):
         choices[0].default = True
 
     return choices[:25]
-# END OF FILE settings_manager.py
