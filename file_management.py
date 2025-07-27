@@ -1,3 +1,4 @@
+# --- START OF FILE file_management.py ---
 import os
 import discord
 import re
@@ -13,6 +14,7 @@ try:
         with open('config.json', 'r') as config_file:
             config = json.load(config_file)
     
+    # Add KONTEXT_EDITS to the list of folders to scan
     OUTPUT_FOLDERS = [
         config.get('OUTPUTS', {}).get('GENERATIONS'),
         config.get('OUTPUTS', {}).get('UPSCALES'),
@@ -42,7 +44,7 @@ def extract_job_id(filename):
     )
     
     if match:
-        return match.group(2)
+        return match.group(2) # Group 2 is the 8-character job_id
         
     return None
 
