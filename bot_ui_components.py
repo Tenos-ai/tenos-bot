@@ -3,6 +3,7 @@ from discord.ui import Modal, TextInput, View, Button
 import textwrap
 import json
 import traceback
+import re
 
 from queue_manager import queue_manager
 from file_management import extract_job_id, delete_job_files_and_message
@@ -350,11 +351,29 @@ class GenerationActionsView(View):
         await self._process_and_send_action_results(interaction, results, "Upscale")
 
     async def vary_callback(self, interaction: discord.Interaction):
-        settings = load_settings(); remix_enabled = settings.get('remix_mode', False)
-        variation_type = 'weak' if '_w_' in interaction.data['custom_id'] else 'strong' 
+        settings = load_settings()
+        remix_enabled = settings.get('remix_mode', False)
+        
+        custom_id = interaction.data['custom_id']
+        
+        # Determine variation type dynamically for batch jobs, or explicitly for single jobs
+        variation_type = ''
+        if '_dynamic_' in custom_id:
+            variation_type = settings.get('default_variation_mode', 'weak')
+        elif '_w_' in custom_id:
+            variation_type = 'weak'
+        else:
+            variation_type = 'strong'
+
+        # Determine image index
         image_idx = 1
-        try: parts = interaction.data['custom_id'].split('_'); image_idx = int(parts[2] if len(parts) > 2 and parts[1] in ['w','s'] else parts[1]) 
-        except (IndexError, ValueError): pass
+        try:
+            # This logic finds the numeric part before the final underscore (job_id)
+            parts = custom_id.split('_')
+            image_idx = int(parts[-2])
+        except (IndexError, ValueError):
+            print(f"Could not parse image index from custom_id: {custom_id}. Defaulting to 1.")
+
         ref_msg = await self.get_referenced_message(interaction)
         if not ref_msg: await safe_interaction_response(interaction, "Error: Original message not found.", ephemeral=True); return
         
@@ -412,16 +431,14 @@ class BatchActionsView(GenerationActionsView):
             if isinstance(item, Button) and item.custom_id in ids_to_remove_or_reposition:
                 if item.custom_id in [f"rerun_{job_id}", f"edit_{job_id}", f"delete_{job_id}"]: action_buttons_to_readd.append({'label': item.label, 'style': item.style, 'custom_id': item.custom_id, 'callback': item.callback })
                 self.remove_item(item)
-        settings_batch = load_settings()
-        self.default_variation_char = settings_batch.get('default_variation_mode', 'weak')[0]
-        v_label_char = "🤏" if self.default_variation_char == 'w' else ("💪" if self.default_variation_char == 's' else "V")
+        
         for i_batch_up in range(1, self.batch_size + 1):
             if i_batch_up > 5 : break 
             btn_up = Button(label=f"U{i_batch_up}", style=discord.ButtonStyle.primary, custom_id=f"upscale_{i_batch_up}_{job_id}", row=0)
             btn_up.callback = self.upscale_callback; self.add_item(btn_up)
         for i_batch_vary in range(1, self.batch_size + 1):
             if i_batch_vary > 5: break
-            btn_vary = Button(label=f"{v_label_char}{i_batch_vary}", style=discord.ButtonStyle.secondary, custom_id=f"vary_{self.default_variation_char}_{i_batch_vary}_{job_id}", row=1)
+            btn_vary = Button(label=f"V{i_batch_vary}", style=discord.ButtonStyle.secondary, custom_id=f"vary_dynamic_{i_batch_vary}_{job_id}", row=1)
             btn_vary.callback = self.vary_callback; self.add_item(btn_vary)
         action_button_row = 2
         for btn_data in action_buttons_to_readd:
