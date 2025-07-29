@@ -10,9 +10,9 @@
 This update introduces a more organized and powerful configuration experience, adds dedicated settings for Kontext editing, and refines the user interface.
 
 -   **Tabbed Bot Settings in Configurator:** The "Bot Settings" tab in the GUI has been reorganized into five distinct sub-tabs for clarity:
-    -   **General:** Core model selections, VAE, variation settings, batch sizes, and upscale factor.
-    -   **Flux:** Default style, steps, guidance, and MP size specifically for Flux generations.
-    -   **SDXL:** Default style, guidance, and negative prompt for SDXL generations.
+    -   **General:** Core model selections, VAE, variation settings, batch sizes, MP size, and upscale factor.
+    -   **Flux:** Default style, steps, guidance specifically for Flux generations.
+    -   **SDXL:** Default style, steps, guidance, and negative prompt for SDXL generations.
     -   **Kontext:** New dedicated settings for the `/edit` command, including default steps, guidance, and MP size.
     -   **LLM:** Settings for the prompt enhancer and display preferences.
 
