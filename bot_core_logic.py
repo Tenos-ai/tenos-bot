@@ -820,4 +820,4 @@ async def process_kontext_edit_request(
         ws_client = WebsocketClient()
         if ws_client.is_connected:
             await ws_client.register_prompt(comfy_id, sent_message.id, sent_message.channel.id)
-# --- END OF FILE bot_core_logic.py ---
+# --- END OF FILE bot_core_logic.py ---```
