@@ -5,6 +5,30 @@
 **COMPLETED UPDATES**
 
 **7/6/25**
+- **Update 4**: Version 1.2.4
+
+This update introduces a more organized and powerful configuration experience, adds dedicated settings for Kontext editing, and refines the user interface.
+
+-   **Tabbed Bot Settings in Configurator:** The "Bot Settings" tab in the GUI has been reorganized into five distinct sub-tabs for clarity:
+    -   **General:** Core model selections, VAE, variation settings, batch sizes, and upscale factor.
+    -   **Flux:** Default style, steps, guidance, and MP size specifically for Flux generations.
+    -   **SDXL:** Default style, guidance, and negative prompt for SDXL generations.
+    -   **Kontext:** New dedicated settings for the `/edit` command, including default steps, guidance, and MP size.
+    -   **LLM:** Settings for the prompt enhancer and display preferences.
+
+-   **Model-Specific Default Styles:** The single `default_style` setting has been split. You can now set a `default_style_flux` and a `default_style_sdxl` independently in the configurator. The bot will automatically apply the correct default style based on the model being used.
+
+-   **Advanced MP Size Control:** In the configurator, the "Default MP Size" fields are now float values instead of a dropdown, allowing for more precise control over generation resolution (e.g., `1.15`). The `/settings` command in Discord retains the user-friendly dropdown.
+
+-   **Variation Batch Size:** A new setting for "Variation Batch Size" has been added for future features.
+
+-   **UI & Bug Fixes:**
+    -   The variation buttons on generation results have been refined. Single-image results (like variations or reruns) now correctly show distinct `Vary W 🤏` and `Vary S 💪` buttons. Multi-image (batch) results correctly show simplified `V1`, `V2`, etc., which dynamically use your current default variation setting.
+    -   Fixed a bug where the `MP` value was not displayed correctly in the final completion message.
+    -   Fixed a visual bug in the configurator where the Bot Settings page would not refresh correctly after being changed via the `/settings` command in Discord.
+    -   The file scanner now correctly recognizes completed Kontext jobs (prefixed with `EDIT_`).
+
+**7/6/25**
 - **Update 3**:
   - fixed a few bugs, offical V1.2.3 update now has all features working with no bugs, as of today this will be stable release 1. Update tool will pull updates on the next numbered release (1.2.4).
 
@@ -20,7 +44,7 @@
 ----------
 **KNOWN BUGS**
 
-- when `Remix` mode is `ON` original guidance value is reused even if changed in remix modal
+- None(?)
 
 **PLANED UPDATES**
 
