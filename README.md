@@ -4,8 +4,8 @@
 
 **COMPLETED UPDATES**
 
-**7/6/25**
-- **Update 4**: Version 1.2.4
+**7/29/25**
+- **Update 4**: **Version 1.2.4**
 
 This update introduces a more organized and powerful configuration experience, adds dedicated settings for Kontext editing, and refines the user interface.
 
