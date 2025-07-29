@@ -644,19 +644,19 @@ def get_t5_clip_choices(settings): return get_clip_choices(settings, 't5', 'sele
 def get_clip_l_choices(settings): return get_clip_choices(settings, 'clip_L', 'selected_clip_l')
 
 
-def get_style_choices(settings):
+def get_style_choices_flux(settings):
     choices = []; styles = load_styles_config()
-    current_style = settings.get('default_style', 'off').strip() # This key is now legacy, may need adjustment
+    current_style = settings.get('default_style_flux', 'off').strip()
     
+    filtered_styles = {name: data for name, data in styles.items() if isinstance(data, dict) and data.get('model_type', 'all') in ['all', 'flux']}
+
     canonical_options = []
     favorite_styles = []
     other_styles = []
     off_option = None
 
-    for style_raw, data_raw in styles.items():
-        style = style_raw.strip() if isinstance(style_raw, str) else None
-        if not style or not isinstance(data_raw, dict): continue
-        
+    for style_raw, data_raw in filtered_styles.items():
+        style = style_raw.strip()
         is_favorite = data_raw.get('favorite', False)
         label_prefix = "⭐" if is_favorite and style != "off" else ("🔴" if style == "off" else "")
         option_label = f"{label_prefix} {style}".strip()
@@ -672,19 +672,74 @@ def get_style_choices(settings):
     favorite_styles.sort(key=lambda o: o['label'].lstrip('⭐🔴 '))
     other_styles.sort(key=lambda o: o['label'])
     
-    canonical_options.extend(favorite_styles)
-    canonical_options.extend(other_styles)
     if off_option:
         canonical_options.append(off_option)
+    canonical_options.extend(favorite_styles)
+    canonical_options.extend(other_styles)
 
     for option_data in canonical_options:
-        # Note: This checks against a single 'default_style'. This UI element may need to be duplicated
-        # or rethought for separate Flux/SDXL default styles in Discord.
         is_default = (option_data['value'] == current_style)
         choices.append(discord.SelectOption(label=option_data['label'][:100], value=option_data['value'], default=is_default))
     
     if choices and not any(opt.default for opt in choices):
-        choices[0].default = True
+        found = False
+        for opt in choices:
+            if opt.value == current_style:
+                opt.default = True
+                found = True
+                break
+        if not found and choices:
+            choices[0].default = True
+
+    return choices[:25]
+
+
+def get_style_choices_sdxl(settings):
+    choices = []; styles = load_styles_config()
+    current_style = settings.get('default_style_sdxl', 'off').strip()
+    
+    filtered_styles = {name: data for name, data in styles.items() if isinstance(data, dict) and data.get('model_type', 'all') in ['all', 'sdxl']}
+
+    canonical_options = []
+    favorite_styles = []
+    other_styles = []
+    off_option = None
+
+    for style_raw, data_raw in filtered_styles.items():
+        style = style_raw.strip()
+        is_favorite = data_raw.get('favorite', False)
+        label_prefix = "⭐" if is_favorite and style != "off" else ("🔴" if style == "off" else "")
+        option_label = f"{label_prefix} {style}".strip()
+        option_data = {'label': option_label, 'value': style}
+
+        if style == 'off':
+            off_option = option_data
+        elif is_favorite:
+            favorite_styles.append(option_data)
+        else:
+            other_styles.append(option_data)
+
+    favorite_styles.sort(key=lambda o: o['label'].lstrip('⭐🔴 '))
+    other_styles.sort(key=lambda o: o['label'])
+    
+    if off_option:
+        canonical_options.append(off_option)
+    canonical_options.extend(favorite_styles)
+    canonical_options.extend(other_styles)
+
+    for option_data in canonical_options:
+        is_default = (option_data['value'] == current_style)
+        choices.append(discord.SelectOption(label=option_data['label'][:100], value=option_data['value'], default=is_default))
+    
+    if choices and not any(opt.default for opt in choices):
+        found = False
+        for opt in choices:
+            if opt.value == current_style:
+                opt.default = True
+                found = True
+                break
+        if not found and choices:
+            choices[0].default = True
 
     return choices[:25]
 
