@@ -353,9 +353,6 @@ class GenerationActionsView(View):
 
     async def vary_callback(self, interaction: discord.Interaction):
         try:
-            if not interaction.response.is_done():
-                await interaction.response.defer(ephemeral=False, thinking=False)
-
             settings = load_settings()
             remix_enabled = settings.get('remix_mode', False)
             
@@ -380,11 +377,12 @@ class GenerationActionsView(View):
                     await safe_interaction_response(interaction, "Error: Original job data for remix not found.", ephemeral=True)
                     return
                 
-                # This needs to be a new interaction response, not a deferral.
                 modal = RemixModal(job_data, variation_type, image_idx, ref_msg)
-                await interaction.followup.send(content="Opening Remix Modal...", ephemeral=True, view=None)
                 await interaction.response.send_modal(modal)
+
             else:
+                if not interaction.response.is_done():
+                    await interaction.response.defer(ephemeral=False, thinking=False)
                 results = await core_process_variation(context_user=interaction.user, context_channel=interaction.channel, referenced_message_obj=ref_msg, variation_type_str=variation_type, image_idx=image_idx, is_interaction=True, initial_interaction_obj=interaction) 
                 await self._process_and_send_action_results(interaction, results, f"{variation_type.capitalize()} Variation")
         except Exception as e:
@@ -459,18 +457,12 @@ class BatchActionsView(GenerationActionsView):
     async def batch_vary_callback(self, interaction: discord.Interaction):
         """Dedicated callback for batch variation buttons (V1, V2, etc.)."""
         try:
-            # Acknowledge the interaction immediately to prevent "interaction failed"
-            if not interaction.response.is_done():
-                await interaction.response.defer(ephemeral=False, thinking=False)
-
-            # Load the settings at the moment the button is clicked
             settings = load_settings()
             remix_enabled = settings.get('remix_mode', False)
             variation_type = settings.get('default_variation_mode', 'weak')
             
             custom_id = interaction.data['custom_id']
             
-            # Parse the image index from the custom_id
             image_idx = 1
             try:
                 parts = custom_id.split('_')
@@ -480,39 +472,38 @@ class BatchActionsView(GenerationActionsView):
 
             ref_msg = await self.get_referenced_message(interaction)
             if not ref_msg:
-                await safe_interaction_response(interaction, "Error: Original message not found.", ephemeral=True)
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("Error: Original message not found.", ephemeral=True)
+                else:
+                    await interaction.followup.send("Error: Original message not found.", ephemeral=True)
                 return
-            
+
             if remix_enabled:
                 job_data = queue_manager.get_job_data_by_id(self.job_id) or queue_manager.get_job_data(ref_msg.id, ref_msg.channel.id if ref_msg.channel else interaction.channel_id) 
                 if not job_data:
-                    await safe_interaction_response(interaction, "Error: Original job data for remix not found.", ephemeral=True)
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message("Error: Original job data for remix not found.", ephemeral=True)
+                    else:
+                        await interaction.followup.send("Error: Original job data for remix not found.", ephemeral=True)
                     return
                 
                 modal = RemixModal(job_data, variation_type, image_idx, ref_msg)
-                # Since we already deferred, we can't send a modal directly.
-                # We need to use followup for the modal response. This part of discord.py is tricky.
-                # The best approach is to send the modal from the initial response.
-                # For now, let's just send the modal if not deferred.
-                # A better fix is to NOT defer if we know we're sending a modal.
-                # Let's adjust the logic slightly:
-                if interaction.response.is_done():
-                    # Can't send a modal via followup. Inform user.
-                    await interaction.followup.send("Remix is enabled, but cannot open the modal from a deferred interaction. Please try again or disable Remix mode.", ephemeral=True)
-                else: # Should not happen with our new defer logic, but as a safeguard
-                    await interaction.response.send_modal(modal)
-
+                await interaction.response.send_modal(modal)
             else:
+                if not interaction.response.is_done():
+                    await interaction.response.defer(ephemeral=False, thinking=False)
+                
                 results = await core_process_variation(
                     context_user=interaction.user,
                     context_channel=interaction.channel,
                     referenced_message_obj=ref_msg,
-                    variation_type_str=variation_type, # Use the currently loaded setting
+                    variation_type_str=variation_type,
                     image_idx=image_idx,
                     is_interaction=True,
                     initial_interaction_obj=interaction
                 )
                 await self._process_and_send_action_results(interaction, results, f"{variation_type.capitalize()} Variation")
+
         except Exception as e:
             print(f"Error in batch_vary_callback: {e}")
             traceback.print_exc()
