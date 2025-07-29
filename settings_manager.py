@@ -117,7 +117,7 @@ def load_settings():
                 updated = True
 
         numeric_keys_float = ['default_guidance', 'default_guidance_sdxl', 'upscale_factor', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']
-        numeric_keys_int = ['steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size']
+        numeric_keys_int = ['steps', 'sdxl_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size']
         bool_keys = ['remix_mode', 'llm_enhancer_enabled']
         display_prompt_key = 'display_prompt_preference'
         allowed_display_prompt_options = ['enhanced', 'original']
@@ -416,6 +416,7 @@ def _get_default_settings():
         "selected_model": default_model_setting,
         "selected_kontext_model": default_flux_model_raw,
         "steps": 32,
+        "sdxl_steps": 26,
         "selected_t5_clip": default_t5,
         "selected_clip_l": default_l,
         "selected_upscale_model": None,
@@ -446,7 +447,7 @@ def save_settings(settings):
     settings_file = 'settings.json'
     try:
         numeric_keys_float = ['default_guidance', 'default_guidance_sdxl', 'upscale_factor', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']
-        numeric_keys_int = ['steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size']
+        numeric_keys_int = ['steps', 'sdxl_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size']
         bool_keys = ['remix_mode', 'llm_enhancer_enabled']
         string_keys_to_strip = [
             'llm_provider', 'llm_model_gemini', 'llm_model_groq', 'llm_model_openai',
@@ -696,6 +697,18 @@ def get_steps_choices(settings):
     if choices and not any(o.default for o in choices): choices[0].default = True
     return choices[:25] 
 
+def get_sdxl_steps_choices(settings):
+    """Creates a list of discord.SelectOption for SDXL steps setting."""
+    try:
+        current_steps = int(settings.get('sdxl_steps', 26))
+    except (ValueError, TypeError):
+        current_steps = 26
+    steps_options = sorted(list(set([16, 20, 26, 32, 40, 50] + [current_steps])))
+    choices = [discord.SelectOption(label=f"{s} Steps (SDXL)", value=str(s), default=(s == current_steps)) for s in steps_options]
+    if choices and not any(o.default for o in choices):
+        choices[0].default = True
+    return choices[:25]
+
 def get_guidance_choices(settings):
     try: current_guidance = float(settings.get('default_guidance', 3.5))
     except (ValueError, TypeError): current_guidance = 3.5
@@ -723,6 +736,14 @@ def get_sdxl_guidance_choices(settings):
 def get_variation_mode_choices(settings):
     current_mode = settings.get('default_variation_mode', 'weak')
     return [discord.SelectOption(label=f"{m.capitalize()} Variation", value=m, default=(m == current_mode)) for m in ["weak", "strong"]]
+
+def get_variation_batch_size_choices(settings):
+    """Creates a list of discord.SelectOption for variation batch size."""
+    try:
+        current_size = int(settings.get('variation_batch_size', 1))
+    except (ValueError, TypeError):
+        current_size = 1
+    return [discord.SelectOption(label=f"Variation Batch Size: {s}", value=str(s), default=(s == current_size)) for s in [1, 2, 3, 4]]
 
 def get_batch_size_choices(settings):
     try: current_size = int(settings.get('default_batch_size', 1))
@@ -933,3 +954,4 @@ def get_kontext_model_choices(settings):
         choices[0].default = True
 
     return choices[:25]
+# --- END OF FILE settings_manager.py ---
