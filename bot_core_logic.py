@@ -616,50 +616,46 @@ async def process_variation_request(context_user, context_channel, referenced_me
     if not all_jobs_to_queue: 
         return [{"status": "error", "error_message_text": "Failed to prepare variation request."}]
     
-    final_results = []
-    for job_data in all_jobs_to_queue:
-        job_id_var, mod_prompt_var, resp_status_var, job_details_var = job_data
-        
-        comfy_id_var = None; queue_err_var = None
-        try: 
-            comfy_id_var = comfy_queue_prompt(mod_prompt_var, COMFYUI_HOST, COMFYUI_PORT)
-        except ComfyConnectionRefusedError as e_conn_ref_var: 
-            queue_err_var = f"Error: Could not connect to ComfyUI ({e_conn_ref_var})."
-        except Exception as e_q_var: 
-            queue_err_var = "Error: Failed to queue variation job."; print(f"{queue_err_var}: {e_q_var}")
-        
-        if not comfy_id_var:
-            final_results.append({"status": "error", "error_message_text": queue_err_var or "Failed to queue variation."})
-            continue
+    # Since we now have one job with a batch, we take the first (and only) item
+    job_id_var, mod_prompt_var, resp_status_var, job_details_var = all_jobs_to_queue[0]
 
-        job_data_for_qm_var = {"job_id":job_id_var, "comfy_prompt_id":comfy_id_var, "type":"variation", "variation_type":variation_type_str, "original_prompt_id":original_job_id_var, "channel_id":context_channel.id,"user_id":context_user.id, "user_name":context_user.name, "user_mention":context_user.mention, **job_details_var}
-        prompt_disp_var = job_details_var.get("prompt", "[Original Prompt]"); seed_disp_var = job_details_var.get('seed','N/A'); style_disp_var = job_details_var.get('style','N/A'); ar_disp_var = job_details_var.get("aspect_ratio_str", "?:?"); steps_disp_var = str(job_details_var.get('steps','?'))
-        desc_var = "Weak Variation 🤏" if variation_type_str == 'weak' else "Strong Variation 💪"
-        model_type_disp_var = job_details_var.get('model_type_for_enhancer', 'Unknown').upper() 
-        
-        source_job_id_enh_check = job_details_var.get('parameters_used',{}).get('source_job_id')
-        enhancer_ref_text = ""
-        if source_job_id_enh_check and source_job_id_enh_check != 'unknownSrc':
-            source_job_data_enh = queue_manager.get_job_data_by_id(source_job_id_enh_check)
-            if source_job_data_enh and source_job_data_enh.get('enhancer_used'):
-                provider_enh = source_job_data_enh.get('llm_provider', "LLM").capitalize()
-                enhancer_ref_text = f"\n> `(Based on Enhanced Prompt via {provider_enh})`"
+    comfy_id_var = None; queue_err_var = None
+    try: 
+        comfy_id_var = comfy_queue_prompt(mod_prompt_var, COMFYUI_HOST, COMFYUI_PORT)
+    except ComfyConnectionRefusedError as e_conn_ref_var: 
+        queue_err_var = f"Error: Could not connect to ComfyUI ({e_conn_ref_var})."
+    except Exception as e_q_var: 
+        queue_err_var = "Error: Failed to queue variation job."; print(f"{queue_err_var}: {e_q_var}")
+    
+    if not comfy_id_var:
+        return [{"status": "error", "error_message_text": queue_err_var or "Failed to queue variation."}]
 
-        msg_details_var = {
-            "user_mention": context_user.mention, "prompt_to_display": prompt_disp_var,
-            "description": desc_var, "image_index": image_idx, "original_job_id": original_job_id_var or 'N/A',
-            "model_type": model_type_disp_var, "seed": seed_disp_var, "aspect_ratio": ar_disp_var,
-            "steps": steps_disp_var, "style": style_disp_var, "is_remixed": edited_prompt_str is not None,
-            "enhancer_reference_text": enhancer_ref_text, "job_type": "variation",
-            "style_warning_message": job_details_var.get("style_warning_message")
-        }
-        final_results.append({
-            "status": "success", "job_id": job_id_var, "comfy_prompt_id": comfy_id_var,
-            "message_content_details": msg_details_var, "view_type": "QueuedJobView",
-            "view_args": {"comfy_prompt_id": comfy_id_var}, "job_data_for_qm": job_data_for_qm_var
-        })
-        
-    return final_results
+    job_data_for_qm_var = {"job_id":job_id_var, "comfy_prompt_id":comfy_id_var, "type":"variation", "variation_type":variation_type_str, "original_prompt_id":original_job_id_var, "channel_id":context_channel.id,"user_id":context_user.id, "user_name":context_user.name, "user_mention":context_user.mention, **job_details_var}
+    prompt_disp_var = job_details_var.get("prompt", "[Original Prompt]"); seed_disp_var = job_details_var.get('seed','N/A'); style_disp_var = job_details_var.get('style','N/A'); ar_disp_var = job_details_var.get("aspect_ratio_str", "?:?"); steps_disp_var = str(job_details_var.get('steps','?'))
+    desc_var = "Weak Variation 🤏" if variation_type_str == 'weak' else "Strong Variation 💪"
+    model_type_disp_var = job_details_var.get('model_type_for_enhancer', 'Unknown').upper() 
+    
+    source_job_id_enh_check = job_details_var.get('parameters_used',{}).get('source_job_id')
+    enhancer_ref_text = ""
+    if source_job_id_enh_check and source_job_id_enh_check != 'unknownSrc':
+        source_job_data_enh = queue_manager.get_job_data_by_id(source_job_id_enh_check)
+        if source_job_data_enh and source_job_data_enh.get('enhancer_used'):
+            provider_enh = source_job_data_enh.get('llm_provider', "LLM").capitalize()
+            enhancer_ref_text = f"\n> `(Based on Enhanced Prompt via {provider_enh})`"
+
+    msg_details_var = {
+        "user_mention": context_user.mention, "prompt_to_display": prompt_disp_var,
+        "description": desc_var, "image_index": image_idx, "original_job_id": original_job_id_var or 'N/A',
+        "model_type": model_type_disp_var, "seed": seed_disp_var, "aspect_ratio": ar_disp_var,
+        "steps": steps_disp_var, "style": style_disp_var, "is_remixed": edited_prompt_str is not None,
+        "enhancer_reference_text": enhancer_ref_text, "job_type": "variation",
+        "style_warning_message": job_details_var.get("style_warning_message")
+    }
+    return [{
+        "status": "success", "job_id": job_id_var, "comfy_prompt_id": comfy_id_var,
+        "message_content_details": msg_details_var, "view_type": "QueuedJobView",
+        "view_args": {"comfy_prompt_id": comfy_id_var}, "job_data_for_qm": job_data_for_qm_var
+    }]
 
 
 async def process_rerun_request(context_user, context_channel, referenced_message_obj, run_times_count, is_interaction, initial_interaction_obj=None):
