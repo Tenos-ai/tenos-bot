@@ -37,7 +37,8 @@ class EditorConfigManager:
         self.settings_template_factory = lambda: {
              "selected_model": None, 
              "selected_kontext_model": None,
-             "steps": 32, 
+             "steps": 32,
+             "sdxl_steps": 26, 
              "selected_t5_clip": None,
              "selected_clip_l": None, 
              "selected_upscale_model": None, 
@@ -245,3 +246,4 @@ class EditorConfigManager:
         except Exception as e_save_settings:
             silent_showerror("Save Error", f"Failed to save bot settings: {str(e_save_settings)}", parent=self.editor_app.master)
             traceback.print_exc()
+# --- END OF FILE editor_config_manager.py ---
