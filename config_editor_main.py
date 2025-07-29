@@ -1,3 +1,4 @@
+# --- START OF FILE config_editor_main.py ---
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext, filedialog
 import os
@@ -8,12 +9,12 @@ import queue
 import platform
 import subprocess
 import psutil
-import git
-import shutil
 import requests
 import re
 import sys
 from datetime import datetime
+import zipfile
+import tempfile
 
 from editor_constants import (
     TENOS_DARK_BLUE_BG, TENOS_MEDIUM_BLUE_ACCENT, TENOS_LIGHT_BLUE_ACCENT2,
@@ -338,7 +339,7 @@ class ConfigEditor:
             
             tk_var_instance = None
             if var_key_name in ['default_guidance', 'upscale_factor', 'default_guidance_sdxl', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']: tk_var_instance = tk.DoubleVar()
-            elif var_key_name in ['steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size']: tk_var_instance = tk.IntVar()
+            elif var_key_name in ['steps', 'sdxl_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size']: tk_var_instance = tk.IntVar()
             elif var_key_name in ['remix_mode', 'llm_enhancer_enabled']: tk_var_instance = tk.BooleanVar()
             else: tk_var_instance = tk.StringVar()
             
@@ -389,7 +390,7 @@ class ConfigEditor:
         ttk.Separator(self.general_settings_content_frame, orient='horizontal').pack(fill='x', pady=10)
         create_setting_row_ui(self.general_settings_content_frame, "Default Variation Mode", ttk.Combobox, ['weak','strong'], 'default_variation_mode')
         create_setting_row_ui(self.general_settings_content_frame, "Variation Remix Mode", ttk.Checkbutton, var_key_name='remix_mode')
-        create_setting_row_ui(self.general_settings_content_frame, "Default Batch Size (Gen)", ttk.Spinbox, var_key_name='default_batch_size', from_=1, to=4, increment=1)
+        create_setting_row_ui(self.general_settings_content_frame, "Default Batch Size (/gen)", ttk.Spinbox, var_key_name='default_batch_size', from_=1, to=4, increment=1)
         create_setting_row_ui(self.general_settings_content_frame, "Default Batch Size (Vary)", ttk.Spinbox, var_key_name='variation_batch_size', from_=1, to=4, increment=1)
         create_setting_row_ui(self.general_settings_content_frame, "Default Upscale Factor", ttk.Spinbox, var_key_name='upscale_factor', from_=1.5, to=4.0, increment=0.05, format="%.2f")
         create_setting_row_ui(self.general_settings_content_frame, "Default MP Size", ttk.Spinbox, var_key_name='default_mp_size', from_=0.1, to=8.0, increment=0.05, format="%.2f")
@@ -403,6 +404,7 @@ class ConfigEditor:
         # --- SDXL Tab ---
         sdxl_styles = sorted([name for name, data in self.styles_config.items() if data.get('model_type', 'all') in ['all', 'sdxl']])
         create_setting_row_ui(self.sdxl_settings_content_frame, "Default Style", ttk.Combobox, sdxl_styles, 'default_style_sdxl')
+        create_setting_row_ui(self.sdxl_settings_content_frame, "Default Steps", ttk.Spinbox, var_key_name='sdxl_steps', from_=4, to=128, increment=2)
         create_setting_row_ui(self.sdxl_settings_content_frame, "Default Guidance", ttk.Spinbox, var_key_name='default_guidance_sdxl', from_=0.0, to=20.0, increment=0.1, format="%.1f")
         create_setting_row_ui(self.sdxl_settings_content_frame, "Default Negative Prompt", scrolledtext.ScrolledText, var_key_name='default_sdxl_negative_prompt', is_text_area_field=True)
 
@@ -576,105 +578,125 @@ class ConfigEditor:
         self.log_queue.put(("info",f"--- Finished {task_name_ui} (Success: {success_flag_worker}) ---\n"))
 
     def _worker_update_application(self):
+        """Downloads the latest release and prepares for update via external script."""
+        repo_owner = "Tenos-ai"
+        repo_name = "Tenos-Bot"
+        api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
+        
         try:
-            repo = git.Repo(search_parent_directories=True)
-            self.log_queue.put(("worker", f"Found Git repository at: {repo.working_dir}\n"))
-        except git.InvalidGitRepositoryError:
-            msg = "Application directory is not a Git repository. Cannot auto-update."
-            self.log_queue.put(("stderr", msg + "\n"))
-            return msg
+            self.log_queue.put(("worker", f"Fetching latest release from {api_url}...\n"))
+            response = requests.get(api_url, timeout=15)
+            response.raise_for_status()
+            release_data = response.json()
+            tag_name = release_data.get("tag_name")
+            zip_url = release_data.get("zipball_url")
 
-        try:
-            origin = repo.remotes.origin
+            if not tag_name or not zip_url:
+                raise ValueError("Could not find tag_name or zipball_url in the release data.")
+
+            self.log_queue.put(("worker", f"Latest release found: {tag_name}\n"))
+            self.log_queue.put(("worker", f"Downloading from: {zip_url}\n"))
+
+            # Download the zip file
+            zip_response = requests.get(zip_url, stream=True, timeout=60)
+            zip_response.raise_for_status()
+
+            # Create a temporary directory to extract the update
+            temp_dir = tempfile.mkdtemp()
+            self.log_queue.put(("worker", f"Created temporary update directory: {temp_dir}\n"))
             
-            if repo.head.is_detached or not repo.head.reference.tracking_branch():
-                self.log_queue.put(("worker", "Detached HEAD or non-tracking branch detected. Attempting to fix...\n"))
-                default_branch = None
-                try:
-                    remote_info = repo.git.remote('show', 'origin')
-                    head_branch_match = re.search(r"HEAD branch:\s*(\S+)", remote_info)
-                    if head_branch_match:
-                        default_branch = head_branch_match.group(1)
-                except git.GitCommandError:
-                     if 'main' in origin.refs: default_branch = 'main'
-                     elif 'master' in origin.refs: default_branch = 'master'
-                
-                if default_branch:
-                    self.log_queue.put(("worker", f"Attempting to checkout and track '{default_branch}'.\n"))
-                    try:
-                        repo.git.checkout(default_branch)
-                        repo.git.branch('--set-upstream-to=origin/{}'.format(default_branch), default_branch)
-                    except git.GitCommandError as e_checkout:
-                        msg = f"Could not checkout/track branch '{default_branch}': {e_checkout.stderr}. Update aborted."
-                        self.log_queue.put(("stderr", msg + "\n"))
-                        return msg
-                else:
-                    msg = "Could not determine or find a default branch ('main' or 'master'). Update aborted."
-                    self.log_queue.put(("stderr", msg + "\n"))
-                    return msg
+            temp_zip_path = os.path.join(temp_dir, "release.zip")
 
-            if repo.is_dirty(untracked_files=True):
-                self.log_queue.put(("stderr", "Warning: Local changes detected. Stashing before update...\n"))
-                try:
-                    repo.git.stash()
-                    self.log_queue.put(("worker", "Local changes stashed.\n"))
-                except git.GitCommandError as e_stash:
-                    msg = f"Could not stash local changes: {e_stash.stderr}. Update aborted."
-                    self.log_queue.put(("stderr", msg + "\n"))
-                    return msg
+            with open(temp_zip_path, 'wb') as f:
+                for chunk in zip_response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            
+            self.log_queue.put(("worker", "Download complete. Extracting...\n"))
 
-            self.log_queue.put(("worker", "Fetching updates from origin...\n"))
-            origin.fetch()
+            with zipfile.ZipFile(temp_zip_path, 'r') as zip_ref:
+                zip_ref.extractall(temp_dir)
+            
+            self.log_queue.put(("worker", "Extraction complete.\n"))
+            
+            updater_script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "updater.py")
+            if not os.path.exists(updater_script_path):
+                raise FileNotFoundError("updater.py script not found. Cannot proceed with update.")
 
-            local_commit = repo.head.commit
-            remote_commit = repo.remotes.origin.refs[repo.active_branch.name].commit
+            self.log_queue.put(("info", "Handing off to updater.py. This application will now close.\n"))
+            
+            # This will queue a restart, which will trigger the handoff
+            self.worker_queue.put({"type": "restart_required", "update_info": {
+                "temp_dir": temp_dir,
+                "dest_dir": os.path.dirname(os.path.abspath(__file__))
+            }})
 
-            if local_commit == remote_commit:
-                msg = "Application is already up to date."
-                self.log_queue.put(("info", msg + "\n"))
-                return msg
-            else:
-                self.log_queue.put(("worker", f"Updates found. Local: {local_commit.hexsha[:7]}, Remote: {remote_commit.hexsha[:7]}\n"))
-                self.log_queue.put(("worker", "Resetting local branch to match remote...\n"))
-                
-                repo.git.reset('--hard', f'origin/{repo.active_branch.name}')
-                
-                msg = "Application updated successfully! Restarting automatically in 3 seconds..."
-                self.log_queue.put(("info", msg + "\n"))
-                self.worker_queue.put({"type": "restart_required"})
-                return msg
+            return "Update downloaded. The application will restart to apply it."
 
-        except (git.GitCommandError, TypeError) as e:
-            error_msg = f"Git command failed: {getattr(e, 'stderr', str(e))}"
-            self.log_queue.put(("stderr", error_msg + "\n"))
-            return error_msg
         except Exception as e:
-            error_msg = f"An unexpected error occurred during update: {e}"
-            self.log_queue.put(("stderr", error_msg + "\n"))
+            self.log_queue.put(("stderr", f"An error occurred during update: {e}\n"))
             traceback.print_exc()
-            return error_msg
+            return f"Update failed: {e}"
 
-    def _worker_install_custom_nodes(self):
+    def _worker_install_custom_nodes(self, *args, **kwargs):
+        # This function no longer uses git, but we can keep the signature for compatibility
+        # if other worker tasks use args/kwargs.
         custom_nodes_path_str = self.config_manager.config.get('NODES',{}).get('CUSTOM_NODES')
         if not (custom_nodes_path_str and isinstance(custom_nodes_path_str,str) and os.path.isdir(custom_nodes_path_str)):
             msg_err = "Custom Nodes path not set/invalid in Main Config."; self.log_queue.put(("stderr", f"Install Custom Nodes Error: {msg_err}\n")); return msg_err
-        repositories_to_install = ["https://github.com/rgthree/rgthree-comfy.git", "https://github.com/ssitu/ComfyUI_UltimateSDUpscale.git", "https://github.com/jamesWalker55/comfyui-various.git", "https://github.com/city96/ComfyUI-GGUF.git", "https://github.com/tsogzark/ComfyUI-load-image-from-url.git","https://github.com/BobsBlazed/Bobs_Latent_Optimizer.git","https://github.com/Tenos-ai/Tenos-Resize-to-1-M-Pixels.git"]
+        
+        # Repositories to clone if they don't exist
+        repositories_to_clone = {
+            "rgthree-comfy": "https://github.com/rgthree/rgthree-comfy.git",
+            "ComfyUI_UltimateSDUpscale": "https://github.com/ssitu/ComfyUI_UltimateSDUpscale.git",
+            "comfyui-various": "https://github.com/jamesWalker55/comfyui-various.git",
+            "ComfyUI-GGUF": "https://github.com/city96/ComfyUI-GGUF.git",
+            "ComfyUI-load-image-from-url": "https://github.com/tsogzark/ComfyUI-load-image-from-url.git",
+            "Bobs_Latent_Optimizer": "https://github.com/BobsBlazed/Bobs_Latent_Optimizer.git",
+            "Tenos-Resize-to-1-M-Pixels": "https://github.com/Tenos-ai/Tenos-Resize-to-1-M-Pixels.git"
+        }
+        
         installation_results = []; errors_encountered_install = False
-        for idx, repo_url_str in enumerate(repositories_to_install):
-            repo_name_short = repo_url_str.split('/')[-1].replace('.git',''); repo_target_path = os.path.join(custom_nodes_path_str, repo_name_short)
-            current_action_str = "Updating" if os.path.exists(repo_target_path) else "Cloning"
-            self.log_queue.put(("worker", f"{current_action_str} {repo_name_short} ({idx+1}/{len(repositories_to_install)})...\n"))
-            try:
-                if not os.path.exists(repo_target_path): git.Repo.clone_from(repo_url_str, repo_target_path, progress=ProgressPrinter(repo_name_short, self.log_queue)); installation_results.append(f"Cloned {repo_name_short}: Success")
-                else: git.Repo(repo_target_path).remotes.origin.pull(progress=ProgressPrinter(repo_name_short, self.log_queue)); installation_results.append(f"Updated {repo_name_short}: Success")
-            except git.GitCommandError as e_git_cmd: error_detail_git = e_git_cmd.stderr.strip() if e_git_cmd.stderr else str(e_git_cmd); installation_results.append(f"{current_action_str} {repo_name_short}: FAILED (Git: {error_detail_git})"); errors_encountered_install = True; self.log_queue.put(("stderr",f"Git Command Error {repo_name_short}: {error_detail_git}\n"))
-            except Exception as e_other_install: installation_results.append(f"{current_action_str} {repo_name_short}: FAILED ({type(e_other_install).__name__}: {str(e_other_install)})"); errors_encountered_install = True; self.log_queue.put(("stderr",f"Error {current_action_str.lower()}ing {repo_name_short}: {str(e_other_install)}\n"))
+        
+        for repo_name, repo_url in repositories_to_clone.items():
+            repo_target_path = os.path.join(custom_nodes_path_str, repo_name)
+            if not os.path.exists(repo_target_path):
+                self.log_queue.put(("worker", f"Cloning {repo_name}...\n"))
+                try:
+                    # Using subprocess for direct git clone
+                    subprocess.run(['git', 'clone', repo_url, repo_target_path], check=True, capture_output=True, text=True)
+                    installation_results.append(f"Cloned {repo_name}: Success")
+                except subprocess.CalledProcessError as e_git_cmd:
+                    error_detail_git = e_git_cmd.stderr.strip()
+                    installation_results.append(f"Cloning {repo_name}: FAILED (Git: {error_detail_git})")
+                    errors_encountered_install = True
+                    self.log_queue.put(("stderr", f"Git Clone Error for {repo_name}: {error_detail_git}\n"))
+                except FileNotFoundError:
+                    msg = "Git command not found. Please ensure Git is installed and in your system's PATH."
+                    installation_results.append(f"Cloning {repo_name}: FAILED ({msg})")
+                    errors_encountered_install = True
+                    self.log_queue.put(("stderr", msg + "\n"))
+                    # Stop trying if git is not found
+                    break
+                except Exception as e_other_install:
+                    installation_results.append(f"Cloning {repo_name}: FAILED ({type(e_other_install).__name__}: {str(e_other_install)})")
+                    errors_encountered_install = True
+                    self.log_queue.put(("stderr", f"Error cloning {repo_name}: {str(e_other_install)}\n"))
+            else:
+                installation_results.append(f"Skipped {repo_name}: Directory already exists.")
+
         local_nodes_source_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),"nodes")
         if os.path.isdir(local_nodes_source_dir):
             self.log_queue.put(("worker",f"Copying local nodes from '{local_nodes_source_dir}' to '{custom_nodes_path_str}'...\n"))
-            try: shutil.copytree(local_nodes_source_dir,custom_nodes_path_str,dirs_exist_ok=True); installation_results.append("Copied local nodes: Success")
-            except Exception as e_copy_local: installation_results.append(f"Copied local nodes: FAILED ({type(e_copy_local).__name__}: {str(e_copy_local)})"); errors_encountered_install = True; self.log_queue.put(("stderr",f"Error copying local nodes: {str(e_copy_local)}\n"))
-        else: installation_results.append("Copy local nodes: Skipped (local 'nodes' folder not found)")
+            try:
+                shutil.copytree(local_nodes_source_dir, custom_nodes_path_str, dirs_exist_ok=True)
+                installation_results.append("Copied local nodes: Success")
+            except Exception as e_copy_local:
+                installation_results.append(f"Copied local nodes: FAILED ({type(e_copy_local).__name__}: {str(e_copy_local)})")
+                errors_encountered_install = True
+                self.log_queue.put(("stderr", f"Error copying local nodes: {str(e_copy_local)}\n"))
+        else:
+            installation_results.append("Copy local nodes: Skipped (local 'nodes' folder not found)")
+
         summary_prefix_str = "Custom Node Installation Succeeded" if not errors_encountered_install else "Custom Node Installation Completed with Errors"
         return f"{summary_prefix_str}:\n\n" + "\n".join(installation_results)
 
@@ -847,23 +869,49 @@ class ConfigEditor:
         except Exception as e_imp:
             silent_showerror("Import Error", f"Failed to import configuration:\n{e_imp}", parent=self.master)
     
-    def _restart_application(self):
+    def _restart_application(self, update_info=None):
         """Gracefully stops the bot and restarts the configurator application."""
         self.log_queue.put(("info", "--- Restarting application ---\n"))
         if self.bot_control_tab_manager.is_bot_script_running():
             self.bot_control_tab_manager.stop_bot_script()
-        self.master.after(1500, self._execute_restart)
+        self.master.after(1500, self._execute_restart, update_info)
 
-    def _execute_restart(self):
+    def _execute_restart(self, update_info=None):
+        """Performs the actual restart, handing off to updater.py if this is an update."""
         try:
+            # Ensure log readers are stopped
             self.stop_readers.set()
             for thread_item in self.reader_threads:
                 if thread_item.is_alive():
                     thread_item.join(timeout=0.2)
-            os.execl(sys.executable, sys.executable, *sys.argv)
+            
+            current_pid = os.getpid()
+            python_exe = sys.executable
+
+            if update_info:
+                # This is an update restart. Launch updater.py
+                temp_dir = update_info["temp_dir"]
+                dest_dir = update_info["dest_dir"]
+                updater_script = os.path.join(dest_dir, "updater.py")
+                
+                command = [python_exe, updater_script, str(current_pid), temp_dir, dest_dir]
+                
+                self.log_queue.put(("info", f"Executing updater: {' '.join(command)}\n"))
+                
+                # Use Popen to launch the updater in a new, detached process
+                subprocess.Popen(command)
+                
+                # Now, exit this main application
+                self.master.destroy()
+
+            else:
+                # This is a regular restart (not an update)
+                os.execl(python_exe, python_exe, *sys.argv)
+
         except Exception as e:
             self.log_queue.put(("stderr", f"FATAL: Failed to execute restart: {e}\n"))
             silent_showerror("Restart Failed", f"Could not restart the application.\nPlease close and start it manually.\n\nError: {e}", parent=self.master)
+
 
     def on_closing_main_window(self):
         if self.bot_control_tab_manager.is_bot_script_running():
@@ -913,7 +961,7 @@ class ConfigEditor:
             except OSError as e:
                 silent_showerror("First Run Warning", f"Could not create the first run flag file. You may see this message again.\n\nError: {e}", parent=self.master)
 
-class ProgressPrinter(git.RemoteProgress):
+class ProgressPrinter:
     def __init__(self, repo_name_str_param, log_queue_ref_param):
         super().__init__(); self.repo_name = repo_name_str_param; self.log_queue = log_queue_ref_param
     def update(self, op_code_val_progress, cur_count_val_progress, max_count_val_progress=None, message_str_progress=''):
@@ -932,3 +980,4 @@ if __name__ == "__main__":
             messagebox.showerror("Fatal Error - Config Editor Application", f"Could not start Config Editor application:\n{main_app_execution_error}\n\nCheck console output for detailed traceback.", parent=None)
             error_dialog_fallback_root.destroy()
         except Exception: pass
+# --- END OF FILE config_editor_main.py ---
