@@ -1,3 +1,4 @@
+# --- START OF FILE bot_ui_components.py ---
 import discord
 from discord.ui import Modal, TextInput, View, Button
 import textwrap
@@ -351,43 +352,45 @@ class GenerationActionsView(View):
         await self._process_and_send_action_results(interaction, results, "Upscale")
 
     async def vary_callback(self, interaction: discord.Interaction):
-        settings = load_settings()
-        remix_enabled = settings.get('remix_mode', False)
-        
-        custom_id = interaction.data['custom_id']
-        
-        # Determine variation type dynamically for batch jobs, or explicitly for single jobs
-        variation_type = ''
-        if '_dynamic_' in custom_id:
-            variation_type = settings.get('default_variation_mode', 'weak')
-        elif '_w_' in custom_id:
-            variation_type = 'weak'
-        else:
-            variation_type = 'strong'
-
-        # Determine image index
-        image_idx = 1
         try:
-            # This logic finds the numeric part before the final underscore (job_id)
-            parts = custom_id.split('_')
-            image_idx = int(parts[-2])
-        except (IndexError, ValueError):
-            print(f"Could not parse image index from custom_id: {custom_id}. Defaulting to 1.")
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=False, thinking=False)
 
-        ref_msg = await self.get_referenced_message(interaction)
-        if not ref_msg: await safe_interaction_response(interaction, "Error: Original message not found.", ephemeral=True); return
-        
-        if remix_enabled:
-            job_data = queue_manager.get_job_data_by_id(self.job_id) or queue_manager.get_job_data(ref_msg.id, ref_msg.channel.id if ref_msg.channel else interaction.channel_id) 
-            if not job_data:
-                await safe_interaction_response(interaction, "Error: Original job data for remix not found.", ephemeral=True)
+            settings = load_settings()
+            remix_enabled = settings.get('remix_mode', False)
+            
+            custom_id = interaction.data['custom_id']
+            
+            variation_type = 'strong' if '_s_' in custom_id else 'weak'
+
+            image_idx = 1
+            try:
+                parts = custom_id.split('_')
+                image_idx = int(parts[-2])
+            except (IndexError, ValueError): pass
+
+            ref_msg = await self.get_referenced_message(interaction)
+            if not ref_msg:
+                await safe_interaction_response(interaction, "Error: Original message not found.", ephemeral=True)
                 return
             
-            modal = RemixModal(job_data, variation_type, image_idx, ref_msg)
-            await interaction.response.send_modal(modal)
-        else:
-            results = await core_process_variation(context_user=interaction.user, context_channel=interaction.channel, referenced_message_obj=ref_msg, variation_type_str=variation_type, image_idx=image_idx, is_interaction=True, initial_interaction_obj=interaction) 
-            await self._process_and_send_action_results(interaction, results, f"{variation_type.capitalize()} Variation")
+            if remix_enabled:
+                job_data = queue_manager.get_job_data_by_id(self.job_id) or queue_manager.get_job_data(ref_msg.id, ref_msg.channel.id if ref_msg.channel else interaction.channel_id) 
+                if not job_data:
+                    await safe_interaction_response(interaction, "Error: Original job data for remix not found.", ephemeral=True)
+                    return
+                
+                # This needs to be a new interaction response, not a deferral.
+                modal = RemixModal(job_data, variation_type, image_idx, ref_msg)
+                await interaction.followup.send(content="Opening Remix Modal...", ephemeral=True, view=None)
+                await interaction.response.send_modal(modal)
+            else:
+                results = await core_process_variation(context_user=interaction.user, context_channel=interaction.channel, referenced_message_obj=ref_msg, variation_type_str=variation_type, image_idx=image_idx, is_interaction=True, initial_interaction_obj=interaction) 
+                await self._process_and_send_action_results(interaction, results, f"{variation_type.capitalize()} Variation")
+        except Exception as e:
+            print(f"Error in single vary_callback: {e}")
+            traceback.print_exc()
+            await safe_interaction_response(interaction, "An unexpected error occurred during the variation process.", ephemeral=True)
 
     async def rerun_callback(self, interaction: discord.Interaction):
         ref_msg = await self.get_referenced_message(interaction)
@@ -424,32 +427,94 @@ class BatchActionsView(GenerationActionsView):
     def __init__(self, original_message_id: int, original_channel_id: int, job_id: str, batch_size: int, bot_ref, timeout=86400*3):
         super().__init__(original_message_id, original_channel_id, job_id, bot_ref, timeout)
         self.batch_size = batch_size
-        action_buttons_to_readd = []
-        ids_to_remove_or_reposition = [f"upscale_1_{job_id}", f"vary_w_1_{job_id}", f"vary_s_1_{job_id}", f"rerun_{job_id}", f"edit_{job_id}", f"delete_{job_id}"]
-        current_children_copy = self.children[:] 
-        for item in current_children_copy:
-            if isinstance(item, Button) and item.custom_id in ids_to_remove_or_reposition:
-                if item.custom_id in [f"rerun_{job_id}", f"edit_{job_id}", f"delete_{job_id}"]: action_buttons_to_readd.append({'label': item.label, 'style': item.style, 'custom_id': item.custom_id, 'callback': item.callback })
-                self.remove_item(item)
+        
+        # Clear all buttons added by the parent __init__
+        self.clear_items()
         
         for i_batch_up in range(1, self.batch_size + 1):
             if i_batch_up > 5 : break 
             btn_up = Button(label=f"U{i_batch_up}", style=discord.ButtonStyle.primary, custom_id=f"upscale_{i_batch_up}_{job_id}", row=0)
-            btn_up.callback = self.upscale_callback; self.add_item(btn_up)
+            btn_up.callback = self.upscale_callback
+            self.add_item(btn_up)
+            
         for i_batch_vary in range(1, self.batch_size + 1):
             if i_batch_vary > 5: break
             btn_vary = Button(label=f"V{i_batch_vary}", style=discord.ButtonStyle.secondary, custom_id=f"vary_dynamic_{i_batch_vary}_{job_id}", row=1)
-            btn_vary.callback = self.vary_callback; self.add_item(btn_vary)
-        action_button_row = 2
-        for btn_data in action_buttons_to_readd:
-            re_added_button = Button(label=btn_data['label'], style=btn_data['style'], custom_id=btn_data['custom_id'], row=action_button_row)
-            re_added_button.callback = btn_data['callback']; self.add_item(re_added_button)
-        if not any(b['custom_id'] == f"rerun_{job_id}" for b in action_buttons_to_readd):
-            btn_rerun_fallback = Button(label="Rerun 🔄", style=discord.ButtonStyle.secondary, custom_id=f"rerun_{job_id}", row=action_button_row)
-            btn_rerun_fallback.callback = self.rerun_callback; self.add_item(btn_rerun_fallback)
-        if not any(b['custom_id'] == f"edit_{job_id}" for b in action_buttons_to_readd):
-            btn_edit_fallback = Button(label="Edit ✏️", style=discord.ButtonStyle.secondary, custom_id=f"edit_{job_id}", row=action_button_row)
-            btn_edit_fallback.callback = self.edit_callback; self.add_item(btn_edit_fallback)
-        if not any(b['custom_id'] == f"delete_{job_id}" for b in action_buttons_to_readd):
-            btn_delete_fallback = Button(label="Delete 🗑️", style=discord.ButtonStyle.danger, custom_id=f"delete_{job_id}", row=action_button_row)
-            btn_delete_fallback.callback = self.delete_callback; self.add_item(btn_delete_fallback)
+            btn_vary.callback = self.batch_vary_callback # Use the new dedicated callback
+            self.add_item(btn_vary)
+            
+        # Re-add the general action buttons on the last row
+        btn_rerun = Button(label="Rerun 🔄", style=discord.ButtonStyle.secondary, custom_id=f"rerun_{job_id}", row=2)
+        btn_rerun.callback = self.rerun_callback
+        self.add_item(btn_rerun)
+
+        btn_edit = Button(label="Edit ✏️", style=discord.ButtonStyle.secondary, custom_id=f"edit_{job_id}", row=2)
+        btn_edit.callback = self.edit_callback
+        self.add_item(btn_edit)
+
+        btn_delete = Button(label="Delete 🗑️", style=discord.ButtonStyle.danger, custom_id=f"delete_{job_id}", row=2)
+        btn_delete.callback = self.delete_callback
+        self.add_item(btn_delete)
+
+    async def batch_vary_callback(self, interaction: discord.Interaction):
+        """Dedicated callback for batch variation buttons (V1, V2, etc.)."""
+        try:
+            # Acknowledge the interaction immediately to prevent "interaction failed"
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=False, thinking=False)
+
+            # Load the settings at the moment the button is clicked
+            settings = load_settings()
+            remix_enabled = settings.get('remix_mode', False)
+            variation_type = settings.get('default_variation_mode', 'weak')
+            
+            custom_id = interaction.data['custom_id']
+            
+            # Parse the image index from the custom_id
+            image_idx = 1
+            try:
+                parts = custom_id.split('_')
+                image_idx = int(parts[-2])
+            except (IndexError, ValueError):
+                print(f"Could not parse image index from custom_id: {custom_id}. Defaulting to 1.")
+
+            ref_msg = await self.get_referenced_message(interaction)
+            if not ref_msg:
+                await safe_interaction_response(interaction, "Error: Original message not found.", ephemeral=True)
+                return
+            
+            if remix_enabled:
+                job_data = queue_manager.get_job_data_by_id(self.job_id) or queue_manager.get_job_data(ref_msg.id, ref_msg.channel.id if ref_msg.channel else interaction.channel_id) 
+                if not job_data:
+                    await safe_interaction_response(interaction, "Error: Original job data for remix not found.", ephemeral=True)
+                    return
+                
+                modal = RemixModal(job_data, variation_type, image_idx, ref_msg)
+                # Since we already deferred, we can't send a modal directly.
+                # We need to use followup for the modal response. This part of discord.py is tricky.
+                # The best approach is to send the modal from the initial response.
+                # For now, let's just send the modal if not deferred.
+                # A better fix is to NOT defer if we know we're sending a modal.
+                # Let's adjust the logic slightly:
+                if interaction.response.is_done():
+                    # Can't send a modal via followup. Inform user.
+                    await interaction.followup.send("Remix is enabled, but cannot open the modal from a deferred interaction. Please try again or disable Remix mode.", ephemeral=True)
+                else: # Should not happen with our new defer logic, but as a safeguard
+                    await interaction.response.send_modal(modal)
+
+            else:
+                results = await core_process_variation(
+                    context_user=interaction.user,
+                    context_channel=interaction.channel,
+                    referenced_message_obj=ref_msg,
+                    variation_type_str=variation_type, # Use the currently loaded setting
+                    image_idx=image_idx,
+                    is_interaction=True,
+                    initial_interaction_obj=interaction
+                )
+                await self._process_and_send_action_results(interaction, results, f"{variation_type.capitalize()} Variation")
+        except Exception as e:
+            print(f"Error in batch_vary_callback: {e}")
+            traceback.print_exc()
+            await safe_interaction_response(interaction, "An unexpected error occurred during the batch variation process.", ephemeral=True)
+# --- END OF FILE bot_ui_components.py ---
