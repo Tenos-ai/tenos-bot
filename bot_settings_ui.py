@@ -4,9 +4,9 @@ import json
 
 from settings_manager import (
     load_settings, save_settings,
-    get_model_choices, get_steps_choices, get_guidance_choices, get_sdxl_guidance_choices,
+    get_model_choices, get_steps_choices, get_sdxl_steps_choices, get_guidance_choices, get_sdxl_guidance_choices,
     get_t5_clip_choices, get_clip_l_choices, get_style_choices,
-    get_variation_mode_choices, get_batch_size_choices,
+    get_variation_mode_choices, get_batch_size_choices, get_variation_batch_size_choices,
     get_remix_mode_choices, get_upscale_factor_choices,
     get_llm_enhancer_choices, get_llm_provider_choices, get_llm_model_choices,
     get_mp_size_choices, get_display_prompt_preference_choices
@@ -31,7 +31,7 @@ class StepsSelect(discord.ui.Select):
     def __init__(self, settings):
         self.settings = settings
         choices = get_steps_choices(self.settings)
-        super().__init__(options=choices, placeholder="Select Default Generation Steps")
+        super().__init__(options=choices, placeholder="Select Default Steps (Flux)")
     async def callback(self, interaction: discord.Interaction):
         if not self.values: return
         try:
@@ -40,6 +40,20 @@ class StepsSelect(discord.ui.Select):
             view = GenerationDefaultsView(self.settings)
             await interaction.response.edit_message(content="Configure Generation Default Settings:", view=view)
         except ValueError: await interaction.followup.send("Invalid step value selected.", ephemeral=True)
+
+class SDXLStepsSelect(discord.ui.Select):
+    def __init__(self, settings):
+        self.settings = settings
+        choices = get_sdxl_steps_choices(self.settings)
+        super().__init__(options=choices, placeholder="Select Default Steps (SDXL)")
+    async def callback(self, interaction: discord.Interaction):
+        if not self.values: return
+        try:
+            self.settings['sdxl_steps'] = int(self.values[0])
+            save_settings(self.settings)
+            view = GenerationDefaultsView(self.settings)
+            await interaction.response.edit_message(content="Configure Generation Default Settings:", view=view)
+        except ValueError: await interaction.followup.send("Invalid SDXL step value selected.", ephemeral=True)
 
 class GuidanceSelect(discord.ui.Select): # For Flux Guidance
     def __init__(self, settings):
@@ -73,7 +87,7 @@ class BatchSizeSelect(discord.ui.Select):
     def __init__(self, settings):
         self.settings = settings
         choices = get_batch_size_choices(self.settings)
-        super().__init__(options=choices, placeholder="Select Default Batch Size")
+        super().__init__(options=choices, placeholder="Select Default Batch Size (/gen)")
     async def callback(self, interaction: discord.Interaction):
         if not self.values: return
         try:
@@ -82,6 +96,20 @@ class BatchSizeSelect(discord.ui.Select):
             view = GenerationDefaultsView(self.settings)
             await interaction.response.edit_message(content="Configure Generation Default Settings:", view=view)
         except ValueError: await interaction.followup.send("Invalid batch size value selected.", ephemeral=True)
+
+class VariationBatchSizeSelect(discord.ui.Select):
+    def __init__(self, settings):
+        self.settings = settings
+        choices = get_variation_batch_size_choices(self.settings)
+        super().__init__(options=choices, placeholder="Select Default Batch Size (Vary)")
+    async def callback(self, interaction: discord.Interaction):
+        if not self.values: return
+        try:
+            self.settings['variation_batch_size'] = int(self.values[0])
+            save_settings(self.settings)
+            view = StyleVariationSettingsView(self.settings)
+            await interaction.response.edit_message(content="Configure Style & Variation Settings:", view=view)
+        except ValueError: await interaction.followup.send("Invalid variation batch size selected.", ephemeral=True)
 
 class UpscaleFactorSelect(discord.ui.Select):
     def __init__(self, settings):
@@ -302,6 +330,7 @@ class GenerationDefaultsView(BaseSettingsView):
     def __init__(self, settings_ref):
         super().__init__(settings_ref)
         self.add_item(StepsSelect(self.settings))
+        self.add_item(SDXLStepsSelect(self.settings))
         self.add_item(GuidanceSelect(self.settings))
         self.add_item(SDXLGuidanceSelect(self.settings))
         self.add_item(BatchSizeSelect(self.settings))
@@ -311,6 +340,7 @@ class StyleVariationSettingsView(BaseSettingsView):
         super().__init__(settings_ref)
         self.add_item(DefaultStyleSelect(self.settings))
         self.add_item(VariationModeSelect(self.settings))
+        self.add_item(VariationBatchSizeSelect(self.settings))
         self.add_item(RemixModeToggle(self.settings))
         self.add_item(UpscaleFactorSelect(self.settings))
 
@@ -324,3 +354,4 @@ class LLMSettingsView(BaseSettingsView):
             if not model_select.disabled:
                  self.add_item(model_select)
         self.add_item(DisplayPromptPreferenceSelect(self.settings))
+# --- END OF FILE bot_settings_ui.py ---
