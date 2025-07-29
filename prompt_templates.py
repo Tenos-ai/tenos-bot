@@ -1,3 +1,7 @@
+# --- START OF FILE prompt_templates.py ---
+# style_prompt_templates.py
+
+# FLUX Workflow Node IDs
 GENERATION_MODEL_NODE = "1"
 VARIATION_MODEL_NODE = "1"
 UPSCALE_MODEL_NODE = "8:0"
@@ -13,11 +17,12 @@ PROMPT_LORA_NODE = "10"
 IMG2IMG_LORA_NODE = "17"
 UPSCALE_LORA_NODE = "116"
 VARY_LORA_NODE = "35"
+FLUX_VAR_BATCH_NODE = "var_batcher"
 
 GENERATION_LATENT_NODE = "99"
 UPSCALE_HELPER_LATENT_NODE = "98"
 
-
+# SDXL Workflow Node IDs
 SDXL_CHECKPOINT_LOADER_NODE = "sdxl_1"
 SDXL_LORA_NODE = "sdxl_lora"
 SDXL_CLIP_SKIP_NODE = "sdxl_2"
@@ -28,7 +33,7 @@ SDXL_VAE_DECODE_NODE = "sdxl_6"
 SDXL_SAVE_IMAGE_NODE = "sdxl_7"
 SDXL_LATENT_NODE = "sdxl_8"
 
-
+# SDXL Img2Img specific node IDs (New)
 SDXL_IMG2IMG_LOAD_IMAGE_NODE = "sdxl_i2i_load"
 SDXL_IMG2IMG_RESIZE_NODE = "sdxl_i2i_resize"
 SDXL_IMG2IMG_VAE_ENCODE_NODE = "sdxl_i2i_vae_encode"
@@ -37,19 +42,20 @@ SDXL_VAR_LOAD_IMAGE_NODE = "sdxl_var_load"
 SDXL_VAR_RESIZE_NODE = "sdxl_var_resize"
 SDXL_VAR_VAE_ENCODE_NODE = "sdxl_var_vae_encode"
 SDXL_VAR_CLIP_SKIP_NODE = "sdxl_var_clip_skip"
-SDXL_VAR_LORA_NODE = SDXL_LORA_NODE
+SDXL_VAR_LORA_NODE = SDXL_LORA_NODE # Reusing
 SDXL_VAR_POS_PROMPT_NODE = "sdxl_var_pos_prompt"
 SDXL_VAR_NEG_PROMPT_NODE = "sdxl_var_neg_prompt"
 SDXL_VAR_KSAMPLER_NODE = "sdxl_var_ksampler"
 SDXL_VAR_VAE_DECODE_NODE = "sdxl_var_vae_decode"
 SDXL_VAR_SAVE_IMAGE_NODE = "sdxl_var_save_image"
+SDXL_VAR_BATCH_NODE = "sdxl_var_batcher"
 
 SDXL_UPSCALE_LOAD_IMAGE_NODE = "sdxl_up_load"
 SDXL_UPSCALE_MODEL_LOADER_NODE = "sdxl_up_model_loader"
 SDXL_UPSCALE_ULTIMATE_NODE = "sdxl_up_ultimate"
 SDXL_UPSCALE_HELPER_LATENT_NODE = "sdxl_up_helper_latent"
 SDXL_UPSCALE_SAVE_IMAGE_NODE = "sdxl_up_save"
-SDXL_UPSCALE_LORA_NODE = SDXL_LORA_NODE
+SDXL_UPSCALE_LORA_NODE = SDXL_LORA_NODE # Reusing
 SDXL_UPSCALE_CLIP_SKIP_NODE = "sdxl_upscale_clip_skip"
 SDXL_UPSCALE_POS_PROMPT_NODE = "sdxl_upscale_pos_prompt"
 SDXL_UPSCALE_NEG_PROMPT_NODE = "sdxl_upscale_neg_prompt"
@@ -106,27 +112,29 @@ weakvary_prompt = {
   "1": {"inputs": {"unet_name": "flux1-dev-Q8_0.gguf"}, "class_type": "UnetLoaderGGUF", "_meta": {"title": "Unet Loader (GGUF)"}},
   "2": {"inputs": {"clip_name1": "t5xxl_fp16.safetensors", "clip_name2": "Long-ViT-L-14-GmP-SAE-full-model.safetensors", "type": "flux"}, "class_type": "DualCLIPLoader", "_meta": {"title": "DualCLIPLoader"}},
   "3": {"inputs": {"vae_name": "ae.safetensors"}, "class_type": "VAELoader", "_meta": {"title": "Load VAE"}},
-  "7": {"inputs": {"seed": 775752669305671, "steps": 32, "cfg": 1, "sampler_name": "euler", "scheduler": "sgm_uniform", "denoise": 0.40, "model": [str(VARY_LORA_NODE),0], "positive": ["8",0], "negative": ["8",0], "latent_image": ["22",0]}, "class_type": "KSampler", "_meta": {"title": "KSampler"}},
+  "7": {"inputs": {"seed": 775752669305671, "steps": 32, "cfg": 1, "sampler_name": "euler", "scheduler": "sgm_uniform", "denoise": 0.48, "control_after_generate": "increment", "model": [str(VARY_LORA_NODE),0], "positive": ["8",0], "negative": ["8",0], "latent_image": [str(FLUX_VAR_BATCH_NODE), 0]}, "class_type": "KSampler", "_meta": {"title": "KSampler"}},
   "8": {"inputs": {"text": " ", "clip": [str(VARY_LORA_NODE),1]}, "class_type": "CLIPTextEncode", "_meta": {"title": "CLIP Text Encode (Prompt)"}},
   "11": {"inputs": {"samples": ["7",0], "vae": ["3",0]}, "class_type": "VAEDecode", "_meta": {"title": "VAE Decode"}},
   "22": {"inputs": {"pixels": ["36",0], "vae": ["3",0]}, "class_type": "VAEEncode", "_meta": {"title": "VAE Encode"}},
   "33": {"inputs": {"url_or_path": ""}, "class_type": "LoadImageFromUrlOrPath", "_meta": {"title": "LoadImageFromUrlOrPath"}},
   "34": {"inputs": {"filename_prefix": "fluxbot/VARIATIONS", "images": ["11",0]}, "class_type": "SaveImage", "_meta": {"title": "Save Image"}},
   str(VARY_LORA_NODE): {"inputs": {"PowerLoraLoaderHeaderWidget": {"type": "PowerLoraLoaderHeaderWidget"}, "lora_1": {"on": False, "lora": "None", "strength": 0}, "lora_2": {"on": False, "lora": "None", "strength": 0}, "lora_3": {"on": False, "lora": "None", "strength": 0}, "lora_4": {"on": False, "lora": "None", "strength": 0}, "lora_5": {"on": False, "lora": "None", "strength": 0}, "➕ Add Lora": "", "model": ["1",0], "clip": ["2",0]}, "class_type": "Power Lora Loader (rgthree)", "_meta": {"title": "Power Lora Loader (rgthree)"}},
-  "36": {"inputs": {"interpolation": "bicubic", "image": ["33",0]}, "class_type": "TenosResizeToTargetPixels", "_meta": {"title": "Tenos Resize to ~1M Pixels"}}
+  "36": {"inputs": {"interpolation": "bicubic", "image": ["33",0]}, "class_type": "TenosResizeToTargetPixels", "_meta": {"title": "Tenos Resize to ~1M Pixels"}},
+  str(FLUX_VAR_BATCH_NODE): {"inputs": {"amount": 1, "samples": ["22", 0]}, "class_type": "RepeatLatentBatch", "_meta": {"title": "RepeatLatentBatch"}}
 }
 strongvary_prompt = {
   "1": {"inputs": {"unet_name": "flux1-dev-Q8_0.gguf"}, "class_type": "UnetLoaderGGUF", "_meta": {"title": "Unet Loader (GGUF)"}},
   "2": {"inputs": {"clip_name1": "t5xxl_fp16.safetensors", "clip_name2": "Long-ViT-L-14-GmP-SAE-full-model.safetensors", "type": "flux"}, "class_type": "DualCLIPLoader", "_meta": {"title": "DualCLIPLoader"}},
   "3": {"inputs": {"vae_name": "ae.safetensors"}, "class_type": "VAELoader", "_meta": {"title": "Load VAE"}},
-  "7": {"inputs": {"seed": 775752669305671, "steps": 32, "cfg": 1, "sampler_name": "euler", "scheduler": "sgm_uniform", "denoise": 0.70, "model": [str(VARY_LORA_NODE),0], "positive": ["8",0], "negative": ["8",0], "latent_image": ["22",0]}, "class_type": "KSampler", "_meta": {"title": "KSampler"}},
+  "7": {"inputs": {"seed": 775752669305671, "steps": 32, "cfg": 1, "sampler_name": "euler", "scheduler": "sgm_uniform", "denoise": 0.75, "control_after_generate": "increment", "model": [str(VARY_LORA_NODE),0], "positive": ["8",0], "negative": ["8",0], "latent_image": [str(FLUX_VAR_BATCH_NODE), 0]}, "class_type": "KSampler", "_meta": {"title": "KSampler"}},
   "8": {"inputs": {"text": " ", "clip": [str(VARY_LORA_NODE),1]}, "class_type": "CLIPTextEncode", "_meta": {"title": "CLIP Text Encode (Prompt)"}},
   "11": {"inputs": {"samples": ["7",0], "vae": ["3",0]}, "class_type": "VAEDecode", "_meta": {"title": "VAE Decode"}},
   "22": {"inputs": {"pixels": ["36",0], "vae": ["3",0]}, "class_type": "VAEEncode", "_meta": {"title": "VAE Encode"}},
   "33": {"inputs": {"url_or_path": ""}, "class_type": "LoadImageFromUrlOrPath", "_meta": {"title": "LoadImageFromUrlOrPath"}},
   "34": {"inputs": {"filename_prefix": "fluxbot/VARIATIONS", "images": ["11",0]}, "class_type": "SaveImage", "_meta": {"title": "Save Image"}},
   str(VARY_LORA_NODE): {"inputs": {"PowerLoraLoaderHeaderWidget": {"type": "PowerLoraLoaderHeaderWidget"}, "lora_1": {"on": False, "lora": "None", "strength": 0}, "lora_2": {"on": False, "lora": "None", "strength": 0}, "lora_3": {"on": False, "lora": "None", "strength": 0}, "lora_4": {"on": False, "lora": "None", "strength": 0}, "lora_5": {"on": False, "lora": "None", "strength": 0}, "➕ Add Lora": "", "model": ["1",0], "clip": ["2",0]}, "class_type": "Power Lora Loader (rgthree)", "_meta": {"title": "Power Lora Loader (rgthree)"}},
-  "36": {"inputs": {"interpolation": "bicubic", "image": ["33",0]}, "class_type": "TenosResizeToTargetPixels", "_meta": {"title": "Tenos Resize to ~1M Pixels"}}
+  "36": {"inputs": {"interpolation": "bicubic", "image": ["33",0]}, "class_type": "TenosResizeToTargetPixels", "_meta": {"title": "Tenos Resize to ~1M Pixels"}},
+  str(FLUX_VAR_BATCH_NODE): {"inputs": {"amount": 1, "samples": ["22", 0]}, "class_type": "RepeatLatentBatch", "_meta": {"title": "RepeatLatentBatch"}}
 }
 
 
@@ -148,7 +156,7 @@ sdxl_prompt = {
   str(SDXL_LATENT_NODE): {"inputs": {"aspect_ratio": "1:1", "mp_size_float": "1", "upscale_by": 1.0, "model_type": "SDXL", "batch_size": 1}, "class_type": "BobsLatentNodeAdvanced", "_meta": {"title": "Bobs Latent Optimizer (SDXL)"}}
 }
 
-# --- SDXL Img2Img Template ---
+# --- SDXL Img2Img Template (New) ---
 sdxl_img2img_prompt = {
   str(SDXL_CHECKPOINT_LOADER_NODE): {"inputs": {"ckpt_name": "sdxl_model.safetensors"}, "class_type": "CheckpointLoaderSimple", "_meta": {"title": "Load SDXL Checkpoint"}},
   str(SDXL_IMG2IMG_LOAD_IMAGE_NODE): {"inputs": {"url_or_path": "IMAGE_URL_HERE"}, "class_type": "LoadImageFromUrlOrPath", "_meta": {"title": "Load Image for Img2Img"}},
@@ -169,7 +177,7 @@ sdxl_img2img_prompt = {
 }
 
 
-# --- SDXL Variation Template ---
+# --- SDXL Variation Template (with LoRA and denoise placeholder) ---
 sdxl_variation_prompt = {
   str(SDXL_CHECKPOINT_LOADER_NODE): {"inputs": {"ckpt_name": "sdxl_model.safetensors"}, "class_type": "CheckpointLoaderSimple", "_meta": {"title": "Load SDXL Checkpoint"}},
   str(SDXL_VAR_LOAD_IMAGE_NODE): {"inputs": {"url_or_path": "IMAGE_URL_HERE"}, "class_type": "LoadImageFromUrlOrPath", "_meta": {"title": "Load Image for Variation"}},
@@ -179,13 +187,14 @@ sdxl_variation_prompt = {
   str(SDXL_VAR_CLIP_SKIP_NODE): {"inputs": {"stop_at_clip_layer": -2, "clip": [str(SDXL_VAR_LORA_NODE), 1]}, "class_type": "CLIPSetLastLayer", "_meta": {"title": "CLIP Skip -2"}},
   str(SDXL_VAR_POS_PROMPT_NODE): {"inputs": {"text": "POSITIVE PROMPT HERE", "clip": [str(SDXL_VAR_CLIP_SKIP_NODE), 0]}, "class_type": "CLIPTextEncode", "_meta": {"title": "Positive Prompt (SDXL)"}},
   str(SDXL_VAR_NEG_PROMPT_NODE): {"inputs": {"text": "NEGATIVE PROMPT HERE", "clip": [str(SDXL_VAR_CLIP_SKIP_NODE), 0]}, "class_type": "CLIPTextEncode", "_meta": {"title": "Negative Prompt (SDXL)"}},
-  str(SDXL_VAR_KSAMPLER_NODE): {"inputs": {"seed": 12345, "steps": 30, "cfg": 6.0, "sampler_name": "euler_ancestral", "scheduler": "karras", "denoise": 0.70, "model": [str(SDXL_VAR_LORA_NODE), 0], "positive": [str(SDXL_VAR_POS_PROMPT_NODE), 0], "negative": [str(SDXL_VAR_NEG_PROMPT_NODE), 0], "latent_image": [str(SDXL_VAR_VAE_ENCODE_NODE), 0]}, "class_type": "KSampler", "_meta": {"title": "KSampler (SDXL Variation)"}},
+  str(SDXL_VAR_KSAMPLER_NODE): {"inputs": {"seed": 12345, "steps": 30, "cfg": 6.0, "sampler_name": "euler_ancestral", "scheduler": "karras", "denoise": 0.70, "control_after_generate": "increment", "model": [str(SDXL_VAR_LORA_NODE), 0], "positive": [str(SDXL_VAR_POS_PROMPT_NODE), 0], "negative": [str(SDXL_VAR_NEG_PROMPT_NODE), 0], "latent_image": [str(SDXL_VAR_BATCH_NODE), 0]}, "class_type": "KSampler", "_meta": {"title": "KSampler (SDXL Variation)"}},
   str(SDXL_VAR_VAE_DECODE_NODE): {"inputs": {"samples": [str(SDXL_VAR_KSAMPLER_NODE), 0], "vae": [str(SDXL_CHECKPOINT_LOADER_NODE), 2]}, "class_type": "VAEDecode", "_meta": {"title": "VAE Decode (SDXL)"}},
-  str(SDXL_VAR_SAVE_IMAGE_NODE): {"inputs": {"filename_prefix": "sdxlbot/VAR", "images": [str(SDXL_VAR_VAE_DECODE_NODE), 0]}, "class_type": "SaveImage", "_meta": {"title": "Save Image (SDXL Variation)"}}
+  str(SDXL_VAR_SAVE_IMAGE_NODE): {"inputs": {"filename_prefix": "sdxlbot/VAR", "images": [str(SDXL_VAR_VAE_DECODE_NODE), 0]}, "class_type": "SaveImage", "_meta": {"title": "Save Image (SDXL Variation)"}},
+  str(SDXL_VAR_BATCH_NODE): {"inputs": {"amount": 1, "samples": [str(SDXL_VAR_VAE_ENCODE_NODE), 0]}, "class_type": "RepeatLatentBatch", "_meta": {"title": "RepeatLatentBatch"}}
 }
 
 
-# --- SDXL Upscale Template ---
+# --- SDXL Upscale Template (with LoRA) ---
 sdxl_upscale_prompt = {
   str(SDXL_CHECKPOINT_LOADER_NODE): {"inputs": {"ckpt_name": "sdxl_model.safetensors"}, "class_type": "CheckpointLoaderSimple", "_meta": {"title": "Load SDXL Checkpoint"}},
   str(SDXL_UPSCALE_LORA_NODE): {"inputs": {"PowerLoraLoaderHeaderWidget": {"type": "PowerLoraLoaderHeaderWidget"}, "lora_1": {"on": False, "lora": "None", "strength": 0}, "lora_2": {"on": False, "lora": "None", "strength": 0}, "lora_3": {"on": False, "lora": "None", "strength": 0}, "lora_4": {"on": False, "lora": "None", "strength": 0}, "lora_5": {"on": False, "lora": "None", "strength": 0}, "➕ Add Lora": "", "model": [str(SDXL_CHECKPOINT_LOADER_NODE), 0], "clip": [str(SDXL_CHECKPOINT_LOADER_NODE), 1]}, "class_type": "Power Lora Loader (rgthree)", "_meta": {"title": "Power Lora Loader (SDXL Upscale)"}},
@@ -198,3 +207,5 @@ sdxl_upscale_prompt = {
   str(SDXL_UPSCALE_HELPER_LATENT_NODE): {"inputs": {"aspect_ratio": "1:1", "mp_size_float": "1", "upscale_by": 1.85, "model_type": "SDXL", "batch_size": 1}, "class_type": "BobsLatentNodeAdvanced", "_meta": {"title": "Bobs Upscale Param Calculator (SDXL)"}},
   str(SDXL_UPSCALE_SAVE_IMAGE_NODE): {"inputs": {"filename_prefix": "sdxlbot/UPSCALES", "images": [str(SDXL_UPSCALE_ULTIMATE_NODE), 0]}, "class_type": "SaveImage", "_meta": {"title": "Save Upscaled Image (SDXL)"}}
 }
+
+# --- END OF FILE prompt_templates.py ---
