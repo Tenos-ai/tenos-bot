@@ -18,6 +18,7 @@ from prompt_templates import (
     VARIATION_WORKFLOW_STEPS_NODE as FLUX_VAR_KSAMPLER_NODE,
     VARIATION_CLIP_NODE as FLUX_VAR_CLIP_NODE,
     VARY_LORA_NODE as FLUX_VAR_LORA_NODE,
+    FLUX_VAR_BATCH_NODE,
     SDXL_CHECKPOINT_LOADER_NODE as SDXL_VAR_BASE_MODEL_NODE,
     SDXL_VAR_LORA_NODE,
     SDXL_VAR_LOAD_IMAGE_NODE,
@@ -28,7 +29,8 @@ from prompt_templates import (
     SDXL_VAR_NEG_PROMPT_NODE,
     SDXL_VAR_KSAMPLER_NODE,
     SDXL_VAR_VAE_DECODE_NODE,
-    SDXL_VAR_SAVE_IMAGE_NODE
+    SDXL_VAR_SAVE_IMAGE_NODE,
+    SDXL_VAR_BATCH_NODE
 )
 from utils.seed_utils import generate_seed, calculate_batch_seeds
 from settings_manager import load_settings, load_styles_config, _get_default_settings
@@ -253,138 +255,133 @@ def modify_variation_prompt(
 
     template_to_use = None
     if base_model_type_for_variation_workflow == "sdxl": template_to_use = sdxl_variation_prompt
-    else: template_to_use = flux_weakvary_template if variation_type == 'weak' else flux_strongvary_template
-
+    else: template_to_use = flux_weakvary_template if variation_type == 'weak' else flux_strongvary_prompt
+    
     batch_size = settings.get('variation_batch_size', 1)
     if not isinstance(batch_size, int) or not (1 <= batch_size <= 4):
         batch_size = 1
+        
+    variation_job_id = str(uuid.uuid4())[:8]
+    modified_variation_prompt = json.loads(json.dumps(template_to_use))
+
+    if base_model_type_for_variation_workflow == "flux":
+        modified_variation_prompt["8"]["inputs"]["text"] = prompt_for_variation_node 
+        modified_variation_prompt["33"]["inputs"]["url_or_path"] = target_image_url
+        modified_variation_prompt[str(FLUX_VAR_KSAMPLER_NODE)]["inputs"]["seed"] = base_seed
+        modified_variation_prompt[str(FLUX_VAR_KSAMPLER_NODE)]["inputs"]["denoise"] = denoise_for_ksampler_variation
+        modified_variation_prompt[str(FLUX_VAR_KSAMPLER_NODE)]["inputs"]["steps"] = variation_job_steps 
+        if "5" in modified_variation_prompt and "inputs" in modified_variation_prompt["5"] and "guidance" in modified_variation_prompt["5"]["inputs"]:
+            modified_variation_prompt["5"]["inputs"]["guidance"] = variation_job_guidance_flux
+        modified_variation_prompt[str(FLUX_VAR_BATCH_NODE)]["inputs"]["amount"] = batch_size
+
+    elif base_model_type_for_variation_workflow == "sdxl":
+        modified_variation_prompt[str(SDXL_VAR_POS_PROMPT_NODE)]["inputs"]["text"] = prompt_for_variation_node
+        modified_variation_prompt[str(SDXL_VAR_NEG_PROMPT_NODE)]["inputs"]["text"] = final_negative_prompt_for_sdxl_variation
+        modified_variation_prompt[str(SDXL_VAR_LOAD_IMAGE_NODE)]["inputs"]["url_or_path"] = target_image_url
+        modified_variation_prompt[str(SDXL_VAR_KSAMPLER_NODE)]["inputs"]["seed"] = base_seed
+        modified_variation_prompt[str(SDXL_VAR_KSAMPLER_NODE)]["inputs"]["denoise"] = denoise_for_ksampler_variation
+        modified_variation_prompt[str(SDXL_VAR_KSAMPLER_NODE)]["inputs"]["steps"] = variation_job_steps 
+        modified_variation_prompt[str(SDXL_VAR_KSAMPLER_NODE)]["inputs"]["cfg"] = variation_job_guidance_sdxl
+        modified_variation_prompt[str(SDXL_VAR_BATCH_NODE)]["inputs"]["amount"] = batch_size
+
+    os.makedirs(VARIATIONS_DIR, exist_ok=True)
+    variation_char = variation_type[0].upper()
+    filename_suffix_detail_var = f"_{variation_char}_from_img{image_index}_srcID{source_job_id_for_tracking_var}"
+    file_prefix_base_var = "GEN_VAR_"
+    final_filename_prefix_var = normalize_path_for_comfyui(
+        os.path.join(VARIATIONS_DIR, f"{file_prefix_base_var}{variation_job_id}{filename_suffix_detail_var}")
+    )
+    save_node_id_var = str(SDXL_VAR_SAVE_IMAGE_NODE) if base_model_type_for_variation_workflow == "sdxl" else "34"
+    if save_node_id_var in modified_variation_prompt:
+        modified_variation_prompt[save_node_id_var]["inputs"]["filename_prefix"] = final_filename_prefix_var
+
+    if actual_base_model_filename_for_variation:
+        base_model_loader_node_id_var = str(SDXL_VAR_BASE_MODEL_NODE) if base_model_type_for_variation_workflow == "sdxl" else str(FLUX_VAR_BASE_MODEL_NODE)
+        if base_model_loader_node_id_var in modified_variation_prompt:
+            try:
+                prefixed_base_model_name_for_get_node = f"{base_model_type_for_variation_workflow.capitalize()}: {actual_base_model_filename_for_variation}"
+                model_node_update_dict_var = get_model_node(prefixed_base_model_name_for_get_node, base_model_loader_node_id_var)
+                if base_model_loader_node_id_var in model_node_update_dict_var:
+                    modified_variation_prompt[base_model_loader_node_id_var] = model_node_update_dict_var[base_model_loader_node_id_var]
+            except Exception as e_base_model_var:
+                print(f"Error setting variation base model (from current setting '{actual_base_model_filename_for_variation}'): {e_base_model_var}")
+                traceback.print_exc()
+
+    if base_model_type_for_variation_workflow == "flux":
+        sel_t5_clip_var = settings.get('selected_t5_clip'); sel_clip_l_var = settings.get('selected_clip_l')
+        flux_clip_node_id_var = str(FLUX_VAR_CLIP_NODE)
+        if sel_t5_clip_var and sel_clip_l_var and flux_clip_node_id_var in modified_variation_prompt:
+            if "inputs" in modified_variation_prompt[flux_clip_node_id_var]:
+                 modified_variation_prompt[flux_clip_node_id_var]["inputs"].update({"clip_name1": sel_t5_clip_var, "clip_name2": sel_clip_l_var})
+
+    lora_loader_node_id_for_var_style = str(SDXL_VAR_LORA_NODE) if base_model_type_for_variation_workflow == "sdxl" else str(FLUX_VAR_LORA_NODE)
+    if lora_loader_node_id_for_var_style in modified_variation_prompt:
+        if isinstance(modified_variation_prompt[lora_loader_node_id_for_var_style].get("inputs"), dict):
+            lora_inputs_dict_var = modified_variation_prompt[lora_loader_node_id_for_var_style]["inputs"]
+            if base_model_type_for_variation_workflow == "flux":
+                lora_inputs_dict_var["model"] = [str(FLUX_VAR_BASE_MODEL_NODE), 0]
+                lora_inputs_dict_var["clip"] = [str(FLUX_VAR_CLIP_NODE), 0]
+            elif base_model_type_for_variation_workflow == "sdxl":
+                lora_inputs_dict_var["model"] = [str(SDXL_VAR_BASE_MODEL_NODE), 0]
+                lora_inputs_dict_var["clip"] = [str(SDXL_VAR_BASE_MODEL_NODE), 1]
+            
+            if style_for_this_variation != 'off':
+                style_data_loras_var = styles_config.get(style_for_this_variation, {})
+                for i_lora in range(1, 6):
+                    lk_var, lsc_var = f"lora_{i_lora}", style_data_loras_var.get(f"lora_{i_lora}")
+                    if lk_var in lora_inputs_dict_var: 
+                        on_var = isinstance(lsc_var,dict) and lsc_var.get('on',False)
+                        ln_var = lsc_var.get('lora', "None") if isinstance(lsc_var,dict) else "None"
+                        ls_var = float(lsc_var.get('strength',0.0)) if isinstance(lsc_var,dict) else 0.0
+                        if not isinstance(lora_inputs_dict_var.get(lk_var), dict):
+                             lora_inputs_dict_var[lk_var] = {} 
+                        lora_inputs_dict_var[lk_var].update({"on": on_var, "lora": ln_var, "strength": ls_var})
+            else: 
+                for i_lora in range(1, 6):
+                    lk_var = f"lora_{i_lora}"
+                    if lk_var in lora_inputs_dict_var:
+                        if not isinstance(lora_inputs_dict_var.get(lk_var), dict):
+                            lora_inputs_dict_var[lk_var] = {}
+                        lora_inputs_dict_var[lk_var].update({"on": False, "lora": "None", "strength": 0.0})
     
-    batch_seeds = calculate_batch_seeds(base_seed, batch_size)
-    all_job_results = []
+    variation_desc_full_str_var = "Weak" if variation_type == 'weak' else "Strong"
+    response_status_msg_var = f"{variation_desc_full_str_var} variation ({base_model_type_for_variation_workflow.upper()}) queued for image #{image_index}."
+    
+    enhancer_ref_text = ""
+    if source_job_id_for_tracking_var and source_job_id_for_tracking_var != 'unknownSrc':
+        source_job_data_enh = queue_manager.get_job_data_by_id(source_job_id_for_tracking_var)
+        if source_job_data_enh and source_job_data_enh.get('enhancer_used'):
+            provider_enh = source_job_data_enh.get('llm_provider', "LLM").capitalize()
+            enhancer_ref_text = f"\n> `(Based on Enhanced Prompt via {provider_enh})`"
 
-    for i, current_seed in enumerate(batch_seeds):
-        variation_job_id = str(uuid.uuid4())[:8]
-        modified_variation_prompt = json.loads(json.dumps(template_to_use))
-
-        if base_model_type_for_variation_workflow == "flux":
-            modified_variation_prompt["8"]["inputs"]["text"] = prompt_for_variation_node 
-            modified_variation_prompt["33"]["inputs"]["url_or_path"] = target_image_url
-            modified_variation_prompt[str(FLUX_VAR_KSAMPLER_NODE)]["inputs"]["seed"] = current_seed
-            modified_variation_prompt[str(FLUX_VAR_KSAMPLER_NODE)]["inputs"]["denoise"] = denoise_for_ksampler_variation
-            modified_variation_prompt[str(FLUX_VAR_KSAMPLER_NODE)]["inputs"]["steps"] = variation_job_steps 
-            if "5" in modified_variation_prompt and "inputs" in modified_variation_prompt["5"] and "guidance" in modified_variation_prompt["5"]["inputs"]:
-                modified_variation_prompt["5"]["inputs"]["guidance"] = variation_job_guidance_flux
-        elif base_model_type_for_variation_workflow == "sdxl":
-            modified_variation_prompt[str(SDXL_VAR_POS_PROMPT_NODE)]["inputs"]["text"] = prompt_for_variation_node
-            modified_variation_prompt[str(SDXL_VAR_NEG_PROMPT_NODE)]["inputs"]["text"] = final_negative_prompt_for_sdxl_variation
-            modified_variation_prompt[str(SDXL_VAR_LOAD_IMAGE_NODE)]["inputs"]["url_or_path"] = target_image_url
-            modified_variation_prompt[str(SDXL_VAR_KSAMPLER_NODE)]["inputs"]["seed"] = current_seed
-            modified_variation_prompt[str(SDXL_VAR_KSAMPLER_NODE)]["inputs"]["denoise"] = denoise_for_ksampler_variation
-            modified_variation_prompt[str(SDXL_VAR_KSAMPLER_NODE)]["inputs"]["steps"] = variation_job_steps 
-            modified_variation_prompt[str(SDXL_VAR_KSAMPLER_NODE)]["inputs"]["cfg"] = variation_job_guidance_sdxl 
-
-        os.makedirs(VARIATIONS_DIR, exist_ok=True)
-        variation_char = variation_type[0].upper()
-        batch_suffix = f"_b{i+1}" if batch_size > 1 else ""
-        filename_suffix_detail_var = f"_{variation_char}_from_img{image_index}_srcID{source_job_id_for_tracking_var}{batch_suffix}"
-        file_prefix_base_var = "GEN_VAR_"
-        final_filename_prefix_var = normalize_path_for_comfyui(
-            os.path.join(VARIATIONS_DIR, f"{file_prefix_base_var}{variation_job_id}{filename_suffix_detail_var}")
-        )
-        save_node_id_var = str(SDXL_VAR_SAVE_IMAGE_NODE) if base_model_type_for_variation_workflow == "sdxl" else "34"
-        if save_node_id_var in modified_variation_prompt:
-            modified_variation_prompt[save_node_id_var]["inputs"]["filename_prefix"] = final_filename_prefix_var
-
-        if actual_base_model_filename_for_variation:
-            base_model_loader_node_id_var = str(SDXL_VAR_BASE_MODEL_NODE) if base_model_type_for_variation_workflow == "sdxl" else str(FLUX_VAR_BASE_MODEL_NODE)
-            if base_model_loader_node_id_var in modified_variation_prompt:
-                try:
-                    prefixed_base_model_name_for_get_node = f"{base_model_type_for_variation_workflow.capitalize()}: {actual_base_model_filename_for_variation}"
-                    model_node_update_dict_var = get_model_node(prefixed_base_model_name_for_get_node, base_model_loader_node_id_var)
-                    if base_model_loader_node_id_var in model_node_update_dict_var:
-                        modified_variation_prompt[base_model_loader_node_id_var] = model_node_update_dict_var[base_model_loader_node_id_var]
-                except Exception as e_base_model_var:
-                    print(f"Error setting variation base model (from current setting '{actual_base_model_filename_for_variation}'): {e_base_model_var}")
-                    traceback.print_exc()
-
-        if base_model_type_for_variation_workflow == "flux":
-            sel_t5_clip_var = settings.get('selected_t5_clip'); sel_clip_l_var = settings.get('selected_clip_l')
-            flux_clip_node_id_var = str(FLUX_VAR_CLIP_NODE)
-            if sel_t5_clip_var and sel_clip_l_var and flux_clip_node_id_var in modified_variation_prompt:
-                if "inputs" in modified_variation_prompt[flux_clip_node_id_var]:
-                     modified_variation_prompt[flux_clip_node_id_var]["inputs"].update({"clip_name1": sel_t5_clip_var, "clip_name2": sel_clip_l_var})
-
-        lora_loader_node_id_for_var_style = str(SDXL_VAR_LORA_NODE) if base_model_type_for_variation_workflow == "sdxl" else str(FLUX_VAR_LORA_NODE)
-        if lora_loader_node_id_for_var_style in modified_variation_prompt:
-            if isinstance(modified_variation_prompt[lora_loader_node_id_for_var_style].get("inputs"), dict):
-                lora_inputs_dict_var = modified_variation_prompt[lora_loader_node_id_for_var_style]["inputs"]
-                if base_model_type_for_variation_workflow == "flux":
-                    lora_inputs_dict_var["model"] = [str(FLUX_VAR_BASE_MODEL_NODE), 0]
-                    lora_inputs_dict_var["clip"] = [str(FLUX_VAR_CLIP_NODE), 0]
-                elif base_model_type_for_variation_workflow == "sdxl":
-                    lora_inputs_dict_var["model"] = [str(SDXL_VAR_BASE_MODEL_NODE), 0]
-                    lora_inputs_dict_var["clip"] = [str(SDXL_VAR_BASE_MODEL_NODE), 1]
-                
-                if style_for_this_variation != 'off':
-                    style_data_loras_var = styles_config.get(style_for_this_variation, {})
-                    for i_lora in range(1, 6):
-                        lk_var, lsc_var = f"lora_{i_lora}", style_data_loras_var.get(f"lora_{i_lora}")
-                        if lk_var in lora_inputs_dict_var: 
-                            on_var = isinstance(lsc_var,dict) and lsc_var.get('on',False)
-                            ln_var = lsc_var.get('lora', "None") if isinstance(lsc_var,dict) else "None"
-                            ls_var = float(lsc_var.get('strength',0.0)) if isinstance(lsc_var,dict) else 0.0
-                            if not isinstance(lora_inputs_dict_var.get(lk_var), dict):
-                                 lora_inputs_dict_var[lk_var] = {} 
-                            lora_inputs_dict_var[lk_var].update({"on": on_var, "lora": ln_var, "strength": ls_var})
-                else: 
-                    for i_lora in range(1, 6):
-                        lk_var = f"lora_{i_lora}"
-                        if lk_var in lora_inputs_dict_var:
-                            if not isinstance(lora_inputs_dict_var.get(lk_var), dict):
-                                lora_inputs_dict_var[lk_var] = {}
-                            lora_inputs_dict_var[lk_var].update({"on": False, "lora": "None", "strength": 0.0})
-        
-        variation_desc_full_str_var = "Weak" if variation_type == 'weak' else "Strong"
-        response_status_msg_var = f"{variation_desc_full_str_var} variation ({base_model_type_for_variation_workflow.upper()}) queued for image #{image_index}."
-        
-        enhancer_ref_text = ""
-        if source_job_id_for_tracking_var and source_job_id_for_tracking_var != 'unknownSrc':
-            source_job_data_enh = queue_manager.get_job_data_by_id(source_job_id_for_tracking_var)
-            if source_job_data_enh and source_job_data_enh.get('enhancer_used'):
-                provider_enh = source_job_data_enh.get('llm_provider', "LLM").capitalize()
-                enhancer_ref_text = f"\n> `(Based on Enhanced Prompt via {provider_enh})`"
-
-        job_details_dict_var = {
-            "job_id": variation_job_id,
-            "prompt": prompt_for_variation_node,
-            "original_prompt": original_prompt_for_log,
-            "enhanced_prompt": enhanced_prompt_from_source if edited_prompt is None else None,
-            "negative_prompt": final_negative_prompt_for_sdxl_variation if base_model_type_for_variation_workflow == "sdxl" else None,
-            "seed": current_seed, "steps": variation_job_steps, 
-            "guidance": variation_job_guidance_flux if base_model_type_for_variation_workflow == 'flux' else None, 
-            "guidance_sdxl": variation_job_guidance_sdxl if base_model_type_for_variation_workflow == 'sdxl' else None, 
-            "image_url": target_image_url, 
-            "original_width": original_image_width_val, "original_height": original_image_height_val,
-            "aspect_ratio_str": original_aspect_ratio_str_from_source,
-            "variation_type": variation_type, "style": style_for_this_variation, "image_index": image_index,
-            "type": "variation", 
-            "model_type_for_enhancer": base_model_type_for_variation_workflow, 
-            "batch_size": batch_size,
-            "run_number": i + 1,
-            "enhancer_reference_text": enhancer_ref_text,
-            "style_warning_message": style_warning_message_var,
-            "parameters_used": { 
-                "seed": current_seed, "style": style_for_this_variation, 
-                "denoise": denoise_for_ksampler_variation, "variation_strength": variation_type,
-                "base_model_type_workflow": base_model_type_for_variation_workflow, 
-                "base_model_filename": actual_base_model_filename_for_variation,
-                "source_job_id": source_job_id_for_tracking_var,
-                "is_remix": edited_prompt is not None
-            }
+    job_details_dict_var = {
+        "job_id": variation_job_id,
+        "prompt": prompt_for_variation_node,
+        "original_prompt": original_prompt_for_log,
+        "enhanced_prompt": enhanced_prompt_from_source if edited_prompt is None else None,
+        "negative_prompt": final_negative_prompt_for_sdxl_variation if base_model_type_for_variation_workflow == "sdxl" else None,
+        "seed": base_seed, "steps": variation_job_steps, 
+        "guidance": variation_job_guidance_flux if base_model_type_for_variation_workflow == 'flux' else None, 
+        "guidance_sdxl": variation_job_guidance_sdxl if base_model_type_for_variation_workflow == 'sdxl' else None, 
+        "image_url": target_image_url, 
+        "original_width": original_image_width_val, "original_height": original_image_height_val,
+        "aspect_ratio_str": original_aspect_ratio_str_from_source,
+        "variation_type": variation_type, "style": style_for_this_variation, "image_index": image_index,
+        "type": "variation", 
+        "model_type_for_enhancer": base_model_type_for_variation_workflow, 
+        "batch_size": batch_size,
+        "enhancer_reference_text": enhancer_ref_text,
+        "style_warning_message": style_warning_message_var,
+        "parameters_used": { 
+            "seed": base_seed, "style": style_for_this_variation, 
+            "denoise": denoise_for_ksampler_variation, "variation_strength": variation_type,
+            "base_model_type_workflow": base_model_type_for_variation_workflow, 
+            "base_model_filename": actual_base_model_filename_for_variation,
+            "source_job_id": source_job_id_for_tracking_var,
+            "is_remix": edited_prompt is not None
         }
-        all_job_results.append((variation_job_id, modified_variation_prompt, response_status_msg_var, job_details_dict_var))
-
-    return all_job_results
+    }
+    return [(variation_job_id, modified_variation_prompt, response_status_msg_var, job_details_dict_var)]
 
 
 def modify_weak_variation_prompt(message_content_or_obj, referenced_message, target_image_url: str, image_index: int = 1, edited_prompt: str | None = None, edited_negative_prompt: str | None = None):
