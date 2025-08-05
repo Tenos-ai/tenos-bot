@@ -110,21 +110,30 @@ async def _enhance_with_gemini(original_prompt: str, model_name: str, system_ins
                 if enhanced_prompt:
                     return enhanced_prompt.strip('`"\' '), None
             elif finish_reason:
-                # Provide a clearer error message for known non-STOP reasons
                 return None, f"Gemini API generation stopped. Reason: {finish_reason}."
 
-        # Fallback for truly unexpected formats or empty candidates
         return None, f"Google Gemini API response format unexpected or empty. Full response: {response_json}"
     except Exception as e:
         return None, f"Error with Gemini API: {e}"
 
-async def _enhance_with_groq(original_prompt: str, model_name: str, system_instruction_text: str, image_urls: list | None = None) -> tuple[str | None, str | None]:
+async def _enhance_with_groq(original_prompt: str, model_name: str, system_instruction_text: str, reasoning_effort: str | None, image_urls: list | None = None) -> tuple[str | None, str | None]:
     if not GROQ_API_KEY:
         return None, "Groq API key is missing in config.json."
-    # Groq does not support vision, so image_urls is ignored.
+    
     API_URL = "https://api.groq.com/openai/v1/chat/completions"
     headers = {'Authorization': f'Bearer {GROQ_API_KEY}', 'Content-Type': 'application/json'}
-    payload = {"messages": [{"role": "system", "content": system_instruction_text}, {"role": "user", "content": original_prompt}], "model": model_name, "temperature": 1, "max_tokens": 2048}
+    
+    payload = {
+        "messages": [{"role": "system", "content": system_instruction_text}, {"role": "user", "content": original_prompt}],
+        "model": model_name,
+        "temperature": 1,
+        "max_tokens": 2048
+    }
+
+    # Conditionally add reasoning_effort for supported models if the value is provided.
+    if "gpt-oss" in model_name and reasoning_effort:
+        payload["reasoning_effort"] = reasoning_effort
+
     try:
         response = await asyncio.to_thread(requests.post, API_URL, headers=headers, json=payload, timeout=30)
         response.raise_for_status()
@@ -167,7 +176,7 @@ async def _enhance_with_openai(original_prompt: str, model_name: str, system_ins
         return None, f"Error with OpenAI API: {e}"
 
 
-# **FIX START**: Function modified to prepend image context to the prompt.
+# **FIX START**: Function modified to load and pass the reasoning_effort setting safely.
 async def enhance_prompt(original_prompt: str, system_prompt_text_override: str | None = None, target_model_type: str = "flux", image_urls: list | None = None) -> tuple[str | None, str | None]:
     from settings_manager import load_settings
     settings = load_settings()
@@ -176,7 +185,6 @@ async def enhance_prompt(original_prompt: str, system_prompt_text_override: str 
     if not original_prompt:
         return None, "Invalid original prompt provided."
 
-    # Prepend image context to the prompt if URLs are provided
     final_prompt_for_llm = original_prompt
     if image_urls and len(image_urls) > 0:
         image_references = ", ".join([f"image{i+1}" for i in range(len(image_urls))])
@@ -199,9 +207,12 @@ async def enhance_prompt(original_prompt: str, system_prompt_text_override: str 
         return await _enhance_with_gemini(final_prompt_for_llm, model_name, system_instruction_to_use, image_urls)
     elif provider == 'groq':
         model_name = settings.get('llm_model_groq', 'llama3-8b-8192')
-        return await _enhance_with_groq(final_prompt_for_llm, model_name, system_instruction_to_use, image_urls)
+        # Load the reasoning_effort setting, defaulting to None if not set.
+        reasoning_effort = settings.get('llm_groq_reasoning_effort', None)
+        return await _enhance_with_groq(final_prompt_for_llm, model_name, system_instruction_to_use, reasoning_effort, image_urls)
     elif provider == 'openai':
         model_name = settings.get('llm_model_openai', 'gpt-4o')
         return await _enhance_with_openai(final_prompt_for_llm, model_name, system_instruction_to_use, image_urls)
     else:
         return None, f"Unknown LLM provider '{provider}' selected in settings."
+# **FIX END**
