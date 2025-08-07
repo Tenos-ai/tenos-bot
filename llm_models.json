@@ -3,7 +3,6 @@
     "gemini": {
       "display_name": "Google Gemini API",
       "models": [
-        "gemini-1.0-pro-vision-latest",
         "gemini-1.5-flash",
         "gemini-1.5-flash-002",
         "gemini-1.5-flash-8b",
@@ -28,9 +27,8 @@
         "gemini-2.0-pro-exp",
         "gemini-2.0-pro-exp-02-05",
         "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
         "gemini-2.5-flash-lite-preview-06-17",
-        "gemini-2.5-flash-preview-04-17",
-        "gemini-2.5-flash-preview-04-17-thinking",
         "gemini-2.5-flash-preview-05-20",
         "gemini-2.5-flash-preview-tts",
         "gemini-2.5-pro",
@@ -39,7 +37,6 @@
         "gemini-2.5-pro-preview-06-05",
         "gemini-2.5-pro-preview-tts",
         "gemini-exp-1206",
-        "gemini-pro-vision",
         "gemma-3-12b-it",
         "gemma-3-1b-it",
         "gemma-3-27b-it",
@@ -67,10 +64,11 @@
         "meta-llama/llama-guard-4-12b",
         "meta-llama/llama-prompt-guard-2-22m",
         "meta-llama/llama-prompt-guard-2-86m",
-        "mistral-saba-24b",
+        "moonshotai/kimi-k2-instruct",
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
         "playai-tts",
         "playai-tts-arabic",
-        "qwen-qwq-32b",
         "qwen/qwen3-32b",
         "whisper-large-v3",
         "whisper-large-v3-turbo"
@@ -98,8 +96,6 @@
         "gpt-4.1-mini-2025-04-14",
         "gpt-4.1-nano",
         "gpt-4.1-nano-2025-04-14",
-        "gpt-4.5-preview",
-        "gpt-4.5-preview-2025-02-27",
         "gpt-4o",
         "gpt-4o-2024-05-13",
         "gpt-4o-2024-08-06",
@@ -129,8 +125,6 @@
         "o1-2024-12-17",
         "o1-mini",
         "o1-mini-2024-09-12",
-        "o1-preview",
-        "o1-preview-2024-09-12",
         "o1-pro",
         "o1-pro-2025-03-19",
         "o3",
@@ -144,7 +138,10 @@
         "o4-mini",
         "o4-mini-2025-04-16",
         "o4-mini-deep-research",
-        "o4-mini-deep-research-2025-06-26"
+        "o4-mini-deep-research-2025-06-26",
+        "gpt-5-2025-08-07",
+        "gpt-5-mini-2025-08-07",
+        "gpt-5-nano-2025-08-07"
       ]
     }
   }
