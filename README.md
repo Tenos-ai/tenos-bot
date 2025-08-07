@@ -14,7 +14,7 @@ This update introduces a more organized and powerful configuration experience, a
     -   **Flux:** Default style, steps, guidance specifically for Flux generations.
     -   **SDXL:** Default style, steps, guidance, and negative prompt for SDXL generations.
     -   **Kontext:** New dedicated settings for the `/edit` command, including default steps, guidance, and MP size.
-    -   **LLM:** Settings for the prompt enhancer and display preferences. Added support for OpenAI oss models and all other thinking models via Groq.
+    -   **LLM:** Settings for the prompt enhancer and display preferences. Added support for OpenAI oss models and all other thinking models via Groq. Added support for OpenAI GPT-5.
 
 -   **Model-Specific Default Styles:** The single `default_style` setting has been split. You can now set a `default_style_flux` and a `default_style_sdxl` independently in the configurator. The bot will automatically apply the correct default style based on the model being used.
 
