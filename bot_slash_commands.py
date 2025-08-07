@@ -16,6 +16,7 @@ from utils.message_utils import send_long_message, safe_interaction_response
 from settings_manager import load_settings, load_styles_config
 from comfyui_api import get_available_comfyui_models
 from bot_core_logic import process_kontext_edit_request
+from queue_manager import queue_manager
 
 _bot_instance_slash = None
 def register_bot_instance_for_slash(bot_instance):
