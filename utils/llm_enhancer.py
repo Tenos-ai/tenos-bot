@@ -157,7 +157,7 @@ async def _enhance_with_openai(original_prompt: str, model_name: str, system_ins
     payload = {}
     API_URL = ""
 
-    if model_name.startswith(('o1', 'o3', 'o4')):
+    if any(model_name.startswith(pref) for pref in ('o1','o3','o4','gpt-4.1','gpt-5')):
         API_URL = "https://api.openai.com/v1/responses"
         payload = {
             "model": model_name,
@@ -169,20 +169,32 @@ async def _enhance_with_openai(original_prompt: str, model_name: str, system_ins
 
     else:
         API_URL = "https://api.openai.com/v1/chat/completions"
-        content_list = [{"type": "text", "text": original_prompt}]
+        # Determine if the model supports multimodal input (i.e., Vision)
         is_vision_model = model_name in ["gpt-4o", "gpt-4-turbo", "gpt-4o-mini"] or "vision" in model_name
+        
+        # Default to simple text content for the user message
+        user_content = original_prompt
+        
+        # Build a multimodal payload only when the model supports it
         if image_urls and is_vision_model:
+            user_content = [{"type": "text", "text": original_prompt}]
             for url in image_urls:
-                content_list.append({"type": "image_url", "image_url": {"url": url}})
+                user_content.append({"type": "image_url", "image_url": {"url": url}})
         elif image_urls:
-            print(f"LLMEnhancer Warning: Image URLs are ignored for non-vision OpenAI model '{model_name}'.")
+            # Warn the caller that the images will be ignored
+            print(f"LLMEnhancer Warning: Image URLs are ignored for non‑vision OpenAI model '{model_name}'.")
+        
+        # Newer reasoning models (o‑series, gpt‑4.1+, gpt‑5+) expect 'max_completion_tokens'
+        reasoning_models = ('gpt-5', 'gpt-4.1', 'o1', 'o3', 'o4')
+        token_key = "max_completion_tokens" if any(rm in model_name for rm in reasoning_models) else "max_tokens"
         
         payload = {
             "model": model_name,
-            "messages": [{"role": "system", "content": system_instruction_text}, {"role": "user", "content": content_list}],
-            "max_tokens": 2048
+            "messages": [{"role": "system", "content": system_instruction_text},
+                         {"role": "user", "content": user_content}],
+            token_key: 2048
         }
-
+        
     try:
         response = await asyncio.to_thread(requests.post, API_URL, headers=headers, json=payload, timeout=90)
         response.raise_for_status()
