@@ -6,6 +6,10 @@ import discord
 import os
 import numpy as np
 import traceback
+import copy
+
+_settings_cache = None
+_settings_mtime = None
 
 def load_llm_models_config():
     default_config = {
@@ -84,19 +88,37 @@ def load_styles_config():
 
 def load_settings():
     settings_file = 'settings.json'
+    global _settings_cache, _settings_mtime
+
+    try:
+        current_mtime = os.path.getmtime(settings_file)
+    except OSError:
+        current_mtime = None
+
+    if _settings_cache is not None and _settings_mtime == current_mtime:
+        return copy.deepcopy(_settings_cache)
+
     try:
         if not os.path.exists(settings_file):
             print(f"Warning: {settings_file} not found. Creating default settings.")
             settings = _get_default_settings()
             save_settings(settings)
-            return settings
+            _settings_cache = copy.deepcopy(settings)
+            try:
+                _settings_mtime = os.path.getmtime(settings_file)
+            except OSError:
+                _settings_mtime = None
+            return copy.deepcopy(_settings_cache)
 
         with open(settings_file, 'r') as f:
             try:
                 settings = json.load(f)
             except json.JSONDecodeError as e:
                 print(f"Error parsing {settings_file} (invalid JSON): {e}. Returning defaults.")
-                return _get_default_settings()
+                settings = _get_default_settings()
+                _settings_cache = copy.deepcopy(settings)
+                _settings_mtime = current_mtime
+                return copy.deepcopy(_settings_cache)
         
         # --- Migration for old 'default_style' key ---
         if 'default_style' in settings:
@@ -368,7 +390,12 @@ def load_settings():
              print(f"Updating {settings_file} with defaults/corrections.")
              save_settings(settings)
 
-        return settings
+        _settings_cache = copy.deepcopy(settings)
+        try:
+            _settings_mtime = os.path.getmtime(settings_file)
+        except OSError:
+            _settings_mtime = None
+        return copy.deepcopy(_settings_cache)
     except OSError as e:
         print(f"Error reading {settings_file}: {e}. Returning defaults.")
         return _get_default_settings()
@@ -445,6 +472,7 @@ def _get_default_settings():
 
 def save_settings(settings):
     settings_file = 'settings.json'
+    global _settings_cache, _settings_mtime
     try:
         numeric_keys_float = ['default_guidance', 'default_guidance_sdxl', 'upscale_factor', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']
         numeric_keys_int = ['steps', 'sdxl_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size']
@@ -508,9 +536,21 @@ def save_settings(settings):
 
         with open(settings_file, 'w') as f:
             json.dump(valid_settings, f, indent=2)
+        _settings_cache = copy.deepcopy(valid_settings)
+        try:
+            _settings_mtime = os.path.getmtime(settings_file)
+        except OSError:
+            _settings_mtime = None
     except OSError as e: print(f"Error writing {settings_file}: {e}")
     except TypeError as e: print(f"Type error while saving settings: {e}")
     except Exception as e: print(f"Unexpected error saving settings: {e}"); traceback.print_exc()
+
+
+def clear_settings_cache():
+    """Invalidate the in-memory settings cache."""
+    global _settings_cache, _settings_mtime
+    _settings_cache = None
+    _settings_mtime = None
 
 
 def get_model_choices(settings):
