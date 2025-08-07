@@ -30,7 +30,7 @@ This update introduces a more organized and powerful configuration experience, a
 
 **7/6/25**
 - **Update 3**:
-  - fixed a few bugs, offical V1.2.3 update now has all features working with no bugs, as of today this will be stable release 1. Update tool will pull updates on the next numbered release (1.2.4).
+  - fixed a few bugs, official V1.2.3 update now has all features working with no bugs, as of today this will be stable release 1. Update tool will pull updates on the next numbered release (1.2.4).
 
 **7/4/25**
 - **Update 2**:
