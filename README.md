@@ -55,7 +55,7 @@ This update introduces a more organized and powerful configuration experience, a
 
 |||
 |---|---|
-|<img width="1004" height="1079" alt="image" src="https://github.com/user-attachments/assets/edb97a3f-bba6-4674-a2c6-dbbb97832156" />|![Screenshot 2025-06-25 191205](https://github.com/user-attachments/assets/11efb49e-e66d-4748-8d0d-f6980288ad66)|
+|<img width="1004" height="1079" alt="image" src="https://github.com/user-attachments/assets/edb97a3f-bba6-4674-a2c6-dbbb97832156" />|<img width="1272" height="1466" alt="image" src="https://github.com/user-attachments/assets/9d0911cb-9443-484f-a2e6-dcc48f91e57f" />|
 |![image](https://github.com/user-attachments/assets/ae767ff0-edbc-4164-a218-a874c96c12ff)|![image](https://github.com/user-attachments/assets/c7f21488-9351-4ab1-93f5-a0f545aec8fb)|
 
 ## First-Time Setup
