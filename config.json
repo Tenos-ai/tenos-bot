@@ -1,23 +1,23 @@
 {
   "OUTPUTS": {
-    "UPSCALES": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/output/TENOSAI-BOT/UPSCALES",
-    "VARIATIONS": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/output/TENOSAI-BOT/VARIATIONS",
-    "GENERATIONS": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/output/TENOSAI-BOT/GENERATIONS"
+    "UPSCALES": "",
+    "VARIATIONS": "",
+    "GENERATIONS": ""
   },
   "MODELS": {
-    "MODEL_FILES": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/models/unet",
-    "CHECKPOINTS_FOLDER": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/models/checkpoints",
-    "UPSCALE_MODELS": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/models/upscale_models",
-    "VAE_MODELS": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/models/vae"
+    "MODEL_FILES": "",
+    "CHECKPOINTS_FOLDER": "",
+    "UPSCALE_MODELS": "",
+    "VAE_MODELS": ""
   },
   "CLIP": {
-    "CLIP_FILES": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/models/clip"
+    "CLIP_FILES": ""
   },
   "LORAS": {
-    "LORA_FILES": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/models/loras"
+    "LORA_FILES": ""
   },
   "NODES": {
-    "CUSTOM_NODES": "C:/ComfyUI_windows_portable_nvidia/ComfyUI_windows_portable/ComfyUI/custom_nodes"
+    "CUSTOM_NODES": ""
   },
   "COMFYUI_API": {
     "HOST": "127.0.0.1",
@@ -28,16 +28,20 @@
     "PORT": 8189
   },
   "BOT_API": {
-    "KEY": "YOUR DISCORD API KEY"
+    "KEY": ""
   },
   "ADMIN": {
-    "USERNAME": "YOUR DISCORD USERNAME",
-    "ID": "YOUR DISCORD ID"
+    "USERNAME": "",
+    "ID": ""
   },
-  "ALLOWED_USERS": {},
+  "ALLOWED_USERS": {
+  },
   "LLM_ENHANCER": {
-    "OPENAI_API_KEY": "OPENAI_API_KEY",
-    "GEMINI_API_KEY": "GEMINI_API_KEY",
-    "GROQ_API_KEY": "GROQ_API_KEY"
+    "OPENAI_API_KEY": "",
+    "GEMINI_API_KEY": "",
+    "GROQ_API_KEY": ""
+  },
+  "APP_SETTINGS": {
+    "AUTO_UPDATE_ON_STARTUP": false
   }
 }
