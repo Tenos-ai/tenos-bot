@@ -4,16 +4,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
-    QPushButton,
     QTabWidget,
     QVBoxLayout,
     QWidget,
     QPlainTextEdit,
-    QHBoxLayout,
 )
 
 from material_gui.views.base import BaseView
@@ -28,6 +26,12 @@ class LlmPromptsView(BaseView):
         super().__init__()
         self._prompts: dict[str, str] = {}
         self._editors: dict[str, QPlainTextEdit] = {}
+        self._loading = False
+
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(600)
+        self._save_timer.timeout.connect(self._persist)
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(24, 24, 24, 24)
@@ -49,14 +53,7 @@ class LlmPromptsView(BaseView):
         self._tabs = QTabWidget()
         root_layout.addWidget(self._tabs, stretch=1)
 
-        button_row = QHBoxLayout()
-        button_row.addStretch()
-        save_button = QPushButton("Save Prompts")
-        save_button.clicked.connect(self._persist)  # pragma: no cover - Qt binding
-        button_row.addWidget(save_button)
-        root_layout.addLayout(button_row)
-
-        self._status_label = QLabel("Updates are written to llm_prompts.json.")
+        self._status_label = QLabel("Changes are saved automatically to llm_prompts.json.")
         self._status_label.setObjectName("MaterialCard")
         self._status_label.setWordWrap(True)
         root_layout.addWidget(self._status_label)
@@ -85,10 +82,17 @@ class LlmPromptsView(BaseView):
             editor.setMinimumHeight(240)
             self._tabs.addTab(editor, key)
             self._editors[key] = editor
+            editor.textChanged.connect(self._handle_editor_changed)  # pragma: no cover - Qt binding
 
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
+    def _handle_editor_changed(self) -> None:  # pragma: no cover - Qt binding
+        if self._loading:
+            return
+        self._status_label.setText("Saving prompts…")
+        self._save_timer.start()
+
     def _persist(self) -> None:  # pragma: no cover - Qt binding
         try:
             if not self._editors:
@@ -107,6 +111,7 @@ class LlmPromptsView(BaseView):
     # ------------------------------------------------------------------
     def refresh(self, repository) -> None:  # pragma: no cover - UI wiring
         del repository
+        self._loading = True
         if PROMPTS_PATH.exists():
             try:
                 data = json.loads(PROMPTS_PATH.read_text())
@@ -116,7 +121,8 @@ class LlmPromptsView(BaseView):
         else:
             self._prompts = {}
         self._populate_tabs()
-        self._set_status("Review or edit the prompts and click save to persist.")
+        self._loading = False
+        self._set_status("Prompts update automatically as you edit.")
 
 
 __all__ = ["LlmPromptsView"]

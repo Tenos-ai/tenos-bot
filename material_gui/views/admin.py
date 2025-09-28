@@ -7,7 +7,7 @@ from typing import Dict, Iterable
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
@@ -47,6 +47,17 @@ class AdminView(BaseView):
         self._server_list: QListWidget | None = None
         self._member_list: QListWidget | None = None
         self._dm_list: QListWidget | None = None
+        self._loading = False
+
+        self._config_timer = QTimer(self)
+        self._config_timer.setSingleShot(True)
+        self._config_timer.setInterval(600)
+        self._config_timer.timeout.connect(self._persist_user_management)
+
+        self._blocklist_timer = QTimer(self)
+        self._blocklist_timer.setSingleShot(True)
+        self._blocklist_timer.setInterval(600)
+        self._blocklist_timer.timeout.connect(self._persist_blocklist)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -73,7 +84,7 @@ class AdminView(BaseView):
         live_group = self._build_live_group()
         layout.addWidget(live_group, stretch=1)
 
-        self._status_label = QLabel("Loaded administrator information from config.json.")
+        self._status_label = QLabel("Administrator settings save automatically.")
         self._status_label.setObjectName("MaterialCard")
         self._status_label.setWordWrap(True)
         layout.addWidget(self._status_label)
@@ -93,10 +104,12 @@ class AdminView(BaseView):
 
         self._admin_username = QLineEdit()
         self._admin_username.setPlaceholderText("Discord username")
+        self._admin_username.editingFinished.connect(self._schedule_config_save)  # pragma: no cover - Qt binding
         form.addRow("Main Bot Admin", self._admin_username)
 
         self._admin_id = QLineEdit()
         self._admin_id.setPlaceholderText("Discord user ID")
+        self._admin_id.editingFinished.connect(self._schedule_config_save)  # pragma: no cover - Qt binding
         form.addRow("Admin Discord ID", self._admin_id)
 
         group_layout.addLayout(form)
@@ -131,10 +144,6 @@ class AdminView(BaseView):
         action_row.addWidget(remove_button)
 
         action_row.addStretch()
-
-        save_button = QPushButton("Save User Changes")
-        save_button.clicked.connect(self._persist_user_management)  # pragma: no cover
-        action_row.addWidget(save_button)
         group_layout.addLayout(action_row)
 
         return group
@@ -170,10 +179,6 @@ class AdminView(BaseView):
         action_row.addWidget(remove_button)
 
         action_row.addStretch()
-
-        save_button = QPushButton("Save Blocklist")
-        save_button.clicked.connect(self._persist_blocklist)  # pragma: no cover
-        action_row.addWidget(save_button)
         layout.addLayout(action_row)
 
         return group
@@ -222,9 +227,11 @@ class AdminView(BaseView):
     # ------------------------------------------------------------------
     def refresh(self, repository: SettingsRepository) -> None:  # pragma: no cover - Qt wiring
         self._repository = repository
+        self._loading = True
         self._load_admin_fields(repository.config)
         self._load_allowed_users(repository.config)
         self._load_blocklist()
+        self._loading = False
         if self._status_label:
             self._status_label.setText("Administrator settings synced with disk.")
 
@@ -271,6 +278,7 @@ class AdminView(BaseView):
         table.setItem(row, 1, QTableWidgetItem(label))
         self._allowed_id_input.clear()
         self._allowed_label_input.clear()
+        self._schedule_config_save()
 
     def _remove_selected_allowed_user(self) -> None:  # pragma: no cover - Qt binding
         if not self._allowed_table:
@@ -278,9 +286,12 @@ class AdminView(BaseView):
         selected_rows = {index.row() for index in self._allowed_table.selectedIndexes()}
         for row in sorted(selected_rows, reverse=True):
             self._allowed_table.removeRow(row)
+        self._schedule_config_save()
 
     def _persist_user_management(self) -> None:  # pragma: no cover - Qt binding
         if not (self._admin_username and self._admin_id and self._allowed_table):
+            return
+        if self._loading:
             return
 
         admin_payload = {
@@ -312,6 +323,13 @@ class AdminView(BaseView):
 
         if self._status_label:
             self._status_label.setText("Administrator and allowed user list saved.")
+
+    def _schedule_config_save(self) -> None:  # pragma: no cover - Qt binding
+        if self._loading:
+            return
+        if self._status_label:
+            self._status_label.setText("Saving administrator settings…")
+        self._config_timer.start()
 
     # ------------------------------------------------------------------
     # Blocklist helpers
@@ -352,6 +370,7 @@ class AdminView(BaseView):
         if not any(self._blocklist_widget.item(i).text() == user_id for i in range(self._blocklist_widget.count())):
             self._blocklist_widget.addItem(user_id)
         self._block_input.clear()
+        self._schedule_blocklist_save()
 
     def _remove_selected_blocked_user(self) -> None:  # pragma: no cover - Qt binding
         if not self._blocklist_widget:
@@ -359,9 +378,12 @@ class AdminView(BaseView):
         for item in self._blocklist_widget.selectedItems():
             row = self._blocklist_widget.row(item)
             self._blocklist_widget.takeItem(row)
+        self._schedule_blocklist_save()
 
     def _persist_blocklist(self) -> None:  # pragma: no cover - Qt binding
         if not self._blocklist_widget:
+            return
+        if self._loading:
             return
         entries = [self._blocklist_widget.item(i).text() for i in range(self._blocklist_widget.count())]
         path = self._blocklist_path()
@@ -373,6 +395,13 @@ class AdminView(BaseView):
             return
         if self._status_label:
             self._status_label.setText("Blocklist saved to blocklist.json.")
+
+    def _schedule_blocklist_save(self) -> None:  # pragma: no cover - Qt binding
+        if self._loading:
+            return
+        if self._status_label:
+            self._status_label.setText("Saving blocklist…")
+        self._blocklist_timer.start()
 
     # ------------------------------------------------------------------
     # Live manager helpers

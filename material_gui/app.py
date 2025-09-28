@@ -51,8 +51,6 @@ from material_gui.views import (
     ToolsView,
 )
 from material_gui.views.onboarding import FirstRunSetupDialog
-from services import collect_system_diagnostics, collect_usage_analytics
-from services.system_diagnostics import DiagnosticsReport
 from version_info import APP_VERSION
 
 
@@ -122,12 +120,10 @@ class MaterialConfigWindow(QMainWindow):
 
         self.setCentralWidget(central)
         self._apply_material_theme()
-
-        self._run_diagnostics()  # prime diagnostics on launch
         self._set_status("Ready")
         QTimer.singleShot(250, self._maybe_run_auto_update)  # pragma: no cover - startup hook
         QTimer.singleShot(400, self._maybe_show_first_run_tutorial)  # pragma: no cover - startup hook
-        QTimer.singleShot(750, self._run_usage_analytics)  # pragma: no cover - startup hook
+        QTimer.singleShot(750, self._refresh_runtime_status)  # pragma: no cover - startup hook
 
     # ------------------------------------------------------------------
     # Qt construction helpers
@@ -211,20 +207,6 @@ class MaterialConfigWindow(QMainWindow):
         )
         quick_layout.addWidget(self.config_button)
 
-        self.logs_button = self._create_icon_button(
-            self.style().standardIcon(QStyle.SP_FileDialogDetailedView),
-            "View latest logs",
-            self._open_logs_dir,
-        )
-        quick_layout.addWidget(self.logs_button)
-
-        self.docs_button = self._create_icon_button(
-            self.style().standardIcon(QStyle.SP_DialogHelpButton),
-            "Open help resources",
-            self._open_help_docs,
-        )
-        quick_layout.addWidget(self.docs_button)
-
         bar_layout.addWidget(quick_actions)
 
         bar_layout.addSpacing(12)
@@ -300,8 +282,6 @@ class MaterialConfigWindow(QMainWindow):
         self.bot_control_view = BotControlView(
             self._app_base_dir,
             self._repository,
-            diagnostics_callback=self._run_diagnostics,
-            analytics_callback=self._run_usage_analytics,
         )
         self.bot_control_view.runtime_state_changed.connect(self._handle_runtime_state_changed)  # pragma: no cover - Qt binding
 
@@ -508,7 +488,7 @@ class MaterialConfigWindow(QMainWindow):
                     entry.on_selected()
             current_item = self.nav_list.currentItem()
             if current_item and current_item.data(Qt.UserRole) == "bot-control":
-                self._run_usage_analytics()
+                self._refresh_runtime_status()
             self._set_status("Configuration refreshed")
 
         self._run_async(task, on_success, self._handle_task_error)
@@ -520,7 +500,7 @@ class MaterialConfigWindow(QMainWindow):
             if entry.on_selected is not None:
                 entry.on_selected()
             if entry.slug == "bot-control":
-                self._run_usage_analytics()
+                self._refresh_runtime_status()
 
     def _handle_runtime_state_changed(self, running: bool) -> None:  # pragma: no cover - Qt binding
         if hasattr(self, "dashboard_view") and self.dashboard_view is not None:
@@ -535,6 +515,12 @@ class MaterialConfigWindow(QMainWindow):
         label = current_chip.text().strip().lower()
         if label.startswith(("bot running", "launching bot", "bot idle", "ready")):
             self._set_status("Bot idle.")
+
+    def _refresh_runtime_status(self) -> None:
+        running = False
+        if hasattr(self, "bot_control_view") and self.bot_control_view is not None:
+            running = self.bot_control_view.is_running()
+        self._handle_runtime_state_changed(running)
 
     def _handle_update(self) -> None:  # pragma: no cover - Qt binding
         self._begin_update(status_message="Checking for updates…", initiated_by_auto=False)
@@ -590,40 +576,6 @@ class MaterialConfigWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Backend integrations
     # ------------------------------------------------------------------
-    def _run_diagnostics(self) -> None:  # pragma: no cover - Qt binding
-        self.bot_control_view.show_diagnostics_loading()
-        self._set_status("Collecting diagnostics…")
-
-        def task() -> DiagnosticsReport:
-            return collect_system_diagnostics(
-                app_base_dir=str(self._app_base_dir),
-                settings=self._repository.settings,
-            )
-
-        def on_success(report: DiagnosticsReport) -> None:
-            self.bot_control_view.update_diagnostics(report)
-            self._set_status("Diagnostics updated")
-
-        self._run_async(task, on_success, self._handle_task_error)
-
-    def _run_usage_analytics(self) -> None:
-        self.bot_control_view.show_analytics_loading()
-        self._set_status("Collecting network analytics…")
-
-        def task():
-            return collect_usage_analytics(log_dir=self._app_base_dir / "logs")
-
-        def on_success(report) -> None:
-            self.bot_control_view.update_analytics(report)
-            self._set_status("Network analytics updated")
-
-        def on_error(exc: Exception) -> None:
-            message = str(exc)
-            self._show_error("Analytics Failed", message)
-            self._set_status("Action failed")
-
-        self._run_async(task, on_success, on_error)
-
     # ------------------------------------------------------------------
     # Utility helpers
     # ------------------------------------------------------------------
@@ -677,9 +629,6 @@ class MaterialConfigWindow(QMainWindow):
     def _open_config_dir(self) -> None:  # pragma: no cover - Qt binding
         self._open_folder(self._app_base_dir, label="app directory")
 
-    def _open_logs_dir(self) -> None:  # pragma: no cover - Qt binding
-        self._open_folder(self._app_base_dir / "logs", label="logs")
-
     def _open_folder(self, path: Path, *, label: str) -> None:
         try:
             path.mkdir(parents=True, exist_ok=True)
@@ -699,14 +648,6 @@ class MaterialConfigWindow(QMainWindow):
         except Exception as exc:
             self._show_error("Open Folder Failed", str(exc))
             self._set_status("Action failed")
-
-    def _open_help_docs(self) -> None:  # pragma: no cover - Qt binding
-        docs_dir = self._app_base_dir / "docs"
-        if docs_dir.exists():
-            self._open_folder(docs_dir, label="help resources")
-        else:
-            self._open_folder(self._app_base_dir, label="app directory")
-        self._set_status("Help resources opened")
 
     def _handle_update_log(self, channel: str, message: str) -> None:
         # Surface important update messages in the status chip while still logging to stdout.
