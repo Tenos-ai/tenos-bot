@@ -72,35 +72,40 @@ This update introduces a more organized and powerful configuration experience, a
 
 ## First-Time Setup
 
-**(IF YOU DO NOT HAVE A DISCORD BOT ACCOUNT ALREADY CREATED, OPEN "HOW TO DISCORD BOT.txt" AND FOLLOW INSTRUCTIONS)**
+**(IF YOU DO NOT HAVE A DISCORD BOT ACCOUNT ALREADY CREATED, OPEN `docs/HOW TO DISCORD BOT.txt` AND FOLLOW INSTRUCTIONS)**
 
 Make sure you already have ComfyUI installed. If you need ComfyUI still, you can download it [`HERE`](https://www.comfy.org/download).
 
 ### Portable Windows build (GUI executable)
 
-If running `TENOSAI-BOT.bat` does not launch the configurator, you can
-ship a self-contained Windows executable for the Material GUI instead:
+If running `TENOSAI-BOT.bat` does not launch the configurator, use the
+automated Windows installer which provisions dependencies, builds the
+executable, and launches the Material GUI in one pass:
 
-1. Install [PyInstaller](https://pyinstaller.org/en/stable/) inside your
-   Python environment:
+```powershell
+python scripts/windows/install_and_launch.py
+```
 
-   ```bash
-   pip install pyinstaller
-   ```
+The installer performs these steps:
 
-2. From the repository root run the build helper:
+1. Creates `.venv` (if necessary) and installs the Python dependency stack
+   from `requirements/`.
+2. Invokes the PyInstaller helper to build a portable bundle, copying the
+   required `python*.dll` and `vcruntime140.dll` so the executable starts on
+   clean systems.
+3. Drops a shortcut named `TenosAIConfigurator.lnk` in the repository root
+   that points to `dist/TenosAIConfigurator/TenosAIConfigurator.exe`.
+4. Launches the freshly built executable.
 
-   ```bash
-   python packaging/build_configurator.py --zip
-   ```
+If you prefer to rebuild manually, the helper can still be invoked directly:
 
-   The script generates `dist/TenosAIConfigurator/TenosAIConfigurator.exe`
-   alongside a ready-to-distribute `dist/TenosAIConfigurator-portable.zip`
-   archive containing the executable and default configuration files.
+```bash
+python tools/build_configurator.py --zip
+```
 
-3. Share `TenosAIConfigurator.exe` (or the `.zip` archive) with users.
-   Launching the executable replaces the batch file workflow and
-   automatically loads the bundled defaults.
+The script generates `dist/TenosAIConfigurator/TenosAIConfigurator.exe`
+alongside a ready-to-distribute `dist/TenosAIConfigurator-portable.zip`
+archive containing the executable and default configuration files.
 
 ### Python Dependencies
 

@@ -1,62 +1,48 @@
 @echo off
 setlocal
 
-REM Change directory to the script's own directory to ensure paths are correct
+REM Ensure we are running from the repository root
 cd /d %~dp0
 
-REM Locate a Python interpreter (prefer the launcher when available).
+REM Locate a Python 3 interpreter
 set "PY_CMD="
-py -3 --version >nul 2>&1 && set "PY_CMD=py -3"
+where python >nul 2>&1 && set "PY_CMD=python"
 if not defined PY_CMD (
-    python --version >nul 2>&1 && set "PY_CMD=python"
+    where py >nul 2>&1 && set "PY_CMD=py -3"
 )
 
 if not defined PY_CMD (
     echo ERROR: Python 3.10 or newer is required but was not found on PATH.
-    echo Install Python from https://www.python.org/downloads/ and try again.
+    echo Install Python from https://www.python.org/downloads/ and re-run this launcher.
     pause
     exit /b 1
 )
 
-echo Checking for virtual environment...
-if not exist "venv\Scripts\activate.bat" (
-    echo Virtual environment not found. Creating one now...
-    %PY_CMD% -m venv venv
-    if errorlevel 1 (
-        echo ERROR: Failed to create the virtual environment.
-        echo Please make sure Python is installed correctly and added to your system's PATH.
-        pause
-        exit /b 1
-    )
-    echo Virtual environment created successfully.
-)
-
-echo.
-echo Activating virtual environment...
-call "venv\Scripts\activate"
-if errorlevel 1 (
-    echo ERROR: Failed to activate the virtual environment even after creation/check.
+set "INSTALLER=scripts\windows\install_and_launch.py"
+if not exist "%INSTALLER%" (
+    echo ERROR: Unable to locate %INSTALLER%.
+    echo Please verify the repository was cloned completely.
     pause
     exit /b 1
 )
 
-echo.
-echo Checking and installing required Python libraries...
-python check_libraries.py
-if errorlevel 1 (
-    echo WARNING: An error occurred while checking or installing libraries.
-    echo The configurator will still attempt to start, but it may not function correctly.
-    echo Please review any error messages above.
+echo Running Tenos.ai provisioning helper...
+if /I "%PY_CMD%"=="py -3" (
+    py -3 "%INSTALLER%" %*
+) else (
+    %PY_CMD% "%INSTALLER%" %*
+)
+set "EXIT_CODE=%ERRORLEVEL%"
+
+if not "%EXIT_CODE%"=="0" (
+    echo.
+    echo The installer reported an error (exit code %EXIT_CODE%). Review the log above for details.
     pause
+    exit /b %EXIT_CODE%
 )
 
 echo.
-echo Starting the configurator...
-set "PYTHONW=venv\Scripts\pythonw.exe"
-if not exist "%PYTHONW%" set "PYTHONW=venv\Scripts\python.exe"
-start "TenosAIConfigEditor" "%PYTHONW%" config_editor_main.py
-
-echo.
-echo Configurator launch initiated. If it did not appear, run this batch file
-echo from a command prompt (cmd.exe) and choose the "python config_editor_main.py"
-echo line suggested above to review any startup errors.
+echo Tenos.ai Material configurator should now be running.
+echo A shortcut named TenosAIConfigurator.lnk will appear here after a successful build.
+pause
+endlocal
