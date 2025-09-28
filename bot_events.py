@@ -6,6 +6,7 @@ import asyncio # For validate_models_against_comfyui
 import textwrap # For message construction
 import os
 import json
+from pathlib import Path
 
 from bot_config_loader import print_startup_info, ADMIN_ID, COMFYUI_HOST, COMFYUI_PORT, print_output_dirs
 from bot_core_logic import check_output_folders, process_cancel_request, execute_generation_logic
@@ -78,11 +79,45 @@ def update_models_on_startup():
     try: scan_clip_files('config.json', 'cliplist.json'); print("CLIP list updated.")
     except Exception as e: print(f"ERROR updating CLIP list: {e}"); traceback.print_exc()
 
+async def _apply_bot_profile_preferences(bot) -> None:
+    """Update the bot's display name and avatar if configured."""
+
+    settings = load_settings()
+    updates = {}
+
+    display_name = settings.get("discord_display_name")
+    if isinstance(display_name, str):
+        display_name = display_name.strip()
+        if display_name and getattr(bot.user, "name", "") != display_name:
+            updates["username"] = display_name
+
+    avatar_path = settings.get("discord_avatar_path")
+    if isinstance(avatar_path, str):
+        avatar_path = avatar_path.strip()
+        if avatar_path:
+            path = Path(avatar_path)
+            if path.is_file():
+                try:
+                    updates["avatar"] = path.read_bytes()
+                except OSError as exc:
+                    print(f"Warning: Unable to read avatar file {path}: {exc}")
+
+    if not updates:
+        return
+
+    try:
+        await bot.user.edit(**updates)
+        print("Bot profile settings updated from configurator preferences.")
+    except discord.HTTPException as exc:
+        print(f"Warning: Failed to update bot profile: {exc}")
+
+
 async def on_bot_ready(bot):
     print(f'\n{bot.user.name}#{bot.user.discriminator} connected to Discord!')
     print(f"User ID: {bot.user.id}"); print("-" * 20)
     print_startup_info(); styles_config_on_ready_unused = load_styles_config(); print(f"Styles Loaded: {len(styles_config_on_ready_unused)}")
     print_output_dirs(); update_models_on_startup(); await validate_models_against_comfyui(bot)
+    await _apply_bot_profile_preferences(bot)
     try:
         print("Registering/syncing slash commands..."); synced = await bot.tree.sync()
         print(f"Successfully synced {len(synced)} slash commands globally.")

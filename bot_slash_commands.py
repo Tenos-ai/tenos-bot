@@ -1,4 +1,6 @@
 # --- START OF FILE bot_slash_commands.py ---
+from __future__ import annotations
+
 import discord
 from discord import app_commands
 import textwrap
@@ -13,9 +15,9 @@ from bot_config_loader import ADMIN_ID, ALLOWED_USERS, COMFYUI_HOST, COMFYUI_POR
 from bot_commands import handle_gen_command
 from bot_settings_ui import MainSettingsButtonView
 from utils.message_utils import send_long_message, safe_interaction_response
-from settings_manager import load_settings, load_styles_config
+from settings_manager import load_settings, load_styles_config, resolve_model_for_type
 from comfyui_api import get_available_comfyui_models
-from bot_core_logic import process_kontext_edit_request
+from bot_core_logic import process_image_edit_request
 from queue_manager import queue_manager
 
 _bot_instance_slash = None
@@ -51,13 +53,20 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
         await handle_gen_command(interaction, prompt)
 
 
-    @tree.command(name="edit", description="Edit image(s) with an instruction using FLUX Kontext. Add --ar, --steps, --g, --mp.")
+    @tree.command(name="edit", description="Edit image(s) with Kontext or Qwen Image Edit. Add --ar/--steps/--g/--mp/--denoise.")
     @app_commands.describe(
         instruction="The command for editing the image (e.g., 'make the sky blue').",
         image1="The primary image to edit.",
         image2="(Optional) A second image for stitching/editing.",
         image3="(Optional) A third image for stitching/editing.",
-        image4="(Optional) A fourth image for stitching/editing."
+        image4="(Optional) A fourth image for stitching/editing.",
+        engine="Optionally force a specific edit engine (Kontext or Qwen).",
+    )
+    @app_commands.choices(
+        engine=[
+            app_commands.Choice(name="Kontext (Flux)", value="kontext"),
+            app_commands.Choice(name="Qwen Image Edit", value="qwen"),
+        ]
     )
     async def edit(
         interaction: discord.Interaction,
@@ -65,14 +74,15 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
         image1: discord.Attachment,
         image2: discord.Attachment = None,
         image3: discord.Attachment = None,
-        image4: discord.Attachment = None
+        image4: discord.Attachment = None,
+        engine: app_commands.Choice[str] | None = None,
     ):
         if not has_permission(interaction.user, "can_gen"):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=False, thinking=True)
-        
+
         image_urls = [att.url for att in [image1, image2, image3, image4] if att is not None]
 
         for att in [image1, image2, image3, image4]:
@@ -80,12 +90,15 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
                 await interaction.followup.send(f"Error: File '{att.filename}' is not a valid image. Please only upload images.", ephemeral=True)
                 return
 
-        await process_kontext_edit_request(
+        engine_hint = engine.value if engine else None
+
+        await process_image_edit_request(
             context_user=interaction.user,
             context_channel=interaction.channel,
             instruction=instruction,
             image_urls=image_urls,
-            initial_interaction_obj=interaction
+            initial_interaction_obj=interaction,
+            engine_hint=engine_hint,
         )
 
 
@@ -106,34 +119,42 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
             await interaction.followup.send("No custom styles are currently configured.", ephemeral=True)
             return
             
-        styles_with_types.sort(key=lambda s: (not s['favorite'], s['type'], s['name'].lower()))
+        grouped_styles = {
+            "Flux Styles": [],
+            "SDXL Styles": [],
+            "Qwen Styles": [],
+            "Shared Styles": [],
+        }
 
-        msg = "**Available styles (`--style name`):**\n"
-        
-        max_len = 0
-        for s in styles_with_types:
-            item_len = len(s['name']) + len(s['type']) + 4 
-            if s['favorite']:
-                item_len += 2 
-            if item_len > max_len:
-                max_len = item_len
-        
-        cols = max(1, 80 // (max_len + 4)) 
-        col_items = (len(styles_with_types) + cols - 1) // cols
-        
-        lines = []
-        for i in range(col_items):
-            line_parts = []
-            for j in range(cols):
-                idx = i + j * col_items
-                if idx < len(styles_with_types):
-                    style = styles_with_types[idx]
-                    prefix = "⭐ " if style['favorite'] else ""
-                    formatted_name = f"`{prefix}[{style['type']}] {style['name']}`"
-                    line_parts.append(formatted_name.ljust(max_len + 4 + len(prefix)))
-            lines.append(" ".join(line_parts).strip())
-            
-        msg += "\n".join(lines)
+        for style in styles_with_types:
+            style_type = style['type']
+            if style_type == 'FLUX':
+                grouped_styles['Flux Styles'].append(style)
+            elif style_type == 'SDXL':
+                grouped_styles['SDXL Styles'].append(style)
+            elif style_type == 'QWEN':
+                grouped_styles['Qwen Styles'].append(style)
+            else:
+                grouped_styles['Shared Styles'].append(style)
+
+        def render_group(title: str, entries: list[dict[str, object]]) -> str:
+            if not entries:
+                return f"**{title}:**\n- None configured"
+            sorted_entries = sorted(entries, key=lambda item: (not item['favorite'], str(item['name']).lower()))
+            lines_group = [f"**{title}:**"]
+            for entry in sorted_entries:
+                prefix = "⭐ " if entry.get('favorite') else ""
+                lines_group.append(f"- {prefix}`{entry['name']}`")
+            return "\n".join(lines_group)
+
+        msg_sections = ["**Available styles (`--style name`):**"]
+        for section_title in ("Flux Styles", "SDXL Styles", "Qwen Styles", "Shared Styles"):
+            rendered = render_group(section_title, grouped_styles[section_title])
+            if rendered:
+                msg_sections.append("")
+                msg_sections.append(rendered)
+
+        msg = "\n".join(msg_sections)
         
         dm_sent = await send_long_message(interaction.user, msg)
         if dm_sent: 
@@ -144,11 +165,82 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
                     msg = msg[:1990] + "\n... (list truncated)"
                 if interaction.channel:
                     await interaction.channel.send(msg)
-                    await interaction.followup.send("(Could not send via DM, styles list shown in channel instead)", ephemeral=True)
-                else: 
-                    await interaction.followup.send("Could not send styles list (channel unavailable).", ephemeral=True)
+                    await interaction.followup.send(
+                        "(Could not send via DM, styles list shown in channel instead)",
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.followup.send(
+                        "Could not send styles list (channel unavailable).",
+                        ephemeral=True,
+                    )
             except discord.HTTPException:
-                await interaction.followup.send("Could not send styles list (message too long for DM/channel).", ephemeral=True)
+                await interaction.followup.send(
+                    "Could not send styles list (message too long for DM/channel).",
+                    ephemeral=True,
+                )
+
+    @tree.command(name="defaults", description="Show the current Flux, SDXL, and Qwen defaults for slash commands.")
+    async def defaults(interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        settings_snapshot = load_settings()
+
+        flux_model = resolve_model_for_type(settings_snapshot, "flux") or "Not configured"
+        sdxl_model = resolve_model_for_type(settings_snapshot, "sdxl") or "Not configured"
+        qwen_model = resolve_model_for_type(settings_snapshot, "qwen") or "Not configured"
+
+        def format_section(title: str, details: list[tuple[str, object]]) -> str:
+            lines_section = [f"**{title}:**"]
+            for label, value in details:
+                lines_section.append(f"- {label}: `{value}`")
+            return "\n".join(lines_section)
+
+        flux_details = [
+            ("Model", flux_model),
+            ("Steps", settings_snapshot.get('steps', '?')),
+            ("Guidance", settings_snapshot.get('default_guidance', '?')),
+            ("Default Style", settings_snapshot.get('default_style_flux', 'off')),
+        ]
+        sdxl_details = [
+            ("Model", sdxl_model),
+            ("Steps", settings_snapshot.get('sdxl_steps', '?')),
+            ("Guidance", settings_snapshot.get('default_guidance_sdxl', '?')),
+            ("Default Style", settings_snapshot.get('default_style_sdxl', 'off')),
+            ("Negative", settings_snapshot.get('default_sdxl_negative_prompt', '') or "(empty)"),
+        ]
+
+        qwen_details = [
+            ("Model", qwen_model),
+            ("Steps", settings_snapshot.get('sdxl_steps', '?')),
+            ("Guidance", settings_snapshot.get('default_guidance_sdxl', '?')),
+            ("Default Style", settings_snapshot.get('default_style_qwen', 'off')),
+            ("Negative", settings_snapshot.get('default_qwen_negative_prompt', '') or "(empty)"),
+            ("Edit Steps", settings_snapshot.get('qwen_edit_steps', '?')),
+            ("Edit Guidance", settings_snapshot.get('qwen_edit_guidance', '?')),
+            ("Edit Denoise", settings_snapshot.get('qwen_edit_denoise', '?')),
+        ]
+
+        general_details = [
+            ("Batch Size", settings_snapshot.get('default_batch_size', '?')),
+            ("Variation Batch", settings_snapshot.get('variation_batch_size', '?')),
+            ("MP Target", settings_snapshot.get('default_mp_size', '?')),
+            ("Upscale Factor", settings_snapshot.get('upscale_factor', '?')),
+        ]
+
+        sections = [
+            "**Current generation defaults:**",
+            format_section("Flux", flux_details),
+            "",
+            format_section("SDXL", sdxl_details),
+            "",
+            format_section("Qwen Image", qwen_details),
+            "",
+            format_section("General", general_details),
+            "",
+            "Use `--model flux`, `--model sdxl`, or `--model qwen` (shorthands: `--flux` / `--sdxl` / `--qwen`) on `/gen` to target a specific workflow without changing the saved default.",
+        ]
+
+        await interaction.followup.send("\n".join(sections), ephemeral=True)
 
     @tree.command(name="please", description="Request image generation (admin approval). See /help for options.")
     @app_commands.describe(prompt="Prompt text + optional parameters (--seed, --g, --g_sdxl, --ar, --mp, --img, --style, --r, --no)")
@@ -305,23 +397,25 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
             "`/edit [instruction] [images] [opts]` - Edit image(s) with a command. Supports `--ar`, `--steps`, `--g`, `--mp`.\n"
             "`/please [prompt] [opts]` - Request an image generation from the admin.\n"
             "`/styles` - View available style presets.\n"
+            "`/defaults` - See the current Flux/SDXL/Qwen defaults used by `/gen`.\n"
             "`/help` - Show this help message.\n\n"
             "**Action Buttons (on generated images):**\n"
             "`Upscale ⬆️` - Upscale an image for more detail.\n"
             "`Vary W 🤏` / `Vary S 💪` - Create a weak or strong variation of an image.\n"
             "`Rerun 🔄` - Rerun the original prompt with a new random seed.\n"
-            "`Edit ✏️` - Open a modal to perform a Kontext edit on the image(s).\n"
+            "`Edit ✏️` - Open a modal to perform an edit (Kontext multi-image or Qwen single-image).\n"
             "`Delete 🗑️` - Delete the image and its source file.\n\n"
             "**Optional Parameters (for /gen and /please):**\n"
             "`--seed [number]` - Use a specific seed.\n"
             "`--g [number]` - Set guidance strength for Flux models (e.g., 3.5).\n"
-            "`--g_sdxl [number]` - Set guidance for SDXL models (e.g., 7.0).\n"
+            "`--g_sdxl [number]` - Set guidance for SDXL or Qwen Image models (e.g., 7.0).\n"
             "`--ar [W:H]` - Set aspect ratio (e.g., 16:9, 1:1, 2:3).\n"
             "`--mp [megapixels]` - Set target megapixels (e.g., 1, 1.5, 4).\n"
             "`--r [number]` - Run the same prompt multiple times (1-10).\n"
             "`--style [name]` - Apply a style from `/styles`.\n"
+            "`--model [flux|sdxl|qwen]` - Override the configured default model for this run (shorthand: `--flux`, `--sdxl`, or `--qwen`).\n"
             "`--img [strength] [url]` - Img2Img. Strength is 0-100.\n"
-            "`--no \"[negative text]\"` - (SDXL only) Provide a negative prompt.\n\n"
+            "`--no \"[negative text]\"` - (SDXL/Qwen) Provide a negative prompt.\n\n"
             "**Reply Commands (reply to a bot message):**\n"
             "`--remove` - Admin/owner can remove a bot message.\n"
             "`--delete` - Admin/owner can delete job files and message.\n"
