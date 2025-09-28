@@ -5,18 +5,16 @@ from dataclasses import dataclass
 import os
 import subprocess
 import sys
-import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable, Optional
 
 from PySide6.QtCore import Qt, QTimer, QPoint, QEvent, QSize
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
     QFrame,
-    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -31,7 +29,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from comfyui_api import ConnectionRefusedError, queue_prompt as comfy_queue_prompt
 from controllers import UpdateCoordinator
 from material_gui.animations import AnimatedStackedWidget, StatusPulseAnimator
 from material_gui.repository import SettingsRepository
@@ -42,28 +39,19 @@ from material_gui.theme import (
     resolve_theme_variant,
 )
 from material_gui.views import (
-    ActivityLogView,
+    AdminView,
     AppearanceSettingsView,
-    DiscordSettingsView,
-    NetworkMonitorView,
-    OverviewView,
-    QwenSettingsView,
-    SystemStatusView,
-    WorkflowsView,
-    MainConfigView,
+    BotControlView,
     BotSettingsView,
-    LoraStylesView,
+    DashboardView,
     FavoritesView,
     LlmPromptsView,
-    BotControlView,
+    LoraStylesView,
+    MainConfigView,
     ToolsView,
 )
-from material_gui.views.onboarding import FirstRunTutorialDialog
-from services import (
-    WorkflowLibraryService,
-    collect_system_diagnostics,
-    collect_usage_analytics,
-)
+from material_gui.views.onboarding import FirstRunSetupDialog
+from services import collect_system_diagnostics, collect_usage_analytics
 from services.system_diagnostics import DiagnosticsReport
 from version_info import APP_VERSION
 
@@ -87,7 +75,6 @@ class MaterialConfigWindow(QMainWindow):
         self._app_base_dir = app_base_dir
         worker_count = max(2, min(4, os.cpu_count() or 2))
         self._executor = ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="config-worker")
-        self._workflow_service = WorkflowLibraryService()
         self._pending_status_message: Optional[str] = None
         self._coordinator = UpdateCoordinator(
             repo_owner="Tenos-ai",
@@ -109,26 +96,20 @@ class MaterialConfigWindow(QMainWindow):
         self._theme_custom_text = str(theme_preferences.get("custom_text", "#F1F5F9"))
         self._current_variant = None
 
-        self.setWindowTitle("Tenos.ai Configurator – Material Edition")
+        self.setWindowTitle("Tenos.ai Configurator")
         self.resize(1320, 860)
         self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.WindowMinMaxButtonsHint)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
 
         self._drag_active = False
         self._drag_offset = QPoint()
 
         central = QWidget()
         outer_layout = QVBoxLayout(central)
-        outer_layout.setContentsMargins(28, 28, 28, 28)
+        outer_layout.setContentsMargins(8, 8, 8, 8)
         outer_layout.setSpacing(0)
 
         self._surface = QFrame()
         self._surface.setObjectName("MaterialSurface")
-        surface_shadow = QGraphicsDropShadowEffect(self._surface)
-        surface_shadow.setBlurRadius(48)
-        surface_shadow.setColor(QColor(15, 23, 42, 140))
-        surface_shadow.setOffset(0, 18)
-        self._surface.setGraphicsEffect(surface_shadow)
 
         surface_layout = QVBoxLayout(self._surface)
         surface_layout.setContentsMargins(0, 0, 0, 0)
@@ -146,6 +127,7 @@ class MaterialConfigWindow(QMainWindow):
         self._set_status("Ready")
         QTimer.singleShot(250, self._maybe_run_auto_update)  # pragma: no cover - startup hook
         QTimer.singleShot(400, self._maybe_show_first_run_tutorial)  # pragma: no cover - startup hook
+        QTimer.singleShot(750, self._run_usage_analytics)  # pragma: no cover - startup hook
 
     # ------------------------------------------------------------------
     # Qt construction helpers
@@ -159,12 +141,34 @@ class MaterialConfigWindow(QMainWindow):
         bar_layout.setSpacing(18)
 
         title_container = QVBoxLayout()
-        title_container.setSpacing(2)
+        title_container.setSpacing(6)
+
+        title_row = QHBoxLayout()
+        title_row.setSpacing(12)
+        logo_label = QLabel()
+        logo_label.setObjectName("MaterialAppLogo")
+        logo_label.setFixedSize(36, 36)
+        logo_path = self._app_base_dir / "tenos-ai_icon.png"
+        if not logo_path.exists():
+            alt_logo = self._app_base_dir / "tenos-ai_icon.ico"
+            if alt_logo.exists():
+                logo_path = alt_logo
+        pixmap = QPixmap(str(logo_path)) if logo_path.exists() else QPixmap()
+        if not pixmap.isNull():
+            logo_label.setPixmap(pixmap.scaled(36, 36, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        else:
+            logo_label.setVisible(False)
+        title_row.addWidget(logo_label)
+
         title = QLabel("Tenos.ai Configurator")
         title.setObjectName("MaterialAppTitle")
-        subtitle = QLabel(f"Material Interface • v{APP_VERSION}")
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+
+        subtitle = QLabel("Unified control center for the Tenos.ai bot")
         subtitle.setObjectName("MaterialSubtitle")
-        title_container.addWidget(title)
+
+        title_container.addLayout(title_row)
         title_container.addWidget(subtitle)
         bar_layout.addLayout(title_container)
 
@@ -193,20 +197,6 @@ class MaterialConfigWindow(QMainWindow):
         )
         quick_layout.addWidget(self.refresh_button)
 
-        self.update_button = self._create_icon_button(
-            self.style().standardIcon(QStyle.SP_ArrowUp),
-            "Check for Tenos.ai bot updates",
-            self._handle_update,
-        )
-        quick_layout.addWidget(self.update_button)
-
-        self.diagnostics_button = self._create_icon_button(
-            self.style().standardIcon(QStyle.SP_MessageBoxInformation),
-            "Run diagnostics",
-            self._run_diagnostics,
-        )
-        quick_layout.addWidget(self.diagnostics_button)
-
         self.outputs_button = self._create_icon_button(
             self.style().standardIcon(QStyle.SP_DirOpenIcon),
             "Open generation outputs",
@@ -230,8 +220,8 @@ class MaterialConfigWindow(QMainWindow):
 
         self.docs_button = self._create_icon_button(
             self.style().standardIcon(QStyle.SP_DialogHelpButton),
-            "Open Qwen workflow guide",
-            self._open_qwen_docs,
+            "Open help resources",
+            self._open_help_docs,
         )
         quick_layout.addWidget(self.docs_button)
 
@@ -295,9 +285,6 @@ class MaterialConfigWindow(QMainWindow):
         self.theme_toggle.setCursor(Qt.PointingHandCursor)
         footer_layout.addWidget(self.theme_toggle)
 
-        version_label = QLabel(f"v{APP_VERSION}")
-        version_label.setObjectName("NavVersion")
-        footer_layout.addWidget(version_label)
         footer_layout.addStretch(1)
 
         nav_layout.addWidget(nav_footer)
@@ -310,64 +297,67 @@ class MaterialConfigWindow(QMainWindow):
         parent_layout.addLayout(body)
 
         # Instantiate views
-        self.overview_view = OverviewView(self._repository)
-        self.discord_view = DiscordSettingsView(self._repository)
+        self.bot_control_view = BotControlView(
+            self._app_base_dir,
+            self._repository,
+            diagnostics_callback=self._run_diagnostics,
+            analytics_callback=self._run_usage_analytics,
+        )
+        self.bot_control_view.runtime_state_changed.connect(self._handle_runtime_state_changed)  # pragma: no cover - Qt binding
+
+        self.dashboard_view = DashboardView(
+            self._repository,
+            app_base_dir=self._app_base_dir,
+            on_open_outputs=self._open_outputs,
+            status_callback=self._set_status,
+            start_callback=self.bot_control_view.start_runtime,
+            stop_callback=self.bot_control_view.stop_runtime,
+            running_state_provider=self.bot_control_view.is_running,
+        )
+        self.admin_view = AdminView(self._repository, self._app_base_dir)
+        self.main_config_view = MainConfigView(self._repository, self._app_base_dir)
         self.appearance_view = AppearanceSettingsView(
             self._repository,
             on_palette_change=self._handle_theme_palette_update,
             on_mode_change=self._handle_theme_mode_update,
         )
-        self.qwen_view = QwenSettingsView(self._repository)
-        self.system_view = SystemStatusView()
-        self.activity_view = ActivityLogView(self._app_base_dir / "update_log.txt")
-        self.analytics_view = NetworkMonitorView()
-        self.workflows_view = WorkflowsView(
-            service=self._workflow_service,
-            repository=self._repository,
-            app_base_dir=self._app_base_dir,
-            queue_callback=self._queue_workflow,
-            export_callback=self._export_workflow,
-            export_all_callback=self._export_all_workflows,
-        )
-        self.main_config_view = MainConfigView(self._repository, self._app_base_dir)
         self.bot_settings_view = BotSettingsView(self._repository)
         self.lora_styles_view = LoraStylesView()
         self.favorites_view = FavoritesView()
         self.llm_prompts_view = LlmPromptsView()
-        self.bot_control_view = BotControlView(self._app_base_dir)
         self.tools_view = ToolsView(self._repository)
 
-
         icon_map = {
-            "overview": QStyle.SP_ComputerIcon,
+            "dashboard": QStyle.SP_DesktopIcon,
             "main-config": QStyle.SP_FileIcon,
+            "appearance": QStyle.SP_DialogOpenButton,
             "bot-settings": QStyle.SP_DialogApplyButton,
             "lora-styles": QStyle.SP_FileDialogListView,
             "favorites": QStyle.SP_DialogYesButton,
             "llm-prompts": QStyle.SP_FileDialogContentsView,
-            "qwen": QStyle.SP_DialogOpenButton,
-            "discord": QStyle.SP_DialogOkButton,
-            "appearance": QStyle.SP_DialogResetButton,
-            "system": QStyle.SP_DesktopIcon,
-            "activity": QStyle.SP_FileDialogDetailedView,
-            "admin": QStyle.SP_BrowserStop,
-            "workflows": QStyle.SP_DialogSaveButton,
-            "tools": QStyle.SP_TrashIcon,
+            "tools": QStyle.SP_DriveHDIcon,
+            "admin": QStyle.SP_ComputerIcon,
             "bot-control": QStyle.SP_MediaPlay,
         }
 
         self._nav_entries = [
             NavigationEntry(
-                "Overview",
-                "overview",
-                self.overview_view,
-                lambda: self.overview_view.refresh(self._repository),
+                "Dashboard",
+                "dashboard",
+                self.dashboard_view,
+                lambda: self.dashboard_view.refresh(self._repository),
             ),
             NavigationEntry(
                 "Main Config",
                 "main-config",
                 self.main_config_view,
                 lambda: self.main_config_view.refresh(self._repository),
+            ),
+            NavigationEntry(
+                "Appearance",
+                "appearance",
+                self.appearance_view,
+                lambda: self.appearance_view.refresh(self._repository),
             ),
             NavigationEntry(
                 "Bot Settings",
@@ -394,42 +384,16 @@ class MaterialConfigWindow(QMainWindow):
                 lambda: self.llm_prompts_view.refresh(self._repository),
             ),
             NavigationEntry(
-                "Qwen",
-                "qwen",
-                self.qwen_view,
-                lambda: self.qwen_view.refresh(self._repository),
-            ),
-            NavigationEntry(
-                "Discord",
-                "discord",
-                self.discord_view,
-                lambda: self.discord_view.refresh(self._repository),
-            ),
-            NavigationEntry(
-                "Appearance",
-                "appearance",
-                self.appearance_view,
-                lambda: self.appearance_view.refresh(self._repository),
-            ),
-            NavigationEntry("System", "system", self.system_view, None),
-            NavigationEntry(
-                "Activity",
-                "activity",
-                self.activity_view,
-                self.activity_view.refresh,
-            ),
-            NavigationEntry("Admin", "admin", self.analytics_view, None),
-            NavigationEntry(
-                "Workflows",
-                "workflows",
-                self.workflows_view,
-                lambda: self.workflows_view.refresh(self._repository),
-            ),
-            NavigationEntry(
                 "Tools",
                 "tools",
                 self.tools_view,
                 lambda: self.tools_view.refresh(self._repository),
+            ),
+            NavigationEntry(
+                "Admin",
+                "admin",
+                self.admin_view,
+                lambda: self.admin_view.refresh(self._repository),
             ),
             NavigationEntry(
                 "Bot Control",
@@ -450,6 +414,8 @@ class MaterialConfigWindow(QMainWindow):
 
         self.nav_list.currentRowChanged.connect(self._handle_nav_change)  # pragma: no cover - Qt binding
         self.nav_list.setCurrentRow(0)
+        if self.bot_control_view.is_running():
+            self._handle_runtime_state_changed(True)
 
         self._update_maximize_button_icon()
 
@@ -541,7 +507,7 @@ class MaterialConfigWindow(QMainWindow):
                 if entry.on_selected is not None:
                     entry.on_selected()
             current_item = self.nav_list.currentItem()
-            if current_item and current_item.data(Qt.UserRole) == "admin":
+            if current_item and current_item.data(Qt.UserRole) == "bot-control":
                 self._run_usage_analytics()
             self._set_status("Configuration refreshed")
 
@@ -553,8 +519,22 @@ class MaterialConfigWindow(QMainWindow):
             entry = self._nav_entries[index]
             if entry.on_selected is not None:
                 entry.on_selected()
-            if entry.slug == "admin":
+            if entry.slug == "bot-control":
                 self._run_usage_analytics()
+
+    def _handle_runtime_state_changed(self, running: bool) -> None:  # pragma: no cover - Qt binding
+        if hasattr(self, "dashboard_view") and self.dashboard_view is not None:
+            self.dashboard_view.set_runtime_state(running)
+        if running:
+            self._set_status("Bot running.")
+            return
+        current_chip = getattr(self, "status_chip", None)
+        if current_chip is None:
+            self._set_status("Bot idle.")
+            return
+        label = current_chip.text().strip().lower()
+        if label.startswith(("bot running", "launching bot", "bot idle", "ready")):
+            self._set_status("Bot idle.")
 
     def _handle_update(self) -> None:  # pragma: no cover - Qt binding
         self._begin_update(status_message="Checking for updates…", initiated_by_auto=False)
@@ -563,7 +543,7 @@ class MaterialConfigWindow(QMainWindow):
         if self._repository.has_completed_onboarding():
             return
 
-        dialog = FirstRunTutorialDialog(self)
+        dialog = FirstRunSetupDialog(self._repository, self._app_base_dir, parent=self)
         dialog.exec()
         self._repository.mark_onboarding_completed()
 
@@ -611,147 +591,35 @@ class MaterialConfigWindow(QMainWindow):
     # Backend integrations
     # ------------------------------------------------------------------
     def _run_diagnostics(self) -> None:  # pragma: no cover - Qt binding
-        self.system_view.show_loading()
+        self.bot_control_view.show_diagnostics_loading()
         self._set_status("Collecting diagnostics…")
 
         def task() -> DiagnosticsReport:
             return collect_system_diagnostics(
                 app_base_dir=str(self._app_base_dir),
                 settings=self._repository.settings,
-                workflow_service=self._workflow_service,
             )
 
         def on_success(report: DiagnosticsReport) -> None:
-            self.system_view.show_report(report)
+            self.bot_control_view.update_diagnostics(report)
             self._set_status("Diagnostics updated")
 
         self._run_async(task, on_success, self._handle_task_error)
 
-    def _queue_workflow(self, slug: str) -> None:
-        descriptor = self._workflow_service.get_workflow(slug)
-        if descriptor is None:
-            self.workflows_view.set_status("Select a workflow to queue.")
-            return
-
-        self.workflows_view.set_status("Queueing workflow in ComfyUI…")
-        self._set_status("Queueing curated workflow…")
-
-        def task() -> Optional[str]:
-            return comfy_queue_prompt(descriptor.build_template())
-
-        def on_success(prompt_id: Optional[str]) -> None:
-            if prompt_id:
-                self.workflows_view.set_status(f"Workflow queued (Prompt ID: {prompt_id})")
-                self._set_status(f"Workflow queued – prompt {prompt_id}")
-            else:
-                self.workflows_view.set_status("Workflow queued, awaiting ComfyUI response…")
-                self._set_status("Workflow queued")
-
-        def on_error(exc: Exception) -> None:
-            if isinstance(exc, ConnectionRefusedError):
-                message = "Unable to reach ComfyUI. Ensure it is running and the API port is correct."
-            else:
-                message = str(exc)
-            self.workflows_view.set_status(f"Queue failed: {message}")
-            self._show_error("Queue Failed", message)
-            self._set_status("Action failed")
-
-        self._run_async(task, on_success, on_error)
-
     def _run_usage_analytics(self) -> None:
-        self.analytics_view.show_loading()
+        self.bot_control_view.show_analytics_loading()
         self._set_status("Collecting network analytics…")
 
         def task():
             return collect_usage_analytics(log_dir=self._app_base_dir / "logs")
 
         def on_success(report) -> None:
-            self.analytics_view.show_report(report)
+            self.bot_control_view.update_analytics(report)
             self._set_status("Network analytics updated")
 
         def on_error(exc: Exception) -> None:
             message = str(exc)
-            self.analytics_view.show_error(message)
             self._show_error("Analytics Failed", message)
-            self._set_status("Action failed")
-
-        self._run_async(task, on_success, on_error)
-
-    def _export_workflow(self, slug: str) -> None:
-        descriptor = self._workflow_service.get_workflow(slug)
-        if descriptor is None:
-            self.workflows_view.set_status("Select a workflow to export.")
-            return
-
-        default_dir = self._app_base_dir / "exported_workflows"
-        default_dir.mkdir(exist_ok=True)
-        default_path = default_dir / f"{descriptor.slug}.json"
-
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export Workflow",
-            str(default_path),
-            "JSON Files (*.json)",
-        )
-        if not file_path:
-            self.workflows_view.set_status("Export cancelled.")
-            return
-
-        self.workflows_view.set_status("Exporting workflow…")
-        self._set_status("Exporting workflow…")
-
-        def task() -> str:
-            self._workflow_service.export_to_file(file_path, slug)
-            return file_path
-
-        def on_success(path: str) -> None:
-            self.workflows_view.set_status(f"Exported to {path}")
-            self._set_status("Workflow exported")
-
-        def on_error(exc: Exception) -> None:
-            message = str(exc)
-            self.workflows_view.set_status(f"Export failed: {message}")
-            self._show_error("Export Failed", message)
-            self._set_status("Action failed")
-
-        self._run_async(task, on_success, on_error)
-
-    def _export_all_workflows(self, group_key: str | None = None) -> None:
-        default_dir = self._app_base_dir / "exported_workflows"
-        default_dir.mkdir(exist_ok=True)
-
-        directory = QFileDialog.getExistingDirectory(
-            self,
-            "Export Workflow Library",
-            str(default_dir),
-        )
-        if not directory:
-            self.workflows_view.set_status("Bulk export cancelled.")
-            return
-
-        target_dir = Path(directory)
-        self.workflows_view.set_status("Exporting curated workflows…")
-        self._set_status("Exporting curated workflows…")
-
-        def task() -> int:
-            summary = self._workflow_service.export_all(str(target_dir), group_key=group_key)
-            return len(summary.written_files)
-
-        def on_success(count: int) -> None:
-            plural = "s" if count != 1 else ""
-            if group_key:
-                label = group_key.replace("_", " ").title()
-                self.workflows_view.set_status(
-                    f"Exported {count} {label} workflow{plural} to {target_dir}"
-                )
-            else:
-                self.workflows_view.set_status(f"Exported {count} workflow{plural} to {target_dir}")
-            self._set_status("Workflow library exported")
-
-        def on_error(exc: Exception) -> None:
-            message = str(exc)
-            self.workflows_view.set_status(f"Bulk export failed: {message}")
-            self._show_error("Export Failed", message)
             self._set_status("Action failed")
 
         self._run_async(task, on_success, on_error)
@@ -832,16 +700,20 @@ class MaterialConfigWindow(QMainWindow):
             self._show_error("Open Folder Failed", str(exc))
             self._set_status("Action failed")
 
-    def _open_qwen_docs(self) -> None:  # pragma: no cover - Qt binding
-        webbrowser.open("https://docs.comfy.org/tutorials/image/qwen/qwen-image", new=2)
-        self._set_status("Opened Qwen workflow guide")
+    def _open_help_docs(self) -> None:  # pragma: no cover - Qt binding
+        docs_dir = self._app_base_dir / "docs"
+        if docs_dir.exists():
+            self._open_folder(docs_dir, label="help resources")
+        else:
+            self._open_folder(self._app_base_dir, label="app directory")
+        self._set_status("Help resources opened")
 
     def _handle_update_log(self, channel: str, message: str) -> None:
         # Surface important update messages in the status chip while still logging to stdout.
         trimmed = message.strip()
         print(f"[{channel}] {trimmed}")
-        if hasattr(self, "activity_view") and self.activity_view is not None:
-            self.activity_view.append_entry(channel, trimmed)
+        if hasattr(self, "bot_control_view") and self.bot_control_view is not None:
+            self.bot_control_view.append_system_log(channel, trimmed)
         if channel in {"info", "worker"}:
             self._set_status(trimmed)
 
@@ -940,7 +812,6 @@ class MaterialConfigWindow(QMainWindow):
         self._theme_custom_text = custom_text
         self._apply_material_theme()
         self._persist_theme_preferences()
-        self._set_status("Theme palette updated")
 
     def _handle_theme_mode_update(self, mode: str) -> None:
         next_mode = "light" if mode.strip().lower() == "light" else "dark"
@@ -950,7 +821,6 @@ class MaterialConfigWindow(QMainWindow):
         self._theme_mode = next_mode
         self._apply_material_theme()
         self._persist_theme_preferences()
-        self._set_status(f"{next_mode.capitalize()} theme applied")
 
     def _toggle_theme(self, checked: bool) -> None:  # pragma: no cover - Qt binding
         self._handle_theme_mode_update("light" if checked else "dark")

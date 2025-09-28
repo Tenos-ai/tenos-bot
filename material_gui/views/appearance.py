@@ -3,13 +3,15 @@ from __future__ import annotations
 
 import re
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
+    QColorDialog,
     QComboBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
+    QFrame,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -20,6 +22,81 @@ from material_gui.theme import CUSTOM_PALETTE_KEY, PALETTES
 from material_gui.views.base import BaseView
 
 _HEX_PATTERN = re.compile(r"^#?[0-9A-Fa-f]{6}$")
+
+
+def _is_valid_hex(value: str) -> bool:
+    return bool(_HEX_PATTERN.fullmatch(value or ""))
+
+
+def _normalise_hex(value: str) -> str:
+    value = (value or "").strip()
+    if not value:
+        return value
+    if len(value) == 6 and not value.startswith("#"):
+        value = f"#{value}"
+    return value.upper()
+
+
+class _ColorPickerField(QWidget):
+    """Compact colour selector with swatch preview and dialog launcher."""
+
+    color_changed = Signal(str)
+
+    def __init__(self, *, initial: str) -> None:
+        super().__init__()
+        self._color = ""
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self._preview = QFrame()
+        self._preview.setFixedSize(28, 28)
+        self._preview.setFrameShape(QFrame.StyledPanel)
+        self._preview.setFrameShadow(QFrame.Sunken)
+        layout.addWidget(self._preview)
+
+        self._button = QPushButton("Select colour…")
+        self._button.clicked.connect(self._choose_color)  # pragma: no cover - Qt binding
+        layout.addWidget(self._button, stretch=1)
+
+        self.set_color(initial, emit=False)
+
+    def color(self) -> str:
+        return self._color
+
+    def set_color(self, value: str, *, emit: bool = False) -> None:
+        normalised = _normalise_hex(value)
+        if normalised and not _is_valid_hex(normalised):
+            return
+        if normalised == self._color:
+            return
+        self._color = normalised
+        self._update_visuals()
+        if emit:
+            self.color_changed.emit(self._color)
+
+    def _choose_color(self) -> None:  # pragma: no cover - Qt binding
+        current = QColor(self._color or "#2563EB")
+        color = QColorDialog.getColor(current, self, "Choose colour")
+        if not color.isValid():
+            return
+        self.set_color(color.name().upper(), emit=True)
+
+    def _update_visuals(self) -> None:
+        color = QColor(self._color or "#000000")
+        if not color.isValid():
+            color = QColor("#000000")
+        self._preview.setStyleSheet(
+            "QFrame {"
+            f"background-color: {color.name()};"
+            "border-radius: 6px;"
+            "border: 1px solid rgba(15, 23, 42, 0.35);"
+            "}"
+        )
+        label = self._color or "#000000"
+        self._button.setText(label)
+        self._button.setToolTip(f"Current colour: {label}")
 
 
 class AppearanceSettingsView(BaseView):
@@ -73,19 +150,19 @@ class AppearanceSettingsView(BaseView):
         custom_layout.setContentsMargins(0, 0, 0, 0)
         custom_layout.setSpacing(8)
         custom_label = QLabel(
-            "Custom palettes are guided to remain legible. Enter #RRGGBB colours."
+            "Custom palettes stay legible. Use the pickers or enter precise #RRGGBB values."
         )
         custom_label.setWordWrap(True)
         custom_layout.addWidget(custom_label)
 
         custom_form = QFormLayout()
         custom_form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.custom_primary_input = QLineEdit()
-        self.custom_surface_input = QLineEdit()
-        self.custom_text_input = QLineEdit()
-        custom_form.addRow("Accent", self.custom_primary_input)
-        custom_form.addRow("Surface", self.custom_surface_input)
-        custom_form.addRow("Text", self.custom_text_input)
+        self.custom_primary_picker = _ColorPickerField(initial="#2563EB")
+        self.custom_surface_picker = _ColorPickerField(initial="#0F172A")
+        self.custom_text_picker = _ColorPickerField(initial="#F1F5F9")
+        custom_form.addRow("Accent", self.custom_primary_picker)
+        custom_form.addRow("Surface", self.custom_surface_picker)
+        custom_form.addRow("Text", self.custom_text_picker)
         custom_layout.addLayout(custom_form)
         layout.addWidget(self.custom_widget)
 
@@ -106,17 +183,6 @@ class AppearanceSettingsView(BaseView):
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _is_valid_hex(self, value: str) -> bool:
-        return bool(_HEX_PATTERN.fullmatch(value or ""))
-
-    def _normalise_hex(self, value: str) -> str:
-        value = value.strip()
-        if not value:
-            return value
-        if len(value) == 6 and not value.startswith("#"):
-            value = f"#{value}"
-        return value.upper()
-
     def _update_custom_fields_visibility(self) -> None:
         is_custom = self.palette_combo.currentData() == CUSTOM_PALETTE_KEY
         self.custom_widget.setVisible(is_custom)
@@ -130,18 +196,18 @@ class AppearanceSettingsView(BaseView):
         mode_value = self.mode_combo.currentData()
         palette_key = self.palette_combo.currentData()
 
-        primary = self._normalise_hex(self.custom_primary_input.text())
-        surface = self._normalise_hex(self.custom_surface_input.text())
-        text_color = self._normalise_hex(self.custom_text_input.text())
+        primary = self.custom_primary_picker.color()
+        surface = self.custom_surface_picker.color()
+        text_color = self.custom_text_picker.color()
 
         if palette_key == CUSTOM_PALETTE_KEY:
-            if not self._is_valid_hex(primary):
+            if not _is_valid_hex(primary):
                 self.status_label.setText("Enter a valid hex colour for the accent.")
                 return
-            if not self._is_valid_hex(surface):
+            if not _is_valid_hex(surface):
                 self.status_label.setText("Enter a valid hex colour for the surface.")
                 return
-            if not self._is_valid_hex(text_color):
+            if not _is_valid_hex(text_color):
                 self.status_label.setText("Enter a valid hex colour for the text.")
                 return
         else:
@@ -188,9 +254,9 @@ class AppearanceSettingsView(BaseView):
         self.palette_combo.setCurrentIndex(max(0, palette_index))
         self.palette_combo.blockSignals(False)
 
-        self.custom_primary_input.setText(self._normalise_hex(primary))
-        self.custom_surface_input.setText(self._normalise_hex(surface))
-        self.custom_text_input.setText(self._normalise_hex(text_color))
+        self.custom_primary_picker.set_color(_normalise_hex(primary) or "#2563EB")
+        self.custom_surface_picker.set_color(_normalise_hex(surface) or "#0F172A")
+        self.custom_text_picker.set_color(_normalise_hex(text_color) or "#F1F5F9")
         self._update_custom_fields_visibility()
         self.status_label.setText("Adjust the appearance settings and click save to apply.")
 
