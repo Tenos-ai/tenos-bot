@@ -2,16 +2,19 @@ from prompt_templates import (
     QWEN_UPSCALE_HELPER_LATENT_NODE,
     QWEN_UPSCALE_LOAD_IMAGE_NODE,
 )
-from services.qwen_workflow_service import QwenWorkflowService
-from workflows.qwen_image_library import load_qwen_image_workflows
+from services.workflow_library_service import WorkflowLibraryService
+from workflows.workflow_library import load_workflow_catalogue
 from workflows.qwen_templates import qwen_upscale_template
 
 
 def test_workflow_descriptor_returns_fresh_templates():
-    workflows = load_qwen_image_workflows()
-    assert workflows, "Expected curated Qwen workflows to be present"
+    catalogue = load_workflow_catalogue()
+    assert catalogue, "Expected curated workflow catalogue to be present"
 
-    descriptor = workflows[0]
+    first_group = catalogue[0]
+    assert first_group.workflows, "Expected workflows within the first group"
+
+    descriptor = first_group.workflows[0]
 
     template_one = descriptor.build_template()
     template_two = descriptor.build_template()
@@ -40,8 +43,8 @@ def test_qwen_upscale_uses_standard_nodes():
     assert "url_or_path" in loader_node.get("inputs", {})
 
 
-def test_qwen_workflow_search_matches_titles_and_use_cases():
-    service = QwenWorkflowService()
+def test_workflow_search_matches_titles_and_use_cases():
+    service = WorkflowLibraryService()
 
     all_workflows = service.list_workflows()
     assert len(all_workflows) >= 1
@@ -51,3 +54,6 @@ def test_qwen_workflow_search_matches_titles_and_use_cases():
 
     use_case_matches = service.search_workflows("marketing")
     assert use_case_matches, "Expected use-case search to return results"
+
+    flux_matches = service.search_workflows("flux", group_key="flux")
+    assert flux_matches, "Expected Flux group to return workflows when filtered"

@@ -10,10 +10,13 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable, Optional
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QPoint, QEvent, QSize
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
+    QFrame,
+    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -21,6 +24,9 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
+    QStyle,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -38,17 +44,23 @@ from material_gui.theme import (
 from material_gui.views import (
     ActivityLogView,
     AppearanceSettingsView,
-    CustomWorkflowSettingsView,
     DiscordSettingsView,
     NetworkMonitorView,
     OverviewView,
     QwenSettingsView,
     SystemStatusView,
     WorkflowsView,
+    MainConfigView,
+    BotSettingsView,
+    LoraStylesView,
+    FavoritesView,
+    LlmPromptsView,
+    BotControlView,
+    ToolsView,
 )
 from material_gui.views.onboarding import FirstRunTutorialDialog
 from services import (
-    QwenWorkflowService,
+    WorkflowLibraryService,
     collect_system_diagnostics,
     collect_usage_analytics,
 )
@@ -75,7 +87,7 @@ class MaterialConfigWindow(QMainWindow):
         self._app_base_dir = app_base_dir
         worker_count = max(2, min(4, os.cpu_count() or 2))
         self._executor = ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="config-worker")
-        self._workflow_service = QwenWorkflowService()
+        self._workflow_service = WorkflowLibraryService()
         self._pending_status_message: Optional[str] = None
         self._coordinator = UpdateCoordinator(
             repo_owner="Tenos-ai",
@@ -99,14 +111,33 @@ class MaterialConfigWindow(QMainWindow):
 
         self.setWindowTitle("Tenos.ai Configurator – Material Edition")
         self.resize(1320, 860)
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.WindowMinMaxButtonsHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+
+        self._drag_active = False
+        self._drag_offset = QPoint()
 
         central = QWidget()
-        root_layout = QVBoxLayout(central)
-        root_layout.setContentsMargins(0, 0, 0, 0)
-        root_layout.setSpacing(0)
+        outer_layout = QVBoxLayout(central)
+        outer_layout.setContentsMargins(28, 28, 28, 28)
+        outer_layout.setSpacing(0)
 
-        self._build_top_bar(root_layout)
-        self._build_body(root_layout)
+        self._surface = QFrame()
+        self._surface.setObjectName("MaterialSurface")
+        surface_shadow = QGraphicsDropShadowEffect(self._surface)
+        surface_shadow.setBlurRadius(48)
+        surface_shadow.setColor(QColor(15, 23, 42, 140))
+        surface_shadow.setOffset(0, 18)
+        self._surface.setGraphicsEffect(surface_shadow)
+
+        surface_layout = QVBoxLayout(self._surface)
+        surface_layout.setContentsMargins(0, 0, 0, 0)
+        surface_layout.setSpacing(0)
+
+        outer_layout.addWidget(self._surface)
+
+        self._build_top_bar(surface_layout)
+        self._build_body(surface_layout)
 
         self.setCentralWidget(central)
         self._apply_material_theme()
@@ -120,74 +151,158 @@ class MaterialConfigWindow(QMainWindow):
     # Qt construction helpers
     # ------------------------------------------------------------------
     def _build_top_bar(self, parent_layout: QVBoxLayout) -> None:
-        top_bar = QHBoxLayout()
-        top_bar.setContentsMargins(24, 20, 24, 12)
-        top_bar.setSpacing(16)
+        self._title_bar = QWidget()
+        self._title_bar.setObjectName("MaterialTitleBar")
+        self._title_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        bar_layout = QHBoxLayout(self._title_bar)
+        bar_layout.setContentsMargins(32, 22, 24, 16)
+        bar_layout.setSpacing(18)
 
         title_container = QVBoxLayout()
+        title_container.setSpacing(2)
         title = QLabel("Tenos.ai Configurator")
         title.setObjectName("MaterialAppTitle")
         subtitle = QLabel(f"Material Interface • v{APP_VERSION}")
         subtitle.setObjectName("MaterialSubtitle")
         title_container.addWidget(title)
         title_container.addWidget(subtitle)
-        top_bar.addLayout(title_container)
+        bar_layout.addLayout(title_container)
 
-        top_bar.addStretch()
+        bar_layout.addStretch(1)
 
         self.status_chip = QLabel("Ready")
         self.status_chip.setObjectName("StatusChip")
         self.status_chip.setAlignment(Qt.AlignCenter)
-        top_bar.addWidget(self.status_chip)
+        bar_layout.addWidget(self.status_chip)
         if self._pending_status_message:
             self.status_chip.setText(self._pending_status_message)
             self._pending_status_message = None
         self._status_pulse = StatusPulseAnimator(self.status_chip)
 
-        self.theme_toggle = QPushButton("Light Mode")
-        self.theme_toggle.setCheckable(True)
-        self.theme_toggle.toggled.connect(self._toggle_theme)  # pragma: no cover - Qt binding
-        top_bar.addWidget(self.theme_toggle)
+        quick_actions = QWidget()
+        quick_actions.setObjectName("QuickActions")
+        quick_actions.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        quick_layout = QHBoxLayout(quick_actions)
+        quick_layout.setContentsMargins(14, 6, 14, 6)
+        quick_layout.setSpacing(8)
 
-        self.refresh_button = QPushButton("Refresh")
-        self.refresh_button.clicked.connect(self._handle_refresh)  # pragma: no cover - Qt binding
-        top_bar.addWidget(self.refresh_button)
+        self.refresh_button = self._create_icon_button(
+            self.style().standardIcon(QStyle.SP_BrowserReload),
+            "Refresh configuration from disk",
+            self._handle_refresh,
+        )
+        quick_layout.addWidget(self.refresh_button)
 
-        self.update_button = QPushButton("Check Updates")
-        self.update_button.clicked.connect(self._handle_update)  # pragma: no cover - Qt binding
-        top_bar.addWidget(self.update_button)
+        self.update_button = self._create_icon_button(
+            self.style().standardIcon(QStyle.SP_ArrowUp),
+            "Check for Tenos.ai bot updates",
+            self._handle_update,
+        )
+        quick_layout.addWidget(self.update_button)
 
-        self.diagnostics_button = QPushButton("Diagnostics")
-        self.diagnostics_button.clicked.connect(self._run_diagnostics)  # pragma: no cover - Qt binding
-        top_bar.addWidget(self.diagnostics_button)
+        self.diagnostics_button = self._create_icon_button(
+            self.style().standardIcon(QStyle.SP_MessageBoxInformation),
+            "Run diagnostics",
+            self._run_diagnostics,
+        )
+        quick_layout.addWidget(self.diagnostics_button)
 
-        self.outputs_button = QPushButton("Open Outputs")
-        self.outputs_button.clicked.connect(self._open_outputs)  # pragma: no cover - Qt binding
-        top_bar.addWidget(self.outputs_button)
+        self.outputs_button = self._create_icon_button(
+            self.style().standardIcon(QStyle.SP_DirOpenIcon),
+            "Open generation outputs",
+            self._open_outputs,
+        )
+        quick_layout.addWidget(self.outputs_button)
 
-        self.config_button = QPushButton("Open Config")
-        self.config_button.clicked.connect(self._open_config_dir)  # pragma: no cover - Qt binding
-        top_bar.addWidget(self.config_button)
+        self.config_button = self._create_icon_button(
+            self.style().standardIcon(QStyle.SP_DirHomeIcon),
+            "Open application directory",
+            self._open_config_dir,
+        )
+        quick_layout.addWidget(self.config_button)
 
-        self.logs_button = QPushButton("View Logs")
-        self.logs_button.clicked.connect(self._open_logs_dir)  # pragma: no cover - Qt binding
-        top_bar.addWidget(self.logs_button)
+        self.logs_button = self._create_icon_button(
+            self.style().standardIcon(QStyle.SP_FileDialogDetailedView),
+            "View latest logs",
+            self._open_logs_dir,
+        )
+        quick_layout.addWidget(self.logs_button)
 
-        self.docs_button = QPushButton("Qwen Guide")
-        self.docs_button.clicked.connect(self._open_qwen_docs)  # pragma: no cover - Qt binding
-        top_bar.addWidget(self.docs_button)
+        self.docs_button = self._create_icon_button(
+            self.style().standardIcon(QStyle.SP_DialogHelpButton),
+            "Open Qwen workflow guide",
+            self._open_qwen_docs,
+        )
+        quick_layout.addWidget(self.docs_button)
 
-        parent_layout.addLayout(top_bar)
+        bar_layout.addWidget(quick_actions)
+
+        bar_layout.addSpacing(12)
+
+        window_controls = QHBoxLayout()
+        window_controls.setContentsMargins(0, 0, 0, 0)
+        window_controls.setSpacing(4)
+
+        self._minimize_button = self._create_window_control(QStyle.SP_TitleBarMinButton, self.showMinimized)
+        window_controls.addWidget(self._minimize_button)
+
+        self._maximize_button = self._create_window_control(QStyle.SP_TitleBarMaxButton, self._toggle_maximize_state)
+        window_controls.addWidget(self._maximize_button)
+
+        self._close_button = self._create_window_control(QStyle.SP_TitleBarCloseButton, self.close)
+        window_controls.addWidget(self._close_button)
+
+        bar_layout.addLayout(window_controls)
+
+        parent_layout.addWidget(self._title_bar)
+        self._title_bar.installEventFilter(self)
 
     def _build_body(self, parent_layout: QVBoxLayout) -> None:
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(0)
 
+        nav_container = QFrame()
+        nav_container.setObjectName("NavigationRail")
+        nav_container.setFixedWidth(268)
+        nav_container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        nav_layout = QVBoxLayout(nav_container)
+        nav_layout.setContentsMargins(22, 28, 22, 28)
+        nav_layout.setSpacing(18)
+
+        nav_header = QLabel("Workspace")
+        nav_header.setObjectName("NavigationHeading")
+        nav_layout.addWidget(nav_header)
+
         self.nav_list = QListWidget()
         self.nav_list.setObjectName("MaterialNav")
-        self.nav_list.setFixedWidth(240)
-        body.addWidget(self.nav_list)
+        self.nav_list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
+        self.nav_list.setFocusPolicy(Qt.NoFocus)
+        self.nav_list.setIconSize(QSize(18, 18))
+        nav_layout.addWidget(self.nav_list, stretch=1)
+
+        nav_footer = QWidget()
+        nav_footer.setObjectName("NavigationFooter")
+        footer_layout = QHBoxLayout(nav_footer)
+        footer_layout.setContentsMargins(12, 10, 12, 10)
+        footer_layout.setSpacing(12)
+
+        self.theme_toggle = QToolButton()
+        self.theme_toggle.setObjectName("ThemeToggle")
+        self.theme_toggle.setCheckable(True)
+        self.theme_toggle.toggled.connect(self._toggle_theme)  # pragma: no cover - Qt binding
+        self.theme_toggle.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.theme_toggle.setCursor(Qt.PointingHandCursor)
+        footer_layout.addWidget(self.theme_toggle)
+
+        version_label = QLabel(f"v{APP_VERSION}")
+        version_label.setObjectName("NavVersion")
+        footer_layout.addWidget(version_label)
+        footer_layout.addStretch(1)
+
+        nav_layout.addWidget(nav_footer)
+
+        body.addWidget(nav_container)
 
         self.stack = AnimatedStackedWidget()
         body.addWidget(self.stack)
@@ -202,20 +317,44 @@ class MaterialConfigWindow(QMainWindow):
             on_palette_change=self._handle_theme_palette_update,
             on_mode_change=self._handle_theme_mode_update,
         )
-        self.custom_workflow_view = CustomWorkflowSettingsView(
-            repository=self._repository,
-            app_base_dir=self._app_base_dir,
-        )
         self.qwen_view = QwenSettingsView(self._repository)
         self.system_view = SystemStatusView()
         self.activity_view = ActivityLogView(self._app_base_dir / "update_log.txt")
         self.analytics_view = NetworkMonitorView()
         self.workflows_view = WorkflowsView(
             service=self._workflow_service,
+            repository=self._repository,
+            app_base_dir=self._app_base_dir,
             queue_callback=self._queue_workflow,
             export_callback=self._export_workflow,
             export_all_callback=self._export_all_workflows,
         )
+        self.main_config_view = MainConfigView(self._repository, self._app_base_dir)
+        self.bot_settings_view = BotSettingsView(self._repository)
+        self.lora_styles_view = LoraStylesView()
+        self.favorites_view = FavoritesView()
+        self.llm_prompts_view = LlmPromptsView()
+        self.bot_control_view = BotControlView(self._app_base_dir)
+        self.tools_view = ToolsView(self._repository)
+
+
+        icon_map = {
+            "overview": QStyle.SP_ComputerIcon,
+            "main-config": QStyle.SP_FileIcon,
+            "bot-settings": QStyle.SP_DialogApplyButton,
+            "lora-styles": QStyle.SP_FileDialogListView,
+            "favorites": QStyle.SP_DialogYesButton,
+            "llm-prompts": QStyle.SP_FileDialogContentsView,
+            "qwen": QStyle.SP_DialogOpenButton,
+            "discord": QStyle.SP_DialogOkButton,
+            "appearance": QStyle.SP_DialogResetButton,
+            "system": QStyle.SP_DesktopIcon,
+            "activity": QStyle.SP_FileDialogDetailedView,
+            "admin": QStyle.SP_BrowserStop,
+            "workflows": QStyle.SP_DialogSaveButton,
+            "tools": QStyle.SP_TrashIcon,
+            "bot-control": QStyle.SP_MediaPlay,
+        }
 
         self._nav_entries = [
             NavigationEntry(
@@ -223,6 +362,42 @@ class MaterialConfigWindow(QMainWindow):
                 "overview",
                 self.overview_view,
                 lambda: self.overview_view.refresh(self._repository),
+            ),
+            NavigationEntry(
+                "Main Config",
+                "main-config",
+                self.main_config_view,
+                lambda: self.main_config_view.refresh(self._repository),
+            ),
+            NavigationEntry(
+                "Bot Settings",
+                "bot-settings",
+                self.bot_settings_view,
+                lambda: self.bot_settings_view.refresh(self._repository),
+            ),
+            NavigationEntry(
+                "LoRA Styles",
+                "lora-styles",
+                self.lora_styles_view,
+                lambda: self.lora_styles_view.refresh(self._repository),
+            ),
+            NavigationEntry(
+                "Favorites",
+                "favorites",
+                self.favorites_view,
+                lambda: self.favorites_view.refresh(self._repository),
+            ),
+            NavigationEntry(
+                "LLM Prompts",
+                "llm-prompts",
+                self.llm_prompts_view,
+                lambda: self.llm_prompts_view.refresh(self._repository),
+            ),
+            NavigationEntry(
+                "Qwen",
+                "qwen",
+                self.qwen_view,
+                lambda: self.qwen_view.refresh(self._repository),
             ),
             NavigationEntry(
                 "Discord",
@@ -236,18 +411,6 @@ class MaterialConfigWindow(QMainWindow):
                 self.appearance_view,
                 lambda: self.appearance_view.refresh(self._repository),
             ),
-            NavigationEntry(
-                "Workflow Overrides",
-                "overrides",
-                self.custom_workflow_view,
-                lambda: self.custom_workflow_view.refresh(self._repository),
-            ),
-            NavigationEntry(
-                "Qwen",
-                "qwen",
-                self.qwen_view,
-                lambda: self.qwen_view.refresh(self._repository),
-            ),
             NavigationEntry("System", "system", self.system_view, None),
             NavigationEntry(
                 "Activity",
@@ -260,18 +423,109 @@ class MaterialConfigWindow(QMainWindow):
                 "Workflows",
                 "workflows",
                 self.workflows_view,
-                lambda: self.workflows_view.refresh(None),
+                lambda: self.workflows_view.refresh(self._repository),
+            ),
+            NavigationEntry(
+                "Tools",
+                "tools",
+                self.tools_view,
+                lambda: self.tools_view.refresh(self._repository),
+            ),
+            NavigationEntry(
+                "Bot Control",
+                "bot-control",
+                self.bot_control_view,
+                lambda: self.bot_control_view.refresh(self._repository),
             ),
         ]
 
         for entry in self._nav_entries:
             item = QListWidgetItem(entry.title)
             item.setData(Qt.UserRole, entry.slug)
+            icon_role = icon_map.get(entry.slug)
+            if icon_role is not None:
+                item.setIcon(self.style().standardIcon(icon_role))
             self.nav_list.addItem(item)
             self.stack.addWidget(entry.view)
 
         self.nav_list.currentRowChanged.connect(self._handle_nav_change)  # pragma: no cover - Qt binding
         self.nav_list.setCurrentRow(0)
+
+        self._update_maximize_button_icon()
+
+    def _create_icon_button(self, icon, tooltip: str, callback: Callable[[], None]) -> QToolButton:
+        button = QToolButton()
+        button.setObjectName("IconButton")
+        button.setToolTip(tooltip)
+        button.setIcon(icon)
+        button.setIconSize(QSize(22, 22))
+        button.setCursor(Qt.PointingHandCursor)
+        button.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        button.clicked.connect(callback)  # pragma: no cover - Qt binding
+        return button
+
+    def _create_window_control(self, standard_icon: QStyle.StandardPixmap, callback: Callable[[], None]) -> QToolButton:
+        button = QToolButton()
+        button.setObjectName("WindowControl")
+        button.setIcon(self.style().standardIcon(standard_icon))
+        button.setIconSize(QSize(16, 16))
+        button.setCursor(Qt.PointingHandCursor)
+        button.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        button.clicked.connect(callback)  # pragma: no cover - Qt binding
+        return button
+
+    def _toggle_maximize_state(self) -> None:  # pragma: no cover - Qt binding
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
+        self._update_maximize_button_icon()
+
+    def _update_maximize_button_icon(self) -> None:
+        if not hasattr(self, "_maximize_button"):
+            return
+        icon_role = QStyle.SP_TitleBarNormalButton if self.isMaximized() else QStyle.SP_TitleBarMaxButton
+        self._maximize_button.setIcon(self.style().standardIcon(icon_role))
+
+    def _update_theme_toggle_icon(self) -> None:
+        if not hasattr(self, "theme_toggle"):
+            return
+        is_light = self._theme_mode == "light"
+        self.theme_toggle.setText("☀" if is_light else "🌙")
+        self.theme_toggle.setToolTip("Switch to dark mode" if is_light else "Switch to light mode")
+        self.theme_toggle.setProperty("mode", "light" if is_light else "dark")
+        self.theme_toggle.style().unpolish(self.theme_toggle)
+        self.theme_toggle.style().polish(self.theme_toggle)
+        self.theme_toggle.update()
+
+    def eventFilter(self, obj, event):
+        if obj is getattr(self, "_title_bar", None):
+            if event.type() == QEvent.MouseButtonDblClick and event.button() == Qt.LeftButton:
+                child = obj.childAt(int(event.position().x()), int(event.position().y()))
+                if isinstance(child, (QToolButton, QPushButton)):
+                    return False
+                self._toggle_maximize_state()
+                return True
+            if event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
+                child = obj.childAt(int(event.position().x()), int(event.position().y()))
+                if isinstance(child, (QToolButton, QPushButton)) or self.isMaximized():
+                    return False
+                self._drag_active = True
+                self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+                return True
+            if event.type() == QEvent.MouseMove and self._drag_active:
+                if not self.isMaximized():
+                    self.move(event.globalPosition().toPoint() - self._drag_offset)
+                return True
+            if event.type() == QEvent.MouseButtonRelease and event.button() == Qt.LeftButton:
+                self._drag_active = False
+                return True
+        return super().eventFilter(obj, event)
+
+    def changeEvent(self, event):  # pragma: no cover - Qt lifecycle
+        if event.type() == QEvent.WindowStateChange:
+            QTimer.singleShot(0, self._update_maximize_button_icon)
+        super().changeEvent(event)
 
     # ------------------------------------------------------------------
     # Event handlers
@@ -435,7 +689,7 @@ class MaterialConfigWindow(QMainWindow):
 
         file_path, _ = QFileDialog.getSaveFileName(
             self,
-            "Export Qwen Workflow",
+            "Export Workflow",
             str(default_path),
             "JSON Files (*.json)",
         )
@@ -462,13 +716,13 @@ class MaterialConfigWindow(QMainWindow):
 
         self._run_async(task, on_success, on_error)
 
-    def _export_all_workflows(self) -> None:
+    def _export_all_workflows(self, group_key: str | None = None) -> None:
         default_dir = self._app_base_dir / "exported_workflows"
         default_dir.mkdir(exist_ok=True)
 
         directory = QFileDialog.getExistingDirectory(
             self,
-            "Export All Qwen Workflows",
+            "Export Workflow Library",
             str(default_dir),
         )
         if not directory:
@@ -480,12 +734,18 @@ class MaterialConfigWindow(QMainWindow):
         self._set_status("Exporting curated workflows…")
 
         def task() -> int:
-            summary = self._workflow_service.export_all(str(target_dir))
+            summary = self._workflow_service.export_all(str(target_dir), group_key=group_key)
             return len(summary.written_files)
 
         def on_success(count: int) -> None:
             plural = "s" if count != 1 else ""
-            self.workflows_view.set_status(f"Exported {count} workflow{plural} to {target_dir}")
+            if group_key:
+                label = group_key.replace("_", " ").title()
+                self.workflows_view.set_status(
+                    f"Exported {count} {label} workflow{plural} to {target_dir}"
+                )
+            else:
+                self.workflows_view.set_status(f"Exported {count} workflow{plural} to {target_dir}")
             self._set_status("Workflow library exported")
 
         def on_error(exc: Exception) -> None:
@@ -653,7 +913,7 @@ class MaterialConfigWindow(QMainWindow):
         is_light = self._theme_mode == "light"
         self.theme_toggle.blockSignals(True)
         self.theme_toggle.setChecked(is_light)
-        self.theme_toggle.setText("Dark Mode" if is_light else "Light Mode")
+        self._update_theme_toggle_icon()
         self.theme_toggle.blockSignals(False)
 
     def _persist_theme_preferences(self) -> None:

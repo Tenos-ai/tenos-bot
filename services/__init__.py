@@ -6,7 +6,7 @@ __all__ = [
     "UpdateService",
     "UpdateResult",
     "UpdateServiceError",
-    "QwenWorkflowService",
+    "WorkflowLibraryService",
     "collect_system_diagnostics",
     "DiagnosticsReport",
     "DiagnosticItem",
@@ -16,7 +16,7 @@ __all__ = [
 ]
 
 from .update_service import UpdateResult, UpdateService, UpdateServiceError
-from .qwen_workflow_service import QwenWorkflowService
+from .workflow_library_service import WorkflowLibraryService
 from .system_diagnostics import DiagnosticItem, DiagnosticsReport, collect_system_diagnostics
 from .usage_analytics import AnalyticsReport, DailyUsage, collect_usage_analytics
 

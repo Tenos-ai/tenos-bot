@@ -15,7 +15,7 @@ except Exception:  # pragma: no cover - provide a lightweight stub for test envi
     def get_available_comfyui_models(*_args, **_kwargs):  # type: ignore[override]
         raise ConnectionRefusedError("ComfyUI API unavailable")
 
-from services.qwen_workflow_service import QwenWorkflowService
+from services.workflow_library_service import WorkflowLibraryService
 from utils.update_state import UpdateState
 
 Severity = Literal["ok", "info", "warning", "error"]
@@ -38,7 +38,7 @@ class DiagnosticsReport:
     comfy_connected: bool
     model_inventory: Dict[str, Sequence[str]]
     qwen_ready: bool
-    qwen_workflow_count: int
+    workflow_group_counts: Dict[str, int]
     style_count: int
     issues: Sequence[DiagnosticItem]
 
@@ -47,7 +47,7 @@ def collect_system_diagnostics(
     *,
     app_base_dir: str,
     settings: Optional[Dict[str, object]] = None,
-    workflow_service: Optional[QwenWorkflowService] = None,
+    workflow_service: Optional[WorkflowLibraryService] = None,
     styles_config: Optional[Dict[str, dict]] = None,
 ) -> DiagnosticsReport:
     """Gather a best-effort health snapshot for GUI presentation."""
@@ -114,27 +114,29 @@ def collect_system_diagnostics(
         )
 
     if workflow_service is None:
-        workflow_service = QwenWorkflowService()
+        workflow_service = WorkflowLibraryService()
 
     try:
-        workflows = tuple(workflow_service.list_workflows())
+        group_counts = {
+            group.key: len(group.workflows) for group in workflow_service.list_groups()
+        }
     except Exception as exc:  # pragma: no cover - service should not fail, but guard regardless
-        workflows = ()
+        group_counts = {}
         issues.append(
             DiagnosticItem(
-                label="Qwen Workflows",
+                label="Workflow Library",
                 message="Unable to load curated workflows",
                 severity="error",
                 detail=str(exc),
             )
         )
 
-    qwen_workflow_count = len(workflows)
-    if qwen_workflow_count == 0:
+    total_workflows = sum(group_counts.values())
+    if total_workflows == 0:
         issues.append(
             DiagnosticItem(
-                label="Qwen Workflows",
-                message="No curated Qwen workflows available",
+                label="Workflow Library",
+                message="No curated workflows available",
                 severity="warning",
             )
         )
@@ -172,7 +174,7 @@ def collect_system_diagnostics(
         comfy_connected=comfy_connected,
         model_inventory=model_inventory,
         qwen_ready=qwen_ready,
-        qwen_workflow_count=qwen_workflow_count,
+        workflow_group_counts=group_counts,
         style_count=style_count,
         issues=tuple(issues),
     )
