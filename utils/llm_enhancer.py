@@ -22,16 +22,24 @@ GEMINI_API_KEY = config.get('LLM_ENHANCER', {}).get('GEMINI_API_KEY', '')
 GROQ_API_KEY = config.get('LLM_ENHANCER', {}).get('GROQ_API_KEY', '')
 OPENAI_API_KEY = config.get('LLM_ENHANCER', {}).get('OPENAI_API_KEY', '')
 
+DEFAULT_QWEN_IMAGE_EDIT_PROMPT = (
+    "You are a Qwen Image Edit director. You receive a user's instruction and one reference image. "
+    "Rewrite the instruction as a clear description of the desired final image, explicitly preserving key "
+    "subjects, composition, lighting, and style from the source. Mention any additions or removals as if "
+    "they already occurred and keep the tone concise and professional."
+)
+
 def load_llm_prompts_config():
     """Loads llm_prompts.json safely and ensures all necessary keys exist."""
     default_flux_prompt = "Your designated function is Flux Prompt Alchemist..." # Collapsed for brevity
     default_sdxl_prompt = "You are a master prompt artist for Illustrious XL..." # Collapsed for brevity
     default_kontext_prompt = "You are a Kontext Instruction Alchemist..." # Collapsed for brevity
-    
+
     default_config = {
         "enhancer_system_prompt": default_flux_prompt,
         "enhancer_system_prompt_sdxl": default_sdxl_prompt,
-        "enhancer_system_prompt_kontext": default_kontext_prompt
+        "enhancer_system_prompt_kontext": default_kontext_prompt,
+        "enhancer_system_prompt_qwen_edit": DEFAULT_QWEN_IMAGE_EDIT_PROMPT,
     }
     try:
         if not os.path.exists('llm_prompts.json'):
@@ -57,6 +65,9 @@ llm_prompts_config = load_llm_prompts_config()
 FLUX_ENHANCER_SYSTEM_PROMPT = llm_prompts_config.get("enhancer_system_prompt", "")
 SDXL_ENHANCER_SYSTEM_PROMPT = llm_prompts_config.get("enhancer_system_prompt_sdxl", "")
 KONTEXT_ENHANCER_SYSTEM_PROMPT = llm_prompts_config.get("enhancer_system_prompt_kontext", "")
+QWEN_IMAGE_EDIT_ENHANCER_SYSTEM_PROMPT = llm_prompts_config.get(
+    "enhancer_system_prompt_qwen_edit", DEFAULT_QWEN_IMAGE_EDIT_PROMPT
+)
 
 async def _fetch_and_encode_image(url: str) -> tuple[str | None, str | None]:
     try:
@@ -250,6 +261,8 @@ async def enhance_prompt(original_prompt: str, system_prompt_text_override: str 
             system_instruction_to_use = SDXL_ENHANCER_SYSTEM_PROMPT
         elif target_model_type.lower() == "kontext":
             system_instruction_to_use = KONTEXT_ENHANCER_SYSTEM_PROMPT
+        elif target_model_type.lower() == "qwen_edit":
+            system_instruction_to_use = QWEN_IMAGE_EDIT_ENHANCER_SYSTEM_PROMPT
         else:
             system_instruction_to_use = FLUX_ENHANCER_SYSTEM_PROMPT
     

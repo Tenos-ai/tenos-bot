@@ -1,8 +1,6 @@
 # --- START OF FILE bot_commands.py ---
 import discord
 from discord import app_commands # type: ignore
-import textwrap
-
 from bot_core_logic import (
     process_upscale_request as core_process_upscale,
     process_variation_request as core_process_variation,
@@ -10,10 +8,14 @@ from bot_core_logic import (
     execute_generation_logic
 )
 from bot_ui_components import QueuedJobView
-from queue_manager import queue_manager
 from utils.message_utils import safe_interaction_response
-from websocket_client import WebsocketClient # Import the websocket client
-from settings_manager import load_settings # For getting current model type
+from utils.discord_helpers import (
+    format_generation_status,
+    format_rerun_status,
+    format_upscale_status,
+    format_variation_status,
+    register_job_with_queue,
+)
 
 _bot_instance_commands = None
 def register_bot_instance(bot_instance):
@@ -106,22 +108,7 @@ async def handle_gen_command(
     for idx, result in enumerate(job_results_list):
         if result["status"] == "success":
             msg_details = result["message_content_details"]
-            content = (f"{msg_details['user_mention']}: `{textwrap.shorten(msg_details['prompt_to_display'], 1000, placeholder='...')}`")
-            if msg_details['enhancer_used'] and msg_details['display_preference'] == 'enhanced': content += " ✨"
-            if msg_details['total_runs'] > 1: content += f" (Job {msg_details['run_number']}/{msg_details['total_runs']} - {msg_details['model_type'].upper()})"
-            else: content += f" ({msg_details['model_type'].upper()})"
-            content += f"\n> **Seed:** `{msg_details['seed']}`"
-            if msg_details['aspect_ratio']: content += f", **AR:** `{msg_details['aspect_ratio']}`"
-            if msg_details['steps']: content += f", **Steps:** `{msg_details['steps']}`"
-            if msg_details['model_type'] == "sdxl": content += f", **Guidance (SDXL):** `{msg_details['guidance_sdxl']}`"
-            else: content += f", **Guidance (Flux):** `{msg_details['guidance_flux']}`"
-            if msg_details['mp_size'] is not None: content += f", **MP:** `{msg_details['mp_size']}`"
-            content += f"\n> **Style:** `{msg_details['style']}`"
-            if msg_details['is_img2img']: content += f", **Strength:** `{msg_details['img_strength_percent']}%`"
-            if msg_details['negative_prompt']: content += f"\n> **No:** `{textwrap.shorten(msg_details['negative_prompt'], 100, placeholder='...')}`"
-            content += "\n> **Status:** Queued..."
-            if msg_details.get("enhancer_applied_message_for_first_run"): 
-                content += msg_details["enhancer_applied_message_for_first_run"]
+            content = format_generation_status(msg_details)
 
             view_to_send = None
             if result["view_type"] == "QueuedJobView" and result["view_args"]:
@@ -138,23 +125,18 @@ async def handle_gen_command(
                         print(f"Error editing original response for job {result['job_id']}, trying followup: {e_edit_orig}")
                         sent_message_object = await safe_interaction_response(initial_interaction_ctx_obj, content, view=view_to_send, ephemeral=False)
                     first_message_sent_this_command = True
-                else: 
+                else:
                     sent_message_object = await safe_interaction_response(initial_interaction_ctx_obj, content, view=view_to_send, ephemeral=False)
-            else: 
+            else:
                 sent_message_object = await channel_obj_ctx.send(content, view=view_to_send)
 
-            if sent_message_object and result["job_data_for_qm"]:
-                job_data_to_add = result["job_data_for_qm"]
-                job_data_to_add["message_id"] = sent_message_object.id
-                queue_manager.add_job(result["job_id"], job_data_to_add)
-                # Register with websocket client
-                ws_client = WebsocketClient()
-                if ws_client.is_connected and result.get("comfy_prompt_id"):
-                    await ws_client.register_prompt(result["comfy_prompt_id"], sent_message_object.id, sent_message_object.channel.id)
-            elif not sent_message_object:
+            registration_success = await register_job_with_queue(result, sent_message_object)
+            if not sent_message_object:
                 print(f"ERROR: Failed to send/get message for job {result['job_id']}. Not fully added to QM.")
                 error_summary_for_followup.append(f"Job {result['run_number']}: Failed to send status message.")
-                if result["job_data_for_qm"]: queue_manager.add_job(result["job_id"], result["job_data_for_qm"])
+            elif not registration_success:
+                print(f"Warning: Job {result['job_id']} could not be registered with the queue manager.")
+                error_summary_for_followup.append(f"Job {result['run_number']}: Failed to register queue metadata.")
 
         elif result["status"] == "error":
             err_msg = result.get("error_message_text", "Unknown error.")
@@ -181,19 +163,14 @@ async def handle_reply_upscale(message: discord.Message, referenced_message: dis
     for result in results:
         if result["status"] == "success":
             msg_details = result["message_content_details"]
-            content = (f"{msg_details['user_mention']}: Upscaling image #{msg_details['image_index']} from job `{msg_details['original_job_id']}` (Workflow: {msg_details['model_type']})\n" # model_type IS the current model
-                       f"> **Using Prompt:** `{textwrap.shorten(msg_details['prompt_to_display'], 70, placeholder='...')}`\n"
-                       f"> **Seed:** `{msg_details['seed']}`, **Style:** `{msg_details['style']}`, **Orig AR:** `{msg_details['aspect_ratio']}`\n"
-                       f"> **Factor:** `{msg_details['upscale_factor']}`, **Denoise:** `{msg_details['denoise']}`\n"
-                       f"> **Status:** Queued...")
+            content = format_upscale_status(msg_details)
             view_to_send = QueuedJobView(**result["view_args"]) if result.get("view_type") == "QueuedJobView" and result.get("view_args") else None
             sent_msg = await message.channel.send(content, view=view_to_send)
-            if sent_msg and result["job_data_for_qm"]:
-                job_data_to_add = result["job_data_for_qm"]; job_data_to_add["message_id"] = sent_msg.id
-                queue_manager.add_job(result["job_id"], job_data_to_add)
-                ws_client = WebsocketClient()
-                if ws_client.is_connected and result.get("comfy_prompt_id"):
-                    await ws_client.register_prompt(result["comfy_prompt_id"], sent_msg.id, sent_msg.channel.id)
+            registration_success = await register_job_with_queue(result, sent_msg)
+            if not sent_msg:
+                print(f"ERROR: Failed to send upscale status message for job {result['job_id']}.")
+            elif not registration_success:
+                print(f"Warning: Upscale job {result['job_id']} could not be registered with the queue manager.")
         elif result["status"] == "error":
             await message.channel.send(f"{message.author.mention} Error upscaling: {result.get('error_message_text', 'Unknown error.')}")
 
@@ -211,24 +188,14 @@ async def handle_reply_vary(message: discord.Message, referenced_message: discor
     for result in results: 
         if result["status"] == "success":
             msg_details = result["message_content_details"]
-            content = (f"{msg_details['user_mention']}: `{textwrap.shorten(msg_details['prompt_to_display'], 50, placeholder='...')}` ({msg_details['description']} on img #{msg_details['image_index']} from `{msg_details['original_job_id']}` - {msg_details['model_type']})\n" # model_type IS the current model
-                       f"> **Seed:** `{msg_details['seed']}`, **AR:** `{msg_details['aspect_ratio']}`, **Steps:** `{msg_details['steps']}`, **Style:** `{msg_details['style']}`")
-            if msg_details.get('is_remixed'): 
-                content += "\n> `(Remixed Prompt)`"
-            
-            enhancer_text_val_reply_vary = msg_details.get('enhancer_reference_text')
-            if enhancer_text_val_reply_vary:
-                content += f"\n{enhancer_text_val_reply_vary.strip()}"
-
-            content += "\n> **Status:** Queued..."
+            content = format_variation_status(msg_details)
             view_to_send = QueuedJobView(**result["view_args"]) if result.get("view_type") == "QueuedJobView" and result.get("view_args") else None
             sent_msg = await message.channel.send(content, view=view_to_send)
-            if sent_msg and result["job_data_for_qm"]:
-                job_data_to_add = result["job_data_for_qm"]; job_data_to_add["message_id"] = sent_msg.id
-                queue_manager.add_job(result["job_id"], job_data_to_add)
-                ws_client = WebsocketClient()
-                if ws_client.is_connected and result.get("comfy_prompt_id"):
-                    await ws_client.register_prompt(result["comfy_prompt_id"], sent_msg.id, sent_msg.channel.id)
+            registration_success = await register_job_with_queue(result, sent_msg)
+            if not sent_msg:
+                print(f"ERROR: Failed to send variation status message for job {result['job_id']}.")
+            elif not registration_success:
+                print(f"Warning: Variation job {result['job_id']} could not be registered with the queue manager.")
         elif result["status"] == "error":
             await message.channel.send(f"{message.author.mention} Error varying: {result.get('error_message_text', 'Unknown error.')}")
 
@@ -246,28 +213,17 @@ async def handle_reply_rerun(message: discord.Message, referenced_message: disco
     for idx, result in enumerate(job_results_list):
         if result["status"] == "success":
             msg_details = result["message_content_details"]
-            content = (f"{msg_details['user_mention']}: `{textwrap.shorten(msg_details['prompt_to_display'], 1000, placeholder='...')}`")
-            if msg_details['enhancer_used'] and msg_details['display_preference'] == 'enhanced': content += " ✨"
-            content += f" (Rerun {idx+1}/{run_times} - {msg_details['model_type'].upper()})" # model_type IS the current model
-            content += f"\n> **Seed:** `{msg_details['seed']}`"
-            if msg_details['aspect_ratio']: content += f", **AR:** `{msg_details['aspect_ratio']}`"
-            if msg_details['steps']: content += f", **Steps:** `{msg_details['steps']}`"
-            if msg_details['model_type'] == "sdxl": content += f", **Guidance (SDXL):** `{msg_details['guidance_sdxl']}`"
-            else: content += f", **Guidance (Flux):** `{msg_details['guidance_flux']}`"
-            if msg_details['mp_size'] is not None: content += f", **MP:** `{msg_details['mp_size']}`"
-            content += f"\n> **Style:** `{msg_details['style']}`"
-            if msg_details['is_img2img']: content += f", **Strength:** `{msg_details['img_strength_percent']}%`"
-            if msg_details['negative_prompt']: content += f"\n> **No:** `{textwrap.shorten(msg_details['negative_prompt'], 100, placeholder='...')}`"
-            content += "\n> **Status:** Queued..."
-            
+            content = format_rerun_status(msg_details, idx + 1, run_times)
+
             view_to_send = QueuedJobView(**result["view_args"]) if result.get("view_type") == "QueuedJobView" and result.get("view_args") else None
             sent_msg = await message.channel.send(content, view=view_to_send)
-            if sent_msg and result["job_data_for_qm"]:
-                job_data_to_add = result["job_data_for_qm"]; job_data_to_add["message_id"] = sent_msg.id
-                queue_manager.add_job(result["job_id"], job_data_to_add)
-                ws_client = WebsocketClient()
-                if ws_client.is_connected and result.get("comfy_prompt_id"):
-                    await ws_client.register_prompt(result["comfy_prompt_id"], sent_msg.id, sent_msg.channel.id)
+            registration_success = await register_job_with_queue(result, sent_msg)
+            if not sent_msg:
+                print(f"ERROR: Failed to send rerun status message for job {result['job_id']}.")
+                error_summary_rerun.append(f"Rerun job {idx+1}: Failed to send status message.")
+            elif not registration_success:
+                print(f"Warning: Rerun job {result['job_id']} could not be registered with the queue manager.")
+                error_summary_rerun.append(f"Rerun job {idx+1}: Failed to register queue metadata.")
         elif result["status"] == "error":
             error_summary_rerun.append(f"Rerun job {idx+1}: {result.get('error_message_text', 'Unknown error.')}")
 

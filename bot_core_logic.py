@@ -4,6 +4,7 @@ import asyncio
 import os
 import json
 import textwrap
+from typing import Any
 from datetime import datetime, timedelta
 import traceback
 import re
@@ -14,7 +15,7 @@ import math
 from bot_config_loader import config, COMFYUI_HOST, COMFYUI_PORT, ADMIN_USERNAME
 from queue_manager import queue_manager
 from file_management import extract_job_id
-from settings_manager import load_settings, load_styles_config
+from settings_manager import load_settings, load_styles_config, save_settings, resolve_model_for_type
 from comfyui_api import queue_prompt as comfy_queue_prompt, ConnectionRefusedError as ComfyConnectionRefusedError
 from websocket_client import WebsocketClient
 
@@ -22,10 +23,17 @@ from image_generation import modify_prompt as ig_modify_prompt
 from upscaling import modify_upscale_prompt as up_modify_upscale_prompt, get_image_dimensions
 from variation import modify_variation_prompt
 from kontext_editing import modify_kontext_prompt
+from qwen_editing import modify_qwen_edit_prompt
 from utils.seed_utils import generate_seed
 from utils.show_prompt import reconstruct_full_prompt_string
 from utils.message_utils import send_long_message, safe_interaction_response
-from utils.llm_enhancer import enhance_prompt as util_enhance_prompt, FLUX_ENHANCER_SYSTEM_PROMPT, SDXL_ENHANCER_SYSTEM_PROMPT, KONTEXT_ENHANCER_SYSTEM_PROMPT
+from utils.llm_enhancer import (
+    enhance_prompt as util_enhance_prompt,
+    FLUX_ENHANCER_SYSTEM_PROMPT,
+    SDXL_ENHANCER_SYSTEM_PROMPT,
+    KONTEXT_ENHANCER_SYSTEM_PROMPT,
+    QWEN_IMAGE_EDIT_ENHANCER_SYSTEM_PROMPT,
+)
 
 _bot_instance_core = None
 def register_bot_instance_for_core(bot_instance):
@@ -427,17 +435,55 @@ async def execute_generation_logic(
              params_dict_gen[key_gen.lower()] = value_gen.strip() if value_gen else True
     else: prompt_base_gen = prompt.strip()
     
+    model_param_override = None
+    model_override_warning = None
+    if 'model' in params_dict_gen:
+        raw_model_param = params_dict_gen.pop('model')
+        if isinstance(raw_model_param, str):
+            candidate_value = raw_model_param.strip().lower()
+            if candidate_value in {"flux", "sdxl", "qwen"}:
+                model_param_override = candidate_value
+            elif candidate_value.startswith("flux:"):
+                model_param_override = "flux"
+            elif candidate_value.startswith("sdxl:"):
+                model_param_override = "sdxl"
+            elif candidate_value.startswith("qwen:"):
+                model_param_override = "qwen"
+            else:
+                model_override_warning = f"Unknown model value '{raw_model_param}'. Using configured default."
+        elif raw_model_param not in (None, True):
+            model_override_warning = f"Ignoring unsupported --model value: {raw_model_param}"
+
+    for shorthand_key in ("flux", "sdxl", "qwen"):
+        if shorthand_key in params_dict_gen and params_dict_gen[shorthand_key] is True:
+            model_param_override = shorthand_key
+            del params_dict_gen[shorthand_key]
+
     selected_model_prefix_gen = settings_gen.get('selected_model')
-    current_model_type_for_job = "flux" 
-    
-    if model_type_override: 
-        current_model_type_for_job = model_type_override.lower()
-    elif selected_model_prefix_gen and ":" in selected_model_prefix_gen:
+    current_model_type_for_job = "flux"
+
+    if selected_model_prefix_gen and ":" in selected_model_prefix_gen:
         prefix_from_settings, name_from_settings = selected_model_prefix_gen.split(":", 1)
-        current_model_type_for_job = prefix_from_settings.strip().lower()
-    elif selected_model_prefix_gen: 
-        if selected_model_prefix_gen.endswith((".gguf",".sft")): current_model_type_for_job = "flux"
-        else: current_model_type_for_job = "sdxl"
+        base_model_type_from_settings = prefix_from_settings.strip().lower()
+    elif selected_model_prefix_gen:
+        lowered_model = selected_model_prefix_gen.lower()
+        if 'qwen' in lowered_model:
+            base_model_type_from_settings = "qwen"
+        elif selected_model_prefix_gen.endswith((".gguf", ".sft")):
+            base_model_type_from_settings = "flux"
+        else:
+            base_model_type_from_settings = "sdxl"
+    else:
+        base_model_type_from_settings = "flux"
+
+    override_type_from_caller = model_type_override.lower() if model_type_override else None
+
+    if override_type_from_caller:
+        current_model_type_for_job = override_type_from_caller
+    elif model_param_override:
+        current_model_type_for_job = model_param_override
+    else:
+        current_model_type_for_job = base_model_type_from_settings
     
     user_provided_neg_prompt_gen = None
     no_param_match_gen = re.search(r'--no\s+(?:"([^"]*)"|((?:(?!\s--).)+))', param_string_for_neg_prompt_gen, re.I | re.S)
@@ -448,15 +494,24 @@ async def execute_generation_logic(
     elif params_dict_gen.get('no') is True: user_provided_neg_prompt_gen = "";  del params_dict_gen['no']
     
     negative_prompt_text_gen = None
-    if current_model_type_for_job == "sdxl":
-        if is_derivative_action: 
+    if current_model_type_for_job in {"sdxl", "qwen"}:
+        if is_derivative_action:
             negative_prompt_text_gen = user_provided_neg_prompt_gen
-        else: 
-            default_sdxl_neg_gen = settings_gen.get('default_sdxl_negative_prompt', "").strip()
-            if user_provided_neg_prompt_gen is not None: 
-                negative_prompt_text_gen = user_provided_neg_prompt_gen if user_provided_neg_prompt_gen else default_sdxl_neg_gen
-            else: 
-                negative_prompt_text_gen = default_sdxl_neg_gen
+        else:
+            default_neg_key = (
+                'default_qwen_negative_prompt'
+                if current_model_type_for_job == "qwen"
+                else 'default_sdxl_negative_prompt'
+            )
+            default_neg_prompt = settings_gen.get(default_neg_key, "").strip()
+            if user_provided_neg_prompt_gen is not None:
+                negative_prompt_text_gen = (
+                    user_provided_neg_prompt_gen
+                    if user_provided_neg_prompt_gen
+                    else default_neg_prompt
+                )
+            else:
+                negative_prompt_text_gen = default_neg_prompt
     
     is_img2img_gen = 'img' in params_dict_gen and params_dict_gen['img'] is not True
     run_times_gen = 1
@@ -465,10 +520,43 @@ async def execute_generation_logic(
         except (ValueError, TypeError):
             if 'r' in params_dict_gen: del params_dict_gen['r']
     
+    override_requested = bool(override_type_from_caller or model_param_override)
+    needs_resolution = override_requested or not selected_model_prefix_gen or base_model_type_from_settings != current_model_type_for_job
+
+    if needs_resolution:
+        resolved_model_setting = resolve_model_for_type(settings_gen, current_model_type_for_job)
+        if not resolved_model_setting:
+            error_message = (
+                f"No {current_model_type_for_job.upper()} model configured. Use `/settings` to select one before running this command."
+            )
+            return [{
+                "status": "error",
+                "run_number": 1,
+                "total_runs": run_times_gen,
+                "message_content_details": {},
+                "view_type": None,
+                "view_args": None,
+                "job_data_for_qm": None,
+                "error_message_text": error_message,
+            }]
+
+        selected_model_prefix_gen = resolved_model_setting
+        preference_key_map = {
+            "flux": 'preferred_model_flux',
+            "sdxl": 'preferred_model_sdxl',
+            "qwen": 'preferred_model_qwen',
+        }
+        preference_key = preference_key_map.get(current_model_type_for_job, 'preferred_model_flux')
+        if settings_gen.get(preference_key) != resolved_model_setting:
+            settings_gen[preference_key] = resolved_model_setting
+            save_settings(settings_gen)
+
     enhancer_enabled_gen = settings_gen.get('llm_enhancer_enabled', False)
     llm_provider_gen = settings_gen.get('llm_provider', 'gemini')
     enhancer_info_gen = {'used': False, 'provider': None, 'enhanced_text': None, 'error': None, 'model_type_for_enhancer': current_model_type_for_job}
     additional_info_msg_gen = ""
+    if model_override_warning:
+        additional_info_msg_gen += f"\n> ⚠️ {model_override_warning}"
     is_admin_text_cmd_gen = (not is_interaction_context) and isinstance(context_user, discord.Member) and context_user.name == ADMIN_USERNAME
     api_key_present_enh_gen = False
     try:
@@ -481,18 +569,23 @@ async def execute_generation_logic(
 
     if enhancer_enabled_gen and api_key_present_enh_gen and not is_derivative_action and not is_admin_text_cmd_gen and not is_img2img_gen:
         enhancer_info_gen['provider'] = llm_provider_gen
-        system_prompt_llm_gen = SDXL_ENHANCER_SYSTEM_PROMPT if current_model_type_for_job == "sdxl" else FLUX_ENHANCER_SYSTEM_PROMPT
+        system_prompt_llm_gen = (
+            FLUX_ENHANCER_SYSTEM_PROMPT
+            if current_model_type_for_job == "flux"
+            else SDXL_ENHANCER_SYSTEM_PROMPT
+        )
         enhanced_res_gen, err_msg_llm_gen = await util_enhance_prompt(prompt_base_gen, system_prompt_text_override=system_prompt_llm_gen, target_model_type=current_model_type_for_job)
         if enhanced_res_gen:
             if enhanced_res_gen.strip().lower() != prompt_base_gen.strip().lower():
                 enhancer_info_gen.update({'used': True, 'enhanced_text': enhanced_res_gen})
-                additional_info_msg_gen = f"\n> ✨ *LLM enhancer ({llm_provider_gen} for {current_model_type_for_job.upper()}) applied.*"
-            else: additional_info_msg_gen = f"\n> ✨ *LLM enhancer ({llm_provider_gen} for {current_model_type_for_job.upper()}): Prompt unchanged.*"
+                additional_info_msg_gen += f"\n> ✨ *LLM enhancer ({llm_provider_gen} for {current_model_type_for_job.upper()}) applied.*"
+            else: additional_info_msg_gen += f"\n> ✨ *LLM enhancer ({llm_provider_gen} for {current_model_type_for_job.upper()}): Prompt unchanged.*"
         elif err_msg_llm_gen:
             enhancer_info_gen['error'] = err_msg_llm_gen
-            additional_info_msg_gen = f"\n> ⚠️ *LLM enhancer ({llm_provider_gen} for {current_model_type_for_job.upper()}) failed: {err_msg_llm_gen}*"
+            additional_info_msg_gen += f"\n> ⚠️ *LLM enhancer ({llm_provider_gen} for {current_model_type_for_job.upper()}) failed: {err_msg_llm_gen}*"
     elif enhancer_enabled_gen and not api_key_present_enh_gen and not is_derivative_action and not is_admin_text_cmd_gen and not is_img2img_gen :
-        additional_info_msg_gen = f"\n> ⚠️ *LLM enhancer ON ({llm_provider_gen} for {current_model_type_for_job.upper()}), but API key missing.*"; enhancer_info_gen['error'] = f"API Key missing for {llm_provider_gen}"
+        additional_info_msg_gen += f"\n> ⚠️ *LLM enhancer ON ({llm_provider_gen} for {current_model_type_for_job.upper()}), but API key missing.*"
+        enhancer_info_gen['error'] = f"API Key missing for {llm_provider_gen}"
     elif is_derivative_action: pass 
     elif is_admin_text_cmd_gen: print("Skipping LLM Enhancer for admin text command.")
     elif is_img2img_gen: print("Skipping LLM Enhancer for img2img command.")
@@ -537,6 +630,9 @@ async def execute_generation_logic(
             style_warning = job_details_current_gen.get('style_warning_message')
             if style_warning:
                 final_additional_info_msg += f"\n> ⚠️ *Style Warning: {style_warning}*"
+            model_warning = job_details_current_gen.get('model_warning_message')
+            if model_warning:
+                final_additional_info_msg += f"\n> ⚠️ *Model Warning: {model_warning}*"
                 
             job_result["message_content_details"] = {
                 "user_mention": context_user.mention, "prompt_to_display": prompt_text_status_gen,
@@ -553,7 +649,8 @@ async def execute_generation_logic(
                 "mp_size": job_details_current_gen.get("mp_size", "N/A"),
                 "style": job_details_current_gen.get('style', 'off'), "is_img2img": is_img2img_gen,
                 "img_strength_percent": job_details_current_gen.get('img_strength_percent') if is_img2img_gen else None,
-                "negative_prompt": job_details_current_gen.get('negative_prompt') if current_model_type_for_job == "sdxl" else None,
+                "negative_prompt": job_details_current_gen.get('negative_prompt') if current_model_type_for_job in {"sdxl", "qwen"} else None,
+                "model_warning_message": model_warning,
             }
             job_result["job_data_for_qm"] = {"comfy_prompt_id": comfy_id_current_gen, "channel_id": context_channel.id, "user_id": context_user.id, "user_name": context_user.name, "user_mention": context_user.mention, **job_details_current_gen}
             results_list.append(job_result)
@@ -613,11 +710,14 @@ async def process_variation_request(context_user, context_channel, referenced_me
     all_jobs_to_queue = modify_variation_prompt(
         message_content_var, referenced_message_obj, variation_type_str, target_attachment_var.url, image_idx, edited_prompt_str, edited_neg_prompt_str
     )
-    if not all_jobs_to_queue: 
+    if not all_jobs_to_queue:
         return [{"status": "error", "error_message_text": "Failed to prepare variation request."}]
-    
+
     # Since we now have one job with a batch, we take the first (and only) item
     job_id_var, mod_prompt_var, resp_status_var, job_details_var = all_jobs_to_queue[0]
+
+    if not job_id_var:
+        return [{"status": "error", "error_message_text": resp_status_var or "Failed to prepare variation request."}]
 
     comfy_id_var = None; queue_err_var = None
     try: 
@@ -676,12 +776,17 @@ async def process_rerun_request(context_user, context_channel, referenced_messag
     
     current_settings_rerun = load_settings()
     selected_model_rerun = current_settings_rerun.get('selected_model')
-    model_type_for_rerun = "flux" 
+    model_type_for_rerun = "flux"
     if selected_model_rerun and ":" in selected_model_rerun:
         model_type_for_rerun = selected_model_rerun.split(":",1)[0].strip().lower()
-    elif selected_model_rerun: 
-        if selected_model_rerun.endswith((".gguf",".sft")): model_type_for_rerun = "flux"
-        else: model_type_for_rerun = "sdxl"
+    elif selected_model_rerun:
+        lowered_rerun = selected_model_rerun.lower()
+        if 'qwen' in lowered_rerun:
+            model_type_for_rerun = "qwen"
+        elif selected_model_rerun.endswith((".gguf",".sft")):
+            model_type_for_rerun = "flux"
+        else:
+            model_type_for_rerun = "sdxl"
     
     return await execute_generation_logic(
         context_user, context_channel, prompt_for_rerun_str,
@@ -691,133 +796,259 @@ async def process_rerun_request(context_user, context_channel, referenced_messag
         is_derivative_action=True 
     )
 
-async def process_kontext_edit_request(
+def _parse_edit_parameters(instruction: str) -> tuple[str, dict[str, Any]]:
+    """Split edit instruction into clean text and --param mapping."""
+
+    param_pattern = r"\s--(\w+)(?:\s+(\"([^\"]*)\"|((?:(?!--|\s--).)+)|([^\s]+)))?"
+    params_dict: dict[str, Any] = {}
+    clean_instruction = instruction
+    first_param_match = re.search(r"\s--\w+", instruction)
+
+    if first_param_match:
+        clean_instruction = instruction[: first_param_match.start()].strip()
+        param_string = instruction[first_param_match.start() :]
+        for key, _, quoted_val, unquoted_compound, unquoted_single in re.findall(param_pattern, param_string):
+            value = quoted_val or unquoted_compound or unquoted_single
+            params_dict[key.lower()] = value.strip() if value else True
+
+    return clean_instruction, params_dict
+
+
+def _select_edit_engine(engine_hint: str | None, params_dict: dict[str, Any], settings: dict[str, Any]) -> str:
+    """Determine whether to run Kontext or Qwen Image Edit."""
+
+    def _normalise(value: Any) -> str:
+        return str(value).strip().lower() if isinstance(value, str) else ""
+
+    hint = _normalise(engine_hint)
+    if hint in {"qwen", "qwen-image", "qwen_edit"}:
+        return "qwen"
+    if hint in {"kontext", "flux"}:
+        return "kontext"
+
+    for key in ("engine", "model", "workflow"):
+        if key in params_dict:
+            lowered = _normalise(params_dict[key])
+            if "qwen" in lowered:
+                return "qwen"
+            if any(token in lowered for token in ("kontext", "flux")):
+                return "kontext"
+
+    if any(key in params_dict for key in ("qwen", "qwenedit", "qwen_image")):
+        return "qwen"
+    if any(key in params_dict for key in ("kontext", "flux")):
+        return "kontext"
+
+    default_engine = _normalise(settings.get("default_edit_engine", "kontext"))
+    return "qwen" if default_engine == "qwen" else "kontext"
+
+
+def _resolve_float(params_dict: dict[str, Any], key: str, default: float) -> float:
+    if key not in params_dict:
+        return default
+    try:
+        return float(params_dict[key])
+    except (TypeError, ValueError):
+        return default
+
+
+async def process_image_edit_request(
     context_user: discord.User,
     context_channel: discord.abc.Messageable,
     instruction: str,
-    image_urls: list,
-    initial_interaction_obj: discord.Interaction | None = None
+    image_urls: list[str],
+    initial_interaction_obj: discord.Interaction | None = None,
+    engine_hint: str | None = None,
 ):
-    """Handles a Kontext edit request from start to finish."""
+    """Handle edit requests for Kontext or Qwen Image Edit."""
+
+    if not image_urls:
+        await safe_interaction_response(initial_interaction_obj, "Error: At least one image is required.", ephemeral=True)
+        return
+
     await _ensure_ws_client_id()
     settings = load_settings()
-    
-    param_pattern = r'\s--(\w+)(?:\s+("([^"]*)"|((?:(?!--|\s--).)+)|([^\s]+)))?'
-    params_dict = {}
-    clean_instruction = instruction
-    first_param_match = re.search(r'\s--\w+', instruction)
-    
-    if first_param_match:
-        clean_instruction = instruction[:first_param_match.start()].strip()
-        param_string = instruction[first_param_match.start():]
-        param_matches = re.findall(param_pattern, param_string)
-        for key, _, quoted_val, unquoted_compound, unquoted_single in param_matches:
-            value = quoted_val if quoted_val else (unquoted_compound if unquoted_compound else unquoted_single)
-            params_dict[key.lower()] = value.strip() if value else True
 
-    enhancer_info = {'used': False, 'provider': None, 'enhanced_text': None, 'error': None}
+    clean_instruction, params_dict = _parse_edit_parameters(instruction)
+    engine = _select_edit_engine(engine_hint, params_dict, settings)
+
+    enhancer_info = {"used": False, "provider": None, "enhanced_text": None, "error": None}
     enhanced_instruction = clean_instruction
-    
-    if settings.get('llm_enhancer_enabled', False):
-        enhancer_info['provider'] = settings.get('llm_provider', 'gemini')
+
+    enhancer_prompt = (
+        KONTEXT_ENHANCER_SYSTEM_PROMPT if engine == "kontext" else QWEN_IMAGE_EDIT_ENHANCER_SYSTEM_PROMPT
+    )
+    enhancer_target = "kontext" if engine == "kontext" else "qwen_edit"
+
+    if settings.get("llm_enhancer_enabled", False):
+        enhancer_info["provider"] = settings.get("llm_provider", "gemini")
         enhanced_res, err_msg = await util_enhance_prompt(
-            clean_instruction, 
-            system_prompt_text_override=KONTEXT_ENHANCER_SYSTEM_PROMPT, 
-            target_model_type="kontext",
-            image_urls=image_urls
+            clean_instruction,
+            system_prompt_text_override=enhancer_prompt,
+            target_model_type=enhancer_target,
+            image_urls=image_urls,
         )
         if enhanced_res:
             enhanced_instruction = enhanced_res
-            enhancer_info.update({'used': True, 'enhanced_text': enhanced_res})
+            enhancer_info.update({"used": True, "enhanced_text": enhanced_res})
         elif err_msg:
-            enhancer_info['error'] = err_msg
+            enhancer_info["error"] = err_msg
 
     primary_image_url = image_urls[0]
     dimensions = await asyncio.to_thread(get_image_dimensions, primary_image_url)
     final_aspect_ratio = "1:1"
-    if dimensions:
+    if dimensions and dimensions[1] > 0:
         w, h = dimensions
-        if h > 0:
-            common_divisor = math.gcd(w, h)
-            final_aspect_ratio = f"{w//common_divisor}:{h//common_divisor}"
-    
-    if params_dict.get('ar') and re.match(r'^\d+:\d+$', str(params_dict['ar'])):
-        final_aspect_ratio = str(params_dict['ar'])
+        gcd = math.gcd(w, h)
+        final_aspect_ratio = f"{w // gcd}:{h // gcd}" if gcd else final_aspect_ratio
+    if params_dict.get("ar") and re.match(r"^\d+:\d+$", str(params_dict["ar"])):
+        final_aspect_ratio = str(params_dict["ar"])
 
-    final_steps = settings.get('kontext_steps', 32)
-    if params_dict.get('steps') and str(params_dict.get('steps')).isdigit():
-        final_steps = int(params_dict['steps'])
-
-    final_guidance = settings.get('kontext_guidance', 3.0)
-    if params_dict.get('g'):
-        try:
-            final_guidance = float(params_dict['g'])
-        except (ValueError, TypeError): pass
-    
-    final_mp_size = settings.get('kontext_mp_size', 1.15)
-    if params_dict.get('mp'):
-        try:
-            final_mp_size = float(params_dict['mp'])
-        except (ValueError, TypeError): pass
+    if engine == "kontext":
+        final_steps = settings.get("kontext_steps", 32)
+        if params_dict.get("steps") and str(params_dict.get("steps")).isdigit():
+            final_steps = int(params_dict["steps"])
+        final_guidance = _resolve_float(params_dict, "g", settings.get("kontext_guidance", 3.0))
+        final_mp_size = _resolve_float(params_dict, "mp", settings.get("kontext_mp_size", 1.15))
+        denoise_override = None
+    else:
+        final_steps = settings.get("qwen_edit_steps", 30)
+        if params_dict.get("steps") and str(params_dict.get("steps")).isdigit():
+            final_steps = int(params_dict["steps"])
+        final_guidance = _resolve_float(params_dict, "g", settings.get("qwen_edit_guidance", 6.0))
+        denoise_override = _resolve_float(params_dict, "denoise", settings.get("qwen_edit_denoise", 0.65))
+        final_mp_size = None
 
     seed = generate_seed()
     source_job_id = "slash_command"
     if initial_interaction_obj and initial_interaction_obj.message and initial_interaction_obj.message.attachments:
         source_job_id = extract_job_id(initial_interaction_obj.message.attachments[0].filename) or "unknown"
 
-    job_id, workflow_payload, status_msg, job_details = modify_kontext_prompt(
-        image_urls=image_urls,
-        instruction=enhanced_instruction,
-        user_settings=settings,
-        base_seed=seed,
-        aspect_ratio=final_aspect_ratio,
-        steps_override=final_steps,
-        guidance_override=final_guidance,
-        mp_size_override=final_mp_size,
-        source_job_id=source_job_id
-    )
-    
+    if engine == "kontext":
+        job_id, workflow_payload, status_msg, job_details = modify_kontext_prompt(
+            image_urls=image_urls,
+            instruction=enhanced_instruction,
+            user_settings=settings,
+            base_seed=seed,
+            aspect_ratio=final_aspect_ratio,
+            steps_override=final_steps,
+            guidance_override=final_guidance,
+            mp_size_override=final_mp_size,
+            source_job_id=source_job_id,
+        )
+    else:
+        job_id, workflow_payload, status_msg, job_details = modify_qwen_edit_prompt(
+            image_urls=image_urls,
+            instruction=enhanced_instruction,
+            user_settings=settings,
+            base_seed=seed,
+            steps_override=final_steps,
+            guidance_override=final_guidance,
+            denoise_override=denoise_override,
+            source_job_id=source_job_id,
+        )
+
     if not workflow_payload:
         await safe_interaction_response(initial_interaction_obj, f"Error: {status_msg}", ephemeral=True)
         return
 
-    comfy_id = None
     try:
         comfy_id = comfy_queue_prompt(workflow_payload, COMFYUI_HOST, COMFYUI_PORT)
-    except Exception as e:
-        await safe_interaction_response(initial_interaction_obj, f"Error queueing job with ComfyUI: {e}", ephemeral=True)
+    except Exception as exc:
+        await safe_interaction_response(
+            initial_interaction_obj, f"Error queueing job with ComfyUI: {exc}", ephemeral=True
+        )
         return
-        
+
     if not comfy_id:
-        await safe_interaction_response(initial_interaction_obj, "Failed to queue job with ComfyUI (unknown error).", ephemeral=True)
+        await safe_interaction_response(
+            initial_interaction_obj, "Failed to queue job with ComfyUI (unknown error).", ephemeral=True
+        )
         return
 
     from bot_ui_components import QueuedJobView
-    
-    content = (f"{context_user.mention}: Editing with Kontext...\n"
-               f"> **Instruction:** `{textwrap.shorten(instruction, 100, placeholder='...')}`\n"
-               f"> **Images:** {len(image_urls)}, **AR:** `{final_aspect_ratio}`, **MP:** `{final_mp_size}`, **Seed:** `{seed}`\n"
-               f"> **Status:** Queued...")
-    
-    if enhancer_info['used']:
+
+    if engine == "kontext":
+        status_summary = (
+            f"> **Images:** {len(image_urls)}, **AR:** `{final_aspect_ratio}`, **MP:** `{final_mp_size}`, **Seed:** `{seed}`\n"
+        )
+        header = "Editing with Kontext"
+    else:
+        status_summary = (
+            f"> **Images:** {len(image_urls)}, **AR:** `{final_aspect_ratio}`, **Steps:** `{final_steps}`, "
+            f"**Guidance:** `{final_guidance}`, **Denoise:** `{denoise_override:.2f}`, **Seed:** `{seed}`\n"
+        )
+        header = "Editing with Qwen Image Edit"
+
+    content = (
+        f"{context_user.mention}: {header}...\n"
+        f"> **Instruction:** `{textwrap.shorten(instruction, 100, placeholder='...')}`\n"
+        f"{status_summary}"
+        f"> **Status:** Queued..."
+    )
+
+    if enhancer_info["used"]:
         content += " ✨"
-    
+
     view = QueuedJobView(comfy_prompt_id=comfy_id)
     sent_message = await safe_interaction_response(initial_interaction_obj, content=content, view=view)
-    
+
     if sent_message:
         job_data_for_qm = {
-            "comfy_prompt_id": comfy_id, "channel_id": context_channel.id,
-            "user_id": context_user.id, "user_name": context_user.name,
-            "user_mention": context_user.mention, "message_id": sent_message.id,
-            "enhancer_used": enhancer_info['used'], "llm_provider": enhancer_info['provider'],
-            "original_prompt": instruction, 
+            "comfy_prompt_id": comfy_id,
+            "channel_id": context_channel.id,
+            "user_id": context_user.id,
+            "user_name": context_user.name,
+            "user_mention": context_user.mention,
+            "message_id": sent_message.id,
+            "enhancer_used": enhancer_info["used"],
+            "llm_provider": enhancer_info["provider"],
+            "original_prompt": instruction,
             "enhanced_prompt": enhanced_instruction,
             "prompt": enhanced_instruction,
-            "enhancer_error": enhancer_info['error'], **job_details
+            "enhancer_error": enhancer_info["error"],
+            **job_details,
         }
         queue_manager.add_job(job_id, job_data_for_qm)
         ws_client = WebsocketClient()
         if ws_client.is_connected:
             await ws_client.register_prompt(comfy_id, sent_message.id, sent_message.channel.id)
+
+
+async def process_kontext_edit_request(
+    context_user: discord.User,
+    context_channel: discord.abc.Messageable,
+    instruction: str,
+    image_urls: list[str],
+    initial_interaction_obj: discord.Interaction | None = None,
+):
+    """Backwards compatible wrapper for Kontext-only edits."""
+
+    await process_image_edit_request(
+        context_user=context_user,
+        context_channel=context_channel,
+        instruction=instruction,
+        image_urls=image_urls,
+        initial_interaction_obj=initial_interaction_obj,
+        engine_hint="kontext",
+    )
+
+
+async def process_qwen_edit_request(
+    context_user: discord.User,
+    context_channel: discord.abc.Messageable,
+    instruction: str,
+    image_urls: list[str],
+    initial_interaction_obj: discord.Interaction | None = None,
+):
+    """Convenience wrapper for Qwen Image Edit."""
+
+    await process_image_edit_request(
+        context_user=context_user,
+        context_channel=context_channel,
+        instruction=instruction,
+        image_urls=image_urls,
+        initial_interaction_obj=initial_interaction_obj,
+        engine_hint="qwen",
+    )
 # --- END OF FILE bot_core_logic.py ---```

@@ -13,14 +13,13 @@ required_libraries = [
     'psutil',
     'python-dotenv',
     'pandas',
-    'ttkthemes'
+    'PySide6',
 ]
 
 if platform.system() == 'Windows':
     required_libraries.append('pywin32')
 
 built_in_modules = [
-    'tkinter',
     'asyncio',
 ]
 
