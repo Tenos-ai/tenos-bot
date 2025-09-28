@@ -571,10 +571,17 @@ def build_stylesheet(
 
     return f"""
 QWidget {{
-    background: {variant.surface};
+    background: transparent;
     color: {variant.text_primary};
     font-family: 'Segoe UI', 'Roboto', sans-serif;
     font-size: 14px;
+}}
+QFrame#MaterialSurface {{
+    background: {variant.surface};
+    border-radius: 28px;
+}}
+QWidget#MaterialTitleBar {{
+    background: transparent;
 }}
 #MaterialAppTitle {{
     font-size: 24px;
@@ -591,28 +598,88 @@ QWidget {{
     background: {variant.chip_background};
     color: {variant.chip_text};
 }}
-QPushButton {{
+QWidget#QuickActions {{
+    background: {variant.surface_variant};
+    border-radius: 24px;
+}}
+QToolButton#IconButton {{
+    background: transparent;
+    border: none;
     border-radius: 18px;
-    padding: 8px 20px;
-    background: {variant.accent};
-    color: #FFFFFF;
+    padding: 10px;
+    color: {variant.text_secondary};
 }}
-QPushButton:hover {{
-    background: {variant.accent_hover};
+QWidget#QuickActions QToolButton#IconButton {{
+    padding: 8px;
 }}
-QPushButton:pressed {{
-    background: {variant.accent_pressed};
+QToolButton#IconButton:hover {{
+    background: {variant.nav_hover};
+    color: {variant.accent};
+}}
+QToolButton#IconButton:pressed {{
+    background: {variant.nav_selected};
+    color: {variant.accent};
+}}
+QToolButton#WindowControl {{
+    background: transparent;
+    border: none;
+    border-radius: 14px;
+    padding: 6px;
+}}
+QToolButton#WindowControl:hover {{
+    background: {variant.nav_hover};
+}}
+QToolButton#WindowControl:pressed {{
+    background: {variant.nav_selected};
+}}
+QFrame#NavigationRail {{
+    background: {variant.nav_background};
+    border-top-left-radius: 28px;
+    border-bottom-left-radius: 28px;
+    border-right: 1px solid {variant.card_border};
+}}
+#NavigationHeading {{
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: {variant.text_secondary};
+}}
+QWidget#NavigationFooter {{
+    background: {variant.surface_variant};
+    border-radius: 22px;
+}}
+QToolButton#ThemeToggle {{
+    border: none;
+    border-radius: 16px;
+    padding: 6px 14px;
+    font-size: 18px;
+}}
+QToolButton#ThemeToggle[mode="light"] {{
+    background: {variant.chip_background};
+    color: {variant.chip_text};
+}}
+QToolButton#ThemeToggle[mode="dark"] {{
+    background: rgba(255, 255, 255, 0.08);
+    color: {variant.text_primary};
+}}
+QToolButton#ThemeToggle:hover {{
+    background: {variant.nav_hover};
+}}
+#NavVersion {{
+    color: {variant.text_secondary};
+    font-weight: 500;
 }}
 QListWidget#MaterialNav {{
-    background: {variant.nav_background};
-    border-right: 1px solid {variant.card_border};
-    padding: 8px;
+    background: transparent;
+    border: none;
+    padding: 4px 0;
     color: {variant.nav_text};
 }}
 QListWidget#MaterialNav::item {{
     padding: 12px 18px;
-    margin: 4px 0;
-    border-radius: 12px;
+    margin: 2px 0;
+    border-radius: 14px;
 }}
 QListWidget#MaterialNav::item:selected {{
     background: {variant.nav_selected};
@@ -638,9 +705,42 @@ QListWidget#MaterialCardList {{
     padding: 12px;
     border: 1px solid {variant.card_border};
 }}
+QGroupBox {{
+    border: 1px solid {variant.card_border};
+    border-radius: 18px;
+    margin-top: 18px;
+    background: {variant.card_background};
+    padding-top: 22px;
+}}
+QGroupBox::title {{
+    subcontrol-origin: margin;
+    left: 20px;
+    top: 10px;
+    padding: 0 6px;
+    color: {variant.text_secondary};
+    font-weight: 600;
+}}
+QScrollArea {{
+    background: transparent;
+    border: none;
+}}
+QScrollBar:vertical {{
+    width: 12px;
+    background: transparent;
+}}
+QScrollBar::handle:vertical {{
+    background: {variant.surface_variant};
+    border-radius: 6px;
+}}
+QScrollBar::handle:vertical:hover {{
+    background: {variant.nav_hover};
+}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    height: 0;
+}}
 QComboBox, QSpinBox, QDoubleSpinBox, QTextEdit, QLineEdit {{
     border-radius: 12px;
-    padding: 6px 12px;
+    padding: 8px 14px;
     border: 1px solid {variant.input_border};
     background: {variant.input_background};
     color: {variant.text_primary};
@@ -649,6 +749,20 @@ QComboBox QAbstractItemView {{
     background: {variant.surface_variant};
     selection-background-color: {variant.accent};
     selection-color: #FFFFFF;
+    border-radius: 12px;
+}}
+QPushButton {{
+    border-radius: 18px;
+    padding: 10px 28px;
+    background: {variant.accent};
+    color: #FFFFFF;
+    border: none;
+}}
+QPushButton:hover {{
+    background: {variant.accent_hover};
+}}
+QPushButton:pressed {{
+    background: {variant.accent_pressed};
 }}
 QCheckBox {{
     padding: 6px 0;

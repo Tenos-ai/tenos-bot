@@ -41,12 +41,19 @@ class SystemStatusView(BaseView):
         self.issue_list.clear()
 
     def show_report(self, report: DiagnosticsReport) -> None:
+        total_workflows = sum(report.workflow_group_counts.values())
         summary_lines = [
             f"ComfyUI connected: {'Yes' if report.comfy_connected else 'No'}",
             f"Qwen ready: {'Yes' if report.qwen_ready else 'No'}",
-            f"Curated Qwen workflows: {report.qwen_workflow_count}",
+            f"Curated workflows available: {total_workflows}",
             f"Style presets available: {report.style_count}",
         ]
+        if report.workflow_group_counts:
+            breakdown = ", ".join(
+                f"{key.replace('_', ' ').title()}: {count}"
+                for key, count in sorted(report.workflow_group_counts.items())
+            )
+            summary_lines.append(f"Library breakdown: {breakdown}")
         self.summary_label.setText("\n".join(summary_lines))
 
         self.issue_list.clear()
