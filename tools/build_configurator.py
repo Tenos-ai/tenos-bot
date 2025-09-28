@@ -8,7 +8,7 @@ and run a single command.
 
 Usage (from the repository root)::
 
-    python packaging/build_configurator.py
+    python tools/build_configurator.py
 
 The default invocation creates a ``dist/TenosAIConfigurator`` directory
 containing ``TenosAIConfigurator.exe`` alongside the required assets.
@@ -107,20 +107,31 @@ def _build_pyinstaller_command(args: argparse.Namespace) -> list[str]:
     for hidden in HIDDEN_IMPORTS:
         command.extend(("--hidden-import", hidden))
 
-    # ``pythonXY.dll`` is not always bundled automatically when PyInstaller runs
-    # from a virtual environment on Windows.  If it is missing, the frozen
-    # executable immediately aborts with ``Failed to load Python DLL`` which is
-    # the error users have reported.  Detect the base interpreter's DLL and ship
-    # it explicitly so the bundle is self-contained.
+    # ``pythonXY.dll`` and the Visual C++ runtime DLL are not always bundled
+    # automatically when PyInstaller runs from a virtual environment on
+    # Windows.  If either component is missing the frozen executable aborts
+    # immediately with "Failed to load Python DLL" which is the error users
+    # reported.  Detect the DLLs in common locations and ship them explicitly so
+    # the bundle is self-contained.
     if os.name == "nt":  # pragma: win32-cover
-        python_dll = Path(sys.base_prefix) / f"python{sys.version_info.major}{sys.version_info.minor}.dll"
-        if python_dll.exists():
-            command.extend(("--add-binary", _normalize_add_data_argument(python_dll, ".")))
+        dll_name = f"python{sys.version_info.major}{sys.version_info.minor}.dll"
+        candidates = [
+            Path(sys.executable).with_name(dll_name),
+            Path(sys.base_prefix) / dll_name,
+        ]
+
+        for candidate in candidates:
+            if candidate.exists():
+                command.extend(("--add-binary", _normalize_add_data_argument(candidate, ".")))
+                break
         else:  # pragma: no cover - depends on external interpreter layout
             print(
-                "[build] warning: could not locate 'python*.dll' in base interpreter; "
-                "the resulting executable may fail to start"
+                "[build] warning: could not locate 'python*.dll'; the resulting executable may fail to start"
             )
+
+        vcruntime = Path(sys.executable).with_name("vcruntime140.dll")
+        if vcruntime.exists():
+            command.extend(("--add-binary", _normalize_add_data_argument(vcruntime, ".")))
 
     if args.onefile:
         command.append("--onefile")
