@@ -76,6 +76,32 @@ This update introduces a more organized and powerful configuration experience, a
 
 Make sure you already have ComfyUI installed. If you need ComfyUI still, you can download it [`HERE`](https://www.comfy.org/download).
 
+### Portable Windows build (GUI executable)
+
+If running `TENOSAI-BOT.bat` does not launch the configurator, you can
+ship a self-contained Windows executable for the Material GUI instead:
+
+1. Install [PyInstaller](https://pyinstaller.org/en/stable/) inside your
+   Python environment:
+
+   ```bash
+   pip install pyinstaller
+   ```
+
+2. From the repository root run the build helper:
+
+   ```bash
+   python packaging/build_configurator.py --zip
+   ```
+
+   The script generates `dist/TenosAIConfigurator/TenosAIConfigurator.exe`
+   alongside a ready-to-distribute `dist/TenosAIConfigurator-portable.zip`
+   archive containing the executable and default configuration files.
+
+3. Share `TenosAIConfigurator.exe` (or the `.zip` archive) with users.
+   Launching the executable replaces the batch file workflow and
+   automatically loads the bundled defaults.
+
 ### Python Dependencies
 
 Install the UI dependency stack before launching the configurator:
