@@ -7,6 +7,7 @@ import traceback
 from bot_config_loader import COMFYUI_HOST, COMFYUI_PORT
 from queue_manager import queue_manager
 
+
 class WebsocketClient:
     _instance = None
 
@@ -297,7 +298,20 @@ class WebsocketClient:
 
     async def reconnect(self):
         print("WebSocket: Reconnect sequence initiated.")
-        await self.disconnect(cancel_tasks=True) 
+        await self.disconnect(cancel_tasks=True)
         print("WebSocket: Delaying 5s before attempting reconnect...")
-        await asyncio.sleep(5) 
+        await asyncio.sleep(5)
         await self.ensure_connected()
+
+
+def get_initialized_websocket_client() -> "WebsocketClient | None":
+    """Return the active websocket client instance if it has been initialised."""
+
+    instance = WebsocketClient._instance
+    if instance is None:
+        return None
+
+    if not getattr(instance, "_initialized", False):
+        return None
+
+    return instance
