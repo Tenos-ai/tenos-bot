@@ -9,7 +9,6 @@ from typing import Dict
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QAbstractItemView,
     QCheckBox,
     QFileDialog,
     QFormLayout,
@@ -21,8 +20,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSpinBox,
-    QTableWidget,
-    QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -49,15 +47,10 @@ class MainConfigView(BaseView):
         self._bot_host: QLineEdit | None = None
         self._bot_port: QSpinBox | None = None
         self._bot_token: QLineEdit | None = None
-        self._admin_username: QLineEdit | None = None
-        self._admin_id: QLineEdit | None = None
         self._gemini_key: QLineEdit | None = None
         self._groq_key: QLineEdit | None = None
         self._openai_key: QLineEdit | None = None
         self._auto_update_checkbox: QCheckBox | None = None
-        self._allowed_table: QTableWidget | None = None
-        self._allowed_id_input: QLineEdit | None = None
-        self._allowed_label_input: QLineEdit | None = None
         self._status_label: QLabel | None = None
 
         root_layout = QVBoxLayout(self)
@@ -87,13 +80,12 @@ class MainConfigView(BaseView):
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(18)
 
-        content_layout.addWidget(self._build_output_group())
-        content_layout.addWidget(self._build_model_group())
-        content_layout.addWidget(self._build_api_group())
-        content_layout.addWidget(self._build_bot_group())
-        content_layout.addWidget(self._build_allowed_users_group())
-        content_layout.addWidget(self._build_llm_group())
-        content_layout.addWidget(self._build_app_settings_group())
+        tabs = QTabWidget()
+        tabs.addTab(self._build_paths_tab(), "File Paths")
+        tabs.addTab(self._build_endpoints_tab(), "Endpoint URLs")
+        tabs.addTab(self._build_api_keys_tab(), "API Keys")
+        tabs.addTab(self._build_app_settings_tab(), "App Settings")
+        content_layout.addWidget(tabs)
         content_layout.addStretch()
 
         button_row = QHBoxLayout()
@@ -113,6 +105,44 @@ class MainConfigView(BaseView):
     # ------------------------------------------------------------------
     # UI construction helpers
     # ------------------------------------------------------------------
+    def _build_paths_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
+        layout.addWidget(self._build_output_group())
+        layout.addWidget(self._build_model_group())
+        layout.addStretch(1)
+        return page
+
+    def _build_endpoints_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
+        layout.addWidget(self._build_api_group())
+        layout.addStretch(1)
+        return page
+
+    def _build_api_keys_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
+        layout.addWidget(self._build_bot_credentials_group())
+        layout.addWidget(self._build_llm_group())
+        layout.addStretch(1)
+        return page
+
+    def _build_app_settings_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
+        layout.addWidget(self._build_app_settings_group())
+        layout.addStretch(1)
+        return page
+
     def _build_output_group(self) -> QGroupBox:
         group = QGroupBox("Output Directories")
         form = QFormLayout(group)
@@ -207,7 +237,7 @@ class MainConfigView(BaseView):
 
         return group
 
-    def _build_bot_group(self) -> QGroupBox:
+    def _build_bot_credentials_group(self) -> QGroupBox:
         group = QGroupBox("Discord Bot Credentials")
         form = QFormLayout(group)
         form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -216,50 +246,6 @@ class MainConfigView(BaseView):
         self._bot_token.setEchoMode(QLineEdit.Password)
         self._bot_token.setPlaceholderText("Bot token from Discord developer portal")
         form.addRow("Bot Token", self._bot_token)
-
-        self._admin_username = QLineEdit()
-        self._admin_username.setPlaceholderText("Admin username (optional)")
-        form.addRow("Admin Username", self._admin_username)
-
-        self._admin_id = QLineEdit()
-        self._admin_id.setPlaceholderText("Admin Discord user ID")
-        form.addRow("Admin User ID", self._admin_id)
-
-        return group
-
-    def _build_allowed_users_group(self) -> QGroupBox:
-        group = QGroupBox("Allowed Users")
-        layout = QVBoxLayout(group)
-        layout.setSpacing(12)
-
-        instructions = QLabel(
-            "Map Discord user IDs to friendly names to grant additional access. "
-            "Leave empty to restrict control to the admin."
-        )
-        instructions.setWordWrap(True)
-        layout.addWidget(instructions)
-
-        self._allowed_table = QTableWidget(0, 2)
-        self._allowed_table.setHorizontalHeaderLabels(["Discord ID", "Label"])
-        self._allowed_table.horizontalHeader().setStretchLastSection(True)
-        self._allowed_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._allowed_table.setSelectionMode(QAbstractItemView.SingleSelection)
-        layout.addWidget(self._allowed_table)
-
-        form_row = QHBoxLayout()
-        self._allowed_id_input = QLineEdit()
-        self._allowed_id_input.setPlaceholderText("Discord ID")
-        self._allowed_label_input = QLineEdit()
-        self._allowed_label_input.setPlaceholderText("Label / Notes")
-        add_button = QPushButton("Add")
-        add_button.clicked.connect(self._add_allowed_user)  # pragma: no cover - Qt binding
-        remove_button = QPushButton("Remove Selected")
-        remove_button.clicked.connect(self._remove_allowed_user)  # pragma: no cover - Qt binding
-        form_row.addWidget(self._allowed_id_input)
-        form_row.addWidget(self._allowed_label_input)
-        form_row.addWidget(add_button)
-        form_row.addWidget(remove_button)
-        layout.addLayout(form_row)
 
         return group
 
@@ -380,41 +366,6 @@ class MainConfigView(BaseView):
         if directory:
             field.setText(directory)
 
-    def _add_allowed_user(self) -> None:  # pragma: no cover - Qt binding
-        if self._allowed_table is None or self._allowed_id_input is None or self._allowed_label_input is None:
-            return
-        user_id = self._allowed_id_input.text().strip()
-        label = self._allowed_label_input.text().strip()
-        if not user_id:
-            self._set_status("Enter a Discord user ID before adding.")
-            return
-        # If the ID already exists, update the label instead of duplicating the row.
-        for row in range(self._allowed_table.rowCount()):
-            existing_item = self._allowed_table.item(row, 0)
-            if existing_item and existing_item.text() == user_id:
-                self._allowed_table.setItem(row, 1, QTableWidgetItem(label))
-                self._allowed_id_input.clear()
-                self._allowed_label_input.clear()
-                self._set_status("Updated existing allowed user entry.")
-                return
-        row = self._allowed_table.rowCount()
-        self._allowed_table.insertRow(row)
-        self._allowed_table.setItem(row, 0, QTableWidgetItem(user_id))
-        self._allowed_table.setItem(row, 1, QTableWidgetItem(label))
-        self._allowed_id_input.clear()
-        self._allowed_label_input.clear()
-        self._set_status("Added allowed user entry.")
-
-    def _remove_allowed_user(self) -> None:  # pragma: no cover - Qt binding
-        if self._allowed_table is None:
-            return
-        current = self._allowed_table.currentRow()
-        if current < 0:
-            self._set_status("Select an entry to remove.")
-            return
-        self._allowed_table.removeRow(current)
-        self._set_status("Allowed user removed.")
-
     def _persist(self) -> None:  # pragma: no cover - Qt binding
         try:
             payload = {
@@ -432,10 +383,6 @@ class MainConfigView(BaseView):
                     "PORT": int(self._bot_port.value()) if self._bot_port else 8189,
                 },
                 "BOT_API": {"KEY": self._bot_token.text().strip() if self._bot_token else ""},
-                "ADMIN": {
-                    "USERNAME": self._admin_username.text().strip() if self._admin_username else "",
-                    "ID": self._admin_id.text().strip() if self._admin_id else "",
-                },
                 "LLM_ENHANCER": {
                     "GEMINI_API_KEY": self._gemini_key.text().strip() if self._gemini_key else "",
                     "GROQ_API_KEY": self._groq_key.text().strip() if self._groq_key else "",
@@ -447,20 +394,6 @@ class MainConfigView(BaseView):
                     else False
                 },
             }
-
-            if self._allowed_table is not None:
-                allowed_users: Dict[str, str] = {}
-                for row in range(self._allowed_table.rowCount()):
-                    id_item = self._allowed_table.item(row, 0)
-                    label_item = self._allowed_table.item(row, 1)
-                    if id_item is None:
-                        continue
-                    user_id = id_item.text().strip()
-                    if not user_id:
-                        continue
-                    label = label_item.text().strip() if label_item else ""
-                    allowed_users[user_id] = label
-                payload["ALLOWED_USERS"] = allowed_users
 
             self._repository.save_config(payload)
             self._set_status("Configuration saved.")
@@ -506,12 +439,6 @@ class MainConfigView(BaseView):
         if self._bot_token is not None:
             self._bot_token.setText(str(bot_credentials.get("KEY", "")))
 
-        admin = config.get("ADMIN", {})
-        if self._admin_username is not None:
-            self._admin_username.setText(str(admin.get("USERNAME", "")))
-        if self._admin_id is not None:
-            self._admin_id.setText(str(admin.get("ID", "")))
-
         llm = config.get("LLM_ENHANCER", {})
         if self._gemini_key is not None:
             self._gemini_key.setText(str(llm.get("GEMINI_API_KEY", "")))
@@ -523,16 +450,6 @@ class MainConfigView(BaseView):
         app_settings = config.get("APP_SETTINGS", {})
         if self._auto_update_checkbox is not None:
             self._auto_update_checkbox.setChecked(bool(app_settings.get("AUTO_UPDATE_ON_STARTUP", False)))
-
-        if self._allowed_table is not None:
-            self._allowed_table.setRowCount(0)
-            allowed_users = config.get("ALLOWED_USERS", {})
-            if isinstance(allowed_users, dict):
-                for user_id, label in allowed_users.items():
-                    row = self._allowed_table.rowCount()
-                    self._allowed_table.insertRow(row)
-                    self._allowed_table.setItem(row, 0, QTableWidgetItem(str(user_id)))
-                    self._allowed_table.setItem(row, 1, QTableWidgetItem(str(label)))
 
     # ------------------------------------------------------------------
     # Helpers

@@ -1,5 +1,3 @@
-"""Material view exports with graceful fallbacks when PySide6 is missing."""
-
 from __future__ import annotations
 
 from typing import Any, Callable
@@ -17,57 +15,39 @@ def _missing_component(name: str) -> Callable[..., Any]:
 
 
 try:  # pragma: no cover - executed only when PySide6 is installed
-    from .activity import ActivityLogView  # type: ignore
-    from .overview import OverviewView  # type: ignore
-    from .discord import DiscordSettingsView  # type: ignore
+    from .admin import AdminView  # type: ignore
     from .appearance import AppearanceSettingsView  # type: ignore
-    from .custom_workflows import CustomWorkflowSettingsView  # type: ignore
-    from .qwen import QwenSettingsView  # type: ignore
-    from .system import SystemStatusView  # type: ignore
-    from .workflows import WorkflowsView  # type: ignore
-    from .admin import NetworkMonitorView  # type: ignore
+    from .dashboard import DashboardView  # type: ignore
     from .main_config import MainConfigView  # type: ignore
     from .bot_settings import BotSettingsView  # type: ignore
     from .lora_styles import LoraStylesView  # type: ignore
     from .favorites import FavoritesView  # type: ignore
     from .llm_prompts import LlmPromptsView  # type: ignore
-    from .bot_control import BotControlView  # type: ignore
     from .tools import ToolsView  # type: ignore
+    from .bot_control import BotControlView  # type: ignore
 except ModuleNotFoundError as exc:  # pragma: no cover - triggered when PySide6 missing
     if exc.name != "PySide6":
         raise
-    ActivityLogView = _missing_component("ActivityLogView")  # type: ignore[assignment]
-    OverviewView = _missing_component("OverviewView")  # type: ignore[assignment]
-    DiscordSettingsView = _missing_component("DiscordSettingsView")  # type: ignore[assignment]
+    AdminView = _missing_component("AdminView")  # type: ignore[assignment]
     AppearanceSettingsView = _missing_component("AppearanceSettingsView")  # type: ignore[assignment]
-    CustomWorkflowSettingsView = _missing_component("CustomWorkflowSettingsView")  # type: ignore[assignment]
-    QwenSettingsView = _missing_component("QwenSettingsView")  # type: ignore[assignment]
-    SystemStatusView = _missing_component("SystemStatusView")  # type: ignore[assignment]
-    WorkflowsView = _missing_component("WorkflowsView")  # type: ignore[assignment]
-    NetworkMonitorView = _missing_component("NetworkMonitorView")  # type: ignore[assignment]
+    DashboardView = _missing_component("DashboardView")  # type: ignore[assignment]
     MainConfigView = _missing_component("MainConfigView")  # type: ignore[assignment]
     BotSettingsView = _missing_component("BotSettingsView")  # type: ignore[assignment]
     LoraStylesView = _missing_component("LoraStylesView")  # type: ignore[assignment]
     FavoritesView = _missing_component("FavoritesView")  # type: ignore[assignment]
     LlmPromptsView = _missing_component("LlmPromptsView")  # type: ignore[assignment]
-    BotControlView = _missing_component("BotControlView")  # type: ignore[assignment]
     ToolsView = _missing_component("ToolsView")  # type: ignore[assignment]
+    BotControlView = _missing_component("BotControlView")  # type: ignore[assignment]
 
 __all__ = [
-    "ActivityLogView",
-    "OverviewView",
-    "DiscordSettingsView",
+    "AdminView",
     "AppearanceSettingsView",
-    "CustomWorkflowSettingsView",
-    "QwenSettingsView",
-    "SystemStatusView",
-    "WorkflowsView",
-    "NetworkMonitorView",
+    "DashboardView",
     "MainConfigView",
     "BotSettingsView",
     "LoraStylesView",
     "FavoritesView",
     "LlmPromptsView",
-    "BotControlView",
     "ToolsView",
+    "BotControlView",
 ]

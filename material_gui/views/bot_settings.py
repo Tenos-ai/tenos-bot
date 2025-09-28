@@ -9,13 +9,13 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
     QScrollArea,
     QSpinBox,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -99,6 +99,15 @@ class BotSettingsView(BaseView):
         self._kontext_mp_spin.setRange(0.1, 5.0)
         self._kontext_mp_spin.setSingleStep(0.05)
 
+        self._qwen_edit_steps_spin = QSpinBox()
+        self._qwen_edit_steps_spin.setRange(1, 200)
+        self._qwen_edit_guidance_spin = QDoubleSpinBox()
+        self._qwen_edit_guidance_spin.setRange(0.0, 20.0)
+        self._qwen_edit_guidance_spin.setSingleStep(0.1)
+        self._qwen_edit_denoise_spin = QDoubleSpinBox()
+        self._qwen_edit_denoise_spin.setRange(0.0, 1.0)
+        self._qwen_edit_denoise_spin.setSingleStep(0.01)
+
         self._variation_mode_combo = QComboBox()
         self._display_pref_combo = QComboBox()
         self._default_engine_combo = QComboBox()
@@ -135,11 +144,15 @@ class BotSettingsView(BaseView):
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(18)
 
-        content_layout.addWidget(self._build_model_group())
-        content_layout.addWidget(self._build_generation_group())
-        content_layout.addWidget(self._build_variation_group())
-        content_layout.addWidget(self._build_kontext_group())
-        content_layout.addWidget(self._build_llm_group())
+        tabs = QTabWidget()
+        tabs.addTab(self._build_general_tab(), "General")
+        tabs.addTab(self._build_flux_tab(), "Flux")
+        tabs.addTab(self._build_sdxl_tab(), "SDXL")
+        tabs.addTab(self._build_qwen_tab(), "Qwen")
+        tabs.addTab(self._build_kontext_tab(), "Kontext")
+        tabs.addTab(self._build_qwen_edit_tab(), "Qwen Edit")
+        tabs.addTab(self._build_llm_tab(), "LLM")
+        content_layout.addWidget(tabs)
         content_layout.addStretch()
 
         button_row = QHBoxLayout()
@@ -159,77 +172,116 @@ class BotSettingsView(BaseView):
     # ------------------------------------------------------------------
     # UI construction helpers
     # ------------------------------------------------------------------
-    def _build_model_group(self) -> QGroupBox:
-        group = QGroupBox("Model & Asset Defaults")
-        form = QFormLayout(group)
+    def _build_general_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        form = QFormLayout()
         form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
         form.addRow("Global Default Model", self._model_combo)
-        form.addRow("Preferred Flux Model", self._flux_combo)
-        form.addRow("Preferred SDXL Model", self._sdxl_combo)
-        form.addRow("Preferred Qwen Model", self._qwen_combo)
-        form.addRow("T5 CLIP", self._t5_combo)
-        form.addRow("CLIP-L", self._clip_l_combo)
-        form.addRow("Upscale Model", self._upscale_model_combo)
-        form.addRow("VAE", self._vae_combo)
-
-        form.addRow("Default Flux Style", self._flux_style_combo)
-        form.addRow("Default SDXL Style", self._sdxl_style_combo)
-        form.addRow("Default Qwen Style", self._qwen_style_combo)
-
-        return group
-
-    def _build_generation_group(self) -> QGroupBox:
-        group = QGroupBox("Generation Defaults")
-        form = QFormLayout(group)
-        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-
-        form.addRow("Flux Steps", self._steps_spin)
-        form.addRow("Flux Guidance", self._guidance_spin)
-        form.addRow("SDXL/Qwen Steps", self._sdxl_steps_spin)
-        form.addRow("SDXL/Qwen Guidance", self._sdxl_guidance_spin)
         form.addRow("Default Batch Size", self._batch_size_spin)
-        form.addRow("Target Megapixels", self._mp_size_spin)
-        form.addRow("Upscale Factor", self._upscale_factor_spin)
-        form.addRow("Default Edit Engine", self._default_engine_combo)
-        form.addRow("SDXL Negative Prompt", self._sdxl_negative)
-        form.addRow("Qwen Negative Prompt", self._qwen_negative)
-
-        return group
-
-    def _build_variation_group(self) -> QGroupBox:
-        group = QGroupBox("Variation & Discord Display")
-        form = QFormLayout(group)
-        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-
         form.addRow("Variation Mode", self._variation_mode_combo)
         form.addRow("Variation Batch Size", self._variation_batch_spin)
         form.addRow("Remix Mode", self._remix_checkbox)
         form.addRow("Prompt Display Preference", self._display_pref_combo)
+        form.addRow("Target Megapixels", self._mp_size_spin)
+        form.addRow("Upscale Factor", self._upscale_factor_spin)
+        form.addRow("Upscale Model", self._upscale_model_combo)
+        form.addRow("VAE", self._vae_combo)
+        form.addRow("T5 CLIP", self._t5_combo)
+        form.addRow("CLIP-L", self._clip_l_combo)
+        layout.addLayout(form)
+        layout.addStretch()
+        return page
 
-        return group
+    def _build_flux_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-    def _build_kontext_group(self) -> QGroupBox:
-        group = QGroupBox("Kontext Edit Defaults")
-        form = QFormLayout(group)
+        form.addRow("Preferred Flux Model", self._flux_combo)
+        form.addRow("Default Flux Style", self._flux_style_combo)
+        form.addRow("Flux Steps", self._steps_spin)
+        form.addRow("Flux Guidance", self._guidance_spin)
+        layout.addLayout(form)
+        layout.addStretch()
+        return page
+
+    def _build_sdxl_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        form.addRow("Preferred SDXL Model", self._sdxl_combo)
+        form.addRow("Default SDXL Style", self._sdxl_style_combo)
+        form.addRow("SDXL Steps", self._sdxl_steps_spin)
+        form.addRow("SDXL Guidance", self._sdxl_guidance_spin)
+        form.addRow("SDXL Negative Prompt", self._sdxl_negative)
+        layout.addLayout(form)
+        layout.addStretch()
+        return page
+
+    def _build_qwen_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        form.addRow("Preferred Qwen Model", self._qwen_combo)
+        form.addRow("Default Qwen Style", self._qwen_style_combo)
+        form.addRow("Qwen Negative Prompt", self._qwen_negative)
+        layout.addLayout(form)
+        layout.addStretch()
+        return page
+
+    def _build_kontext_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        form = QFormLayout()
         form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
         form.addRow("Kontext Steps", self._kontext_steps_spin)
         form.addRow("Kontext Guidance", self._kontext_guidance_spin)
         form.addRow("Kontext Target MP", self._kontext_mp_spin)
+        layout.addLayout(form)
+        layout.addStretch()
+        return page
 
-        return group
-
-    def _build_llm_group(self) -> QGroupBox:
-        group = QGroupBox("LLM Prompt Enhancer")
-        form = QFormLayout(group)
+    def _build_qwen_edit_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        form = QFormLayout()
         form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-        form.addRow("Status", self._llm_checkbox)
+        form.addRow("Default Edit Engine", self._default_engine_combo)
+        form.addRow("Edit Steps", self._qwen_edit_steps_spin)
+        form.addRow("Edit Guidance", self._qwen_edit_guidance_spin)
+        form.addRow("Edit Denoise", self._qwen_edit_denoise_spin)
+        layout.addLayout(form)
+        layout.addStretch()
+        return page
+
+    def _build_llm_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        form.addRow("Enhancer Enabled", self._llm_checkbox)
         form.addRow("Provider", self._llm_provider_combo)
         form.addRow("Provider Model", self._llm_model_combo)
-
-        return group
+        layout.addLayout(form)
+        layout.addStretch()
+        return page
 
     # ------------------------------------------------------------------
     # Helpers
@@ -304,6 +356,9 @@ class BotSettingsView(BaseView):
                 "default_edit_engine": self._default_engine_combo.currentText(),
                 "default_sdxl_negative_prompt": self._sdxl_negative.toPlainText().strip(),
                 "default_qwen_negative_prompt": self._qwen_negative.toPlainText().strip(),
+                "qwen_edit_steps": self._qwen_edit_steps_spin.value(),
+                "qwen_edit_guidance": self._qwen_edit_guidance_spin.value(),
+                "qwen_edit_denoise": self._qwen_edit_denoise_spin.value(),
                 "llm_enhancer_enabled": self._llm_checkbox.isChecked(),
                 "llm_provider": self._llm_provider_combo.currentData() or self._llm_provider_combo.currentText(),
             }
@@ -368,6 +423,9 @@ class BotSettingsView(BaseView):
         self._kontext_steps_spin.setValue(int(settings.get("kontext_steps", 32)))
         self._kontext_guidance_spin.setValue(float(settings.get("kontext_guidance", 3.0)))
         self._kontext_mp_spin.setValue(float(settings.get("kontext_mp_size", 1.15)))
+        self._qwen_edit_steps_spin.setValue(int(settings.get("qwen_edit_steps", 30)))
+        self._qwen_edit_guidance_spin.setValue(float(settings.get("qwen_edit_guidance", 6.0)))
+        self._qwen_edit_denoise_spin.setValue(float(settings.get("qwen_edit_denoise", 0.65)))
 
         self._populate_combo(self._variation_mode_combo, get_variation_mode_choices(settings), settings.get("default_variation_mode"))
         self._populate_combo(
