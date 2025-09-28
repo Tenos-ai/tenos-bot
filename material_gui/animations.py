@@ -80,14 +80,19 @@ class StatusPulseAnimator(QPropertyAnimation):
     def refresh(self) -> None:
         """Ensure the effect remains attached and animation keeps running."""
         effect = self.targetObject()
-        if isinstance(effect, QGraphicsOpacityEffect) and effect.widget() is self._label:
+        label_effect = self._label.graphicsEffect()
+
+        if effect is label_effect and isinstance(effect, QGraphicsOpacityEffect):
             if self.state() != QAbstractAnimation.Running:
                 self.start()
-        else:  # the effect was replaced; reattach and restart
-            new_effect = QGraphicsOpacityEffect(self._label)
-            self._label.setGraphicsEffect(new_effect)
-            self.setTargetObject(new_effect)
-            self.start()
+            return
+
+        if not isinstance(label_effect, QGraphicsOpacityEffect):
+            label_effect = QGraphicsOpacityEffect(self._label)
+            self._label.setGraphicsEffect(label_effect)
+
+        self.setTargetObject(label_effect)
+        self.start()
 
     # ------------------------------------------------------------------
     # Internal callbacks
