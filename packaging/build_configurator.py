@@ -107,6 +107,21 @@ def _build_pyinstaller_command(args: argparse.Namespace) -> list[str]:
     for hidden in HIDDEN_IMPORTS:
         command.extend(("--hidden-import", hidden))
 
+    # ``pythonXY.dll`` is not always bundled automatically when PyInstaller runs
+    # from a virtual environment on Windows.  If it is missing, the frozen
+    # executable immediately aborts with ``Failed to load Python DLL`` which is
+    # the error users have reported.  Detect the base interpreter's DLL and ship
+    # it explicitly so the bundle is self-contained.
+    if os.name == "nt":  # pragma: win32-cover
+        python_dll = Path(sys.base_prefix) / f"python{sys.version_info.major}{sys.version_info.minor}.dll"
+        if python_dll.exists():
+            command.extend(("--add-binary", _normalize_add_data_argument(python_dll, ".")))
+        else:  # pragma: no cover - depends on external interpreter layout
+            print(
+                "[build] warning: could not locate 'python*.dll' in base interpreter; "
+                "the resulting executable may fail to start"
+            )
+
     if args.onefile:
         command.append("--onefile")
 
