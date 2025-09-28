@@ -8,7 +8,7 @@ from typing import Any, Mapping, MutableMapping, TypedDict
 import discord
 
 from queue_manager import queue_manager
-from websocket_client import WebsocketClient
+from websocket_client import get_initialized_websocket_client
 
 
 class JobMessageDetails(TypedDict, total=False):
@@ -230,22 +230,29 @@ async def register_job_with_queue(result: Mapping[str, Any], sent_message: disco
 
     payload: dict[str, Any] = dict(job_data)
 
+    comfy_prompt_id = result.get("comfy_prompt_id")
+    if comfy_prompt_id is not None and "comfy_prompt_id" not in payload:
+        payload["comfy_prompt_id"] = comfy_prompt_id
+
     if sent_message is not None:
         payload["message_id"] = sent_message.id
-        payload.setdefault("channel_id", getattr(sent_message.channel, "id", None))
+        payload["channel_id"] = getattr(sent_message.channel, "id", payload.get("channel_id"))
 
     queue_manager.add_job(job_id, payload)
 
     if sent_message is not None:
-        ws_client = WebsocketClient()
-        comfy_prompt_id = result.get("comfy_prompt_id")
-        if ws_client.is_connected and comfy_prompt_id:
-            try:
-                await ws_client.register_prompt(comfy_prompt_id, sent_message.id, sent_message.channel.id)
-            except Exception as websocket_error:
-                print(
-                    f"Warning: Failed to register prompt {comfy_prompt_id} for job {job_id} with websocket: {websocket_error}"
-                )
+        ws_client = get_initialized_websocket_client()
+        if ws_client is None:
+            print("Warning: Websocket client not yet initialised; skipping prompt registration.")
+        else:
+            if comfy_prompt_id:
+                try:
+                    await ws_client.register_prompt(comfy_prompt_id, sent_message.id, sent_message.channel.id)
+                except Exception as websocket_error:
+                    print(
+                        "Warning: Failed to register prompt "
+                        f"{comfy_prompt_id} for job {job_id} with websocket: {websocket_error}"
+                    )
 
     return True
 

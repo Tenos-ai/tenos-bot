@@ -10,6 +10,7 @@ from pathlib import Path
 
 from bot_config_loader import print_startup_info, ADMIN_ID, COMFYUI_HOST, COMFYUI_PORT, print_output_dirs
 from bot_core_logic import check_output_folders, process_cancel_request, execute_generation_logic
+from websocket_client import WebsocketClient
 from bot_commands import (
     handle_reply_upscale,
     handle_reply_vary,
@@ -118,6 +119,8 @@ async def on_bot_ready(bot):
     print_startup_info(); styles_config_on_ready_unused = load_styles_config(); print(f"Styles Loaded: {len(styles_config_on_ready_unused)}")
     print_output_dirs(); update_models_on_startup(); await validate_models_against_comfyui(bot)
     await _apply_bot_profile_preferences(bot)
+    ws_client = WebsocketClient(bot)
+    bot.loop.create_task(ws_client.ensure_connected())
     try:
         print("Registering/syncing slash commands..."); synced = await bot.tree.sync()
         print(f"Successfully synced {len(synced)} slash commands globally.")

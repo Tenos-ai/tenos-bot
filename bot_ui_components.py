@@ -12,7 +12,7 @@ from utils.show_prompt import reconstruct_full_prompt_string
 from bot_config_loader import ADMIN_ID, ALLOWED_USERS
 from settings_manager import load_settings
 from utils.message_utils import safe_interaction_response
-from websocket_client import WebsocketClient
+from websocket_client import get_initialized_websocket_client
 
 from bot_core_logic import (
     process_upscale_request as core_process_upscale,
@@ -177,8 +177,8 @@ class RemixModal(Modal, title='Remix Variation'):
                     job_data_to_add_item = result_item["job_data_for_qm"]
                     job_data_to_add_item["message_id"] = sent_message_item.id
                     queue_manager.add_job(result_item["job_id"], job_data_to_add_item)
-                    ws_client = WebsocketClient()
-                    if ws_client.is_connected and result_item.get("comfy_prompt_id"):
+                    ws_client = get_initialized_websocket_client()
+                    if ws_client and ws_client.is_connected and result_item.get("comfy_prompt_id"):
                         await ws_client.register_prompt(result_item["comfy_prompt_id"], sent_message_item.id, sent_message_item.channel.id)
 
             elif result_item["status"] == "error":
@@ -357,8 +357,8 @@ class GenerationActionsView(View):
                 if sent_message_item and result_item["job_data_for_qm"]:
                     job_data_to_add_item = result_item["job_data_for_qm"]; job_data_to_add_item["message_id"] = sent_message_item.id
                     queue_manager.add_job(result_item["job_id"], job_data_to_add_item)
-                    ws_client = WebsocketClient()
-                    if ws_client.is_connected and result_item.get("comfy_prompt_id"):
+                    ws_client = get_initialized_websocket_client()
+                    if ws_client and ws_client.is_connected and result_item.get("comfy_prompt_id"):
                         await ws_client.register_prompt(result_item["comfy_prompt_id"], sent_message_item.id, sent_message_item.channel.id)
             elif result_item["status"] == "error":
                 error_text_item = result_item.get('error_message_text', f'Unknown error during {action_description}.')

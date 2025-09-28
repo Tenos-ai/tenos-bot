@@ -17,7 +17,7 @@ from queue_manager import queue_manager
 from file_management import extract_job_id
 from settings_manager import load_settings, load_styles_config, save_settings, resolve_model_for_type
 from comfyui_api import queue_prompt as comfy_queue_prompt, ConnectionRefusedError as ComfyConnectionRefusedError
-from websocket_client import WebsocketClient
+from websocket_client import WebsocketClient, get_initialized_websocket_client
 
 from image_generation import modify_prompt as ig_modify_prompt
 from upscaling import modify_upscale_prompt as up_modify_upscale_prompt, get_image_dimensions
@@ -42,7 +42,11 @@ def register_bot_instance_for_core(bot_instance):
 
 async def _ensure_ws_client_id():
     """Waits up to 5 seconds for the websocket client to get its session ID."""
-    ws_client = WebsocketClient()
+    ws_client = get_initialized_websocket_client()
+    if ws_client is None:
+        print("Warning: WebSocket client has not been initialised; cannot wait for client ID yet.")
+        return
+
     if ws_client.client_id:
         return
     
@@ -78,7 +82,10 @@ async def _get_preview_image_from_comfyui(image_data):
 
 async def update_job_progress(bot, prompt_id, current_step, max_steps, image_data):
     """Updates the Discord message with the current job progress."""
-    ws_client = WebsocketClient()
+    ws_client = get_initialized_websocket_client()
+    if ws_client is None:
+        return
+
     job_info = ws_client.active_prompts.get(prompt_id)
     if not job_info: return
 
@@ -127,8 +134,8 @@ async def update_job_progress(bot, prompt_id, current_step, max_steps, image_dat
             print(f"Error updating progress message for prompt {prompt_id}: {e}")
 
 async def process_completed_job(bot, job_id, job_data, file_paths: list):
-    ws_client = WebsocketClient()
-    if job_data.get("comfy_prompt_id"):
+    ws_client = get_initialized_websocket_client()
+    if ws_client and job_data.get("comfy_prompt_id"):
         ws_client.unregister_prompt(job_data["comfy_prompt_id"])
         
     from bot_ui_components import BatchActionsView, GenerationActionsView
@@ -362,8 +369,9 @@ async def check_output_folders(bot):
         await asyncio.sleep(2 if queue_manager.get_pending_jobs() else 10)
 
 async def process_cancel_request(comfy_prompt_id: str) -> tuple[bool, str]:
-    ws_client = WebsocketClient()
-    ws_client.unregister_prompt(comfy_prompt_id)
+    ws_client = get_initialized_websocket_client()
+    if ws_client:
+        ws_client.unregister_prompt(comfy_prompt_id)
 
     bot_job_data = queue_manager.get_job_by_comfy_id(comfy_prompt_id)
     bot_job_id = bot_job_data.get('job_id') if bot_job_data else None
@@ -1010,8 +1018,8 @@ async def process_image_edit_request(
             **job_details,
         }
         queue_manager.add_job(job_id, job_data_for_qm)
-        ws_client = WebsocketClient()
-        if ws_client.is_connected:
+        ws_client = get_initialized_websocket_client()
+        if ws_client and ws_client.is_connected:
             await ws_client.register_prompt(comfy_id, sent_message.id, sent_message.channel.id)
 
 
