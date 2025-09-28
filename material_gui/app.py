@@ -76,6 +76,7 @@ class MaterialConfigWindow(QMainWindow):
         worker_count = max(2, min(4, os.cpu_count() or 2))
         self._executor = ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="config-worker")
         self._workflow_service = QwenWorkflowService()
+        self._pending_status_message: Optional[str] = None
         self._coordinator = UpdateCoordinator(
             repo_owner="Tenos-ai",
             repo_name="Tenos-Bot",
@@ -138,6 +139,9 @@ class MaterialConfigWindow(QMainWindow):
         self.status_chip.setObjectName("StatusChip")
         self.status_chip.setAlignment(Qt.AlignCenter)
         top_bar.addWidget(self.status_chip)
+        if self._pending_status_message:
+            self.status_chip.setText(self._pending_status_message)
+            self._pending_status_message = None
         self._status_pulse = StatusPulseAnimator(self.status_chip)
 
         self.theme_toggle = QPushButton("Light Mode")
@@ -526,7 +530,10 @@ class MaterialConfigWindow(QMainWindow):
         QMessageBox.critical(self, title, message)
 
     def _set_status(self, message: str) -> None:
-        self.status_chip.setText(message)
+        if hasattr(self, "status_chip") and self.status_chip is not None:
+            self.status_chip.setText(message)
+        else:
+            self._pending_status_message = message
 
     def _open_outputs(self) -> None:  # pragma: no cover - Qt binding
         outputs_config = self._repository.config.get("OUTPUTS", {}) if isinstance(self._repository.config, dict) else {}
