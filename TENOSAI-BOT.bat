@@ -1,33 +1,49 @@
 @echo off
+setlocal
+
 REM Change directory to the script's own directory to ensure paths are correct
 cd /d %~dp0
+
+REM Locate a Python interpreter (prefer the launcher when available).
+set "PY_CMD="
+py -3 --version >nul 2>&1 && set "PY_CMD=py -3"
+if not defined PY_CMD (
+    python --version >nul 2>&1 && set "PY_CMD=python"
+)
+
+if not defined PY_CMD (
+    echo ERROR: Python 3.10 or newer is required but was not found on PATH.
+    echo Install Python from https://www.python.org/downloads/ and try again.
+    pause
+    exit /b 1
+)
 
 echo Checking for virtual environment...
 if not exist "venv\Scripts\activate.bat" (
     echo Virtual environment not found. Creating one now...
-    python -m venv venv
-    if %ERRORLEVEL% neq 0 (
+    %PY_CMD% -m venv venv
+    if errorlevel 1 (
         echo ERROR: Failed to create the virtual environment.
         echo Please make sure Python is installed correctly and added to your system's PATH.
         pause
-        goto :eof
+        exit /b 1
     )
     echo Virtual environment created successfully.
 )
 
 echo.
 echo Activating virtual environment...
-call venv\Scripts\activate
-if %ERRORLEVEL% neq 0 (
+call "venv\Scripts\activate"
+if errorlevel 1 (
     echo ERROR: Failed to activate the virtual environment even after creation/check.
     pause
-    goto :eof
+    exit /b 1
 )
 
 echo.
 echo Checking and installing required Python libraries...
 python check_libraries.py
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo WARNING: An error occurred while checking or installing libraries.
     echo The configurator will still attempt to start, but it may not function correctly.
     echo Please review any error messages above.
@@ -36,11 +52,11 @@ if %ERRORLEVEL% neq 0 (
 
 echo.
 echo Starting the configurator...
-REM Use start "title" pythonw.exe to launch without a console window that stays open.
-start "TenosAIConfigEditor" /B pythonw.exe config_editor_main.py
+set "PYTHONW=venv\Scripts\pythonw.exe"
+if not exist "%PYTHONW%" set "PYTHONW=venv\Scripts\python.exe"
+start "TenosAIConfigEditor" "%PYTHONW%" config_editor_main.py
 
 echo.
-REM This message might flash briefly or not be seen if the launch is quick.
 echo Configurator launch initiated. If it did not appear, run this batch file
-echo from a command prompt (cmd.exe) without the 'start /B pythonw.exe' part
-echo (i.e., just 'python config_editor_main.py') to see any startup errors.
+echo from a command prompt (cmd.exe) and choose the "python config_editor_main.py"
+echo line suggested above to review any startup errors.

@@ -10,6 +10,7 @@ from settings_manager import load_settings, save_settings, get_available_models_
 
 CONFIG_PATH = Path("config.json")
 SETTINGS_PATH = Path("settings.json")
+ONBOARDING_KEY = "material_onboarding_completed"
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -101,6 +102,15 @@ class SettingsRepository:
                 "theme_custom_text": custom_text,
             }
         )
+
+    # ------------------------------------------------------------------
+    # Onboarding helpers
+    # ------------------------------------------------------------------
+    def has_completed_onboarding(self) -> bool:
+        return bool(self._settings_cache.get(ONBOARDING_KEY))
+
+    def mark_onboarding_completed(self) -> None:
+        self.save_settings({ONBOARDING_KEY: True})
 
     # ------------------------------------------------------------------
     # Custom workflow helpers

@@ -46,6 +46,7 @@ from material_gui.views import (
     SystemStatusView,
     WorkflowsView,
 )
+from material_gui.views.onboarding import FirstRunTutorialDialog
 from services import (
     QwenWorkflowService,
     collect_system_diagnostics,
@@ -112,6 +113,7 @@ class MaterialConfigWindow(QMainWindow):
         self._run_diagnostics()  # prime diagnostics on launch
         self._set_status("Ready")
         QTimer.singleShot(250, self._maybe_run_auto_update)  # pragma: no cover - startup hook
+        QTimer.singleShot(400, self._maybe_show_first_run_tutorial)  # pragma: no cover - startup hook
 
     # ------------------------------------------------------------------
     # Qt construction helpers
@@ -298,6 +300,21 @@ class MaterialConfigWindow(QMainWindow):
 
     def _handle_update(self) -> None:  # pragma: no cover - Qt binding
         self._begin_update(status_message="Checking for updates…", initiated_by_auto=False)
+
+    def _maybe_show_first_run_tutorial(self) -> None:  # pragma: no cover - UI hook
+        if self._repository.has_completed_onboarding():
+            return
+
+        dialog = FirstRunTutorialDialog(self)
+        dialog.exec()
+        self._repository.mark_onboarding_completed()
+
+        if dialog.was_skipped():
+            self._set_status("Tutorial skipped")
+        else:
+            self._set_status("Walkthrough complete")
+
+        QTimer.singleShot(2000, lambda: self._set_status("Ready"))
 
     def _maybe_run_auto_update(self) -> None:
         config_data = self._repository.config
