@@ -5,11 +5,18 @@ import traceback
 def load_main_config():
     config_path = 'config.json'
     default_structure = {
-        "ADMIN": {"USERNAME": "", "ID": ""}, 
-        "OUTPUTS": {}, 
+        "ADMIN": {"USERNAME": "", "ID": ""},
+        "OUTPUTS": {},
+        "MODELS": {
+            "MODEL_FILES": "",
+            "CHECKPOINTS_FOLDER": "",
+            "UPSCALE_MODELS": "",
+            "VAE_MODELS": "",
+        },
+        "QWEN": {"MODEL_FILES": "", "CLIP_FILES": ""},
         "COMFYUI_API": {"HOST": "127.0.0.1", "PORT": 8188},
         "BOT_INTERNAL_API": {"HOST": "127.0.0.1", "PORT": 8189},
-        "BOT_API": {}, "LLM_ENHANCER": {"GEMINI_API_KEY": "", "GROQ_API_KEY": "", "OPENAI_API_KEY": ""}, 
+        "BOT_API": {}, "LLM_ENHANCER": {"GEMINI_API_KEY": "", "GROQ_API_KEY": "", "OPENAI_API_KEY": ""},
         "ALLOWED_USERS": {}
     }
     try:

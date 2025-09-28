@@ -30,6 +30,22 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
         json.dump(payload, fh, indent=2)
 
 
+def _deep_merge_dict(base: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of ``base`` with ``updates`` recursively merged."""
+
+    result: dict[str, Any] = dict(base)
+    for key, value in updates.items():
+        if (
+            key in result
+            and isinstance(result[key], dict)
+            and isinstance(value, dict)
+        ):
+            result[key] = _deep_merge_dict(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
 @dataclass(slots=True)
 class ConfigSnapshot:
     config: Dict[str, Any]
@@ -57,14 +73,12 @@ class SettingsRepository:
         return ConfigSnapshot(self._config_cache, self._settings_cache)
 
     def save_settings(self, updated: dict[str, Any]) -> None:
-        merged = dict(self._settings_cache)
-        merged.update(updated)
+        merged = _deep_merge_dict(self._settings_cache, updated)
         save_settings(merged)
         self._settings_cache = load_settings()
 
     def save_config(self, updated: dict[str, Any]) -> None:
-        merged = dict(self._config_cache)
-        merged.update(updated)
+        merged = _deep_merge_dict(self._config_cache, updated)
         _write_json(CONFIG_PATH, merged)
         self._config_cache = _read_json(CONFIG_PATH)
 

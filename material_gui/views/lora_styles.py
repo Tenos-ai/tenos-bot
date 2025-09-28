@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -45,6 +45,7 @@ class LoraStylesView(BaseView):
         self._styles: Dict[str, dict] = {}
         self._current_style: Optional[str] = None
         self._slot_controls: list[LoraSlotControls] = []
+        self._loading = False
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(24, 24, 24, 24)
@@ -91,17 +92,15 @@ class LoraStylesView(BaseView):
         button_row.addWidget(delete_button)
         detail_container.addLayout(button_row)
 
-        action_row = QHBoxLayout()
-        action_row.addStretch()
-        save_button = QPushButton("Save Styles")
-        save_button.clicked.connect(self._persist_styles)  # pragma: no cover - Qt binding
-        action_row.addWidget(save_button)
-        detail_container.addLayout(action_row)
-
-        self._status_label = QLabel("Select a style to edit its LoRA slots.")
+        self._status_label = QLabel("Select a style to edit its LoRA slots. Changes save automatically.")
         self._status_label.setObjectName("MaterialCard")
         self._status_label.setWordWrap(True)
         root_layout.addWidget(self._status_label)
+
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(600)
+        self._save_timer.timeout.connect(self._persist_styles)
 
         self.refresh(None)
 
@@ -118,10 +117,12 @@ class LoraStylesView(BaseView):
         layout.addLayout(header_layout)
 
         self._favorite_checkbox = QCheckBox("Mark as favourite in menus")
+        self._favorite_checkbox.toggled.connect(self._handle_form_changed)  # pragma: no cover - Qt binding
         header_layout.addRow("Favourite", self._favorite_checkbox)
 
         self._model_type_combo = QComboBox()
         self._model_type_combo.addItems(["all", "flux", "sdxl", "qwen"])
+        self._model_type_combo.currentIndexChanged.connect(self._handle_form_changed)  # pragma: no cover - Qt binding
         header_layout.addRow("Model Family", self._model_type_combo)
 
         slots_group = QGroupBox("LoRA Slots")
@@ -139,6 +140,11 @@ class LoraStylesView(BaseView):
             strength.setRange(0.0, 2.0)
             strength.setSingleStep(0.05)
             strength.setDecimals(2)
+
+            toggle.toggled.connect(self._handle_form_changed)  # pragma: no cover - Qt binding
+            name_combo.currentIndexChanged.connect(self._handle_form_changed)  # pragma: no cover - Qt binding
+            name_combo.editTextChanged.connect(self._handle_form_changed)  # pragma: no cover - Qt binding
+            strength.valueChanged.connect(self._handle_form_changed)  # pragma: no cover - Qt binding
 
             row_layout = QHBoxLayout()
             row_layout.addWidget(toggle)
@@ -166,7 +172,8 @@ class LoraStylesView(BaseView):
             return
         self._styles[style_name] = self._default_style_payload()
         self._refresh_style_list(select=style_name)
-        self._set_status(f"Style '{style_name}' created. Configure the slots then save.")
+        self._set_status(f"Style '{style_name}' created. Configure the slots; changes save automatically.")
+        self._schedule_save()
 
     def _duplicate_style(self) -> None:  # pragma: no cover - Qt binding
         if not self._current_style:
@@ -182,6 +189,7 @@ class LoraStylesView(BaseView):
         self._styles[new_name]["favorite"] = False
         self._refresh_style_list(select=new_name)
         self._set_status(f"Duplicated '{base_name}' → '{new_name}'.")
+        self._schedule_save()
 
     def _rename_style(self) -> None:  # pragma: no cover - Qt binding
         if not self._current_style or self._current_style == "off":
@@ -201,6 +209,7 @@ class LoraStylesView(BaseView):
         self._styles[candidate] = self._styles.pop(self._current_style)
         self._refresh_style_list(select=candidate)
         self._set_status(f"Renamed style to '{candidate}'.")
+        self._schedule_save()
 
     def _delete_style(self) -> None:  # pragma: no cover - Qt binding
         if not self._current_style:
@@ -222,9 +231,10 @@ class LoraStylesView(BaseView):
         self._current_style = None
         self._refresh_style_list()
         self._clear_form()
-        self._set_status("Style removed. Save to persist changes.")
+        self._set_status("Style removed.")
+        self._schedule_save()
 
-    def _persist_styles(self) -> None:  # pragma: no cover - Qt binding
+    def _persist_styles(self) -> None:
         try:
             self._update_style_from_form()
             data = dict(self._styles)
@@ -251,7 +261,10 @@ class LoraStylesView(BaseView):
         return payload
 
     def _handle_selection_changed(self, current: QListWidgetItem | None, _previous: QListWidgetItem | None) -> None:
+        previous = self._current_style
         self._update_style_from_form()
+        if previous and not self._loading:
+            self._schedule_save()
         if current is None:
             self._current_style = None
             self._clear_form()
@@ -263,9 +276,10 @@ class LoraStylesView(BaseView):
             return
         self._current_style = style_name
         self._populate_form(self._styles.get(style_name, {}))
-        self._set_status(f"Editing '{style_name}'. Remember to save after making changes.")
+        self._set_status(f"Editing '{style_name}'. Changes save automatically.")
 
     def _populate_form(self, data: dict) -> None:
+        self._loading = True
         self._favorite_checkbox.setChecked(bool(data.get("favorite", False)))
         model_type = str(data.get("model_type", "all")).lower()
         index = self._model_type_combo.findText(model_type)
@@ -278,25 +292,40 @@ class LoraStylesView(BaseView):
             slot_data = data.get(f"lora_{idx}", {})
             if not isinstance(slot_data, dict):
                 slot_data = {}
+            controls.toggle.blockSignals(True)
             controls.toggle.setChecked(bool(slot_data.get("on", False)))
+            controls.toggle.blockSignals(False)
+
             name_value = str(slot_data.get("lora", "NONE.safetensors"))
             controls.name.blockSignals(True)
             controls.name.clear()
             controls.name.addItem(name_value)
             controls.name.setCurrentIndex(0)
-            controls.name.blockSignals(False)
             controls.name.setEditText(name_value)
+            controls.name.blockSignals(False)
+
             strength_value = float(slot_data.get("strength", 0.0))
+            controls.strength.blockSignals(True)
             controls.strength.setValue(strength_value)
+            controls.strength.blockSignals(False)
+        self._loading = False
 
     def _clear_form(self) -> None:
+        self._loading = True
         self._favorite_checkbox.setChecked(False)
         self._model_type_combo.setCurrentIndex(0)
         for controls in self._slot_controls:
+            controls.toggle.blockSignals(True)
             controls.toggle.setChecked(False)
+            controls.toggle.blockSignals(False)
+            controls.name.blockSignals(True)
             controls.name.clear()
             controls.name.setEditText("")
+            controls.name.blockSignals(False)
+            controls.strength.blockSignals(True)
             controls.strength.setValue(0.0)
+            controls.strength.blockSignals(False)
+        self._loading = False
 
     def _update_style_from_form(self) -> None:
         if not self._current_style or self._current_style not in self._styles:
@@ -349,11 +378,24 @@ class LoraStylesView(BaseView):
     def _set_status(self, message: str) -> None:
         self._status_label.setText(message)
 
+    def _handle_form_changed(self) -> None:  # pragma: no cover - Qt binding
+        if self._loading:
+            return
+        self._update_style_from_form()
+        self._schedule_save()
+
+    def _schedule_save(self) -> None:
+        if self._loading:
+            return
+        self._status_label.setText("Saving styles…")
+        self._save_timer.start()
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
     def refresh(self, repository) -> None:  # pragma: no cover - UI wiring
         del repository
+        self._loading = True
         try:
             self._styles = load_styles_config() or {}
         except Exception:
@@ -363,6 +405,7 @@ class LoraStylesView(BaseView):
         self._refresh_style_list()
         if self._style_list.count():
             self._style_list.setCurrentRow(0)
+        self._loading = False
 
 
 __all__ = ["LoraStylesView"]

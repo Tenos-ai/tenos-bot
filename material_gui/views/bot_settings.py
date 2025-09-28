@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMessageBox,
-    QPushButton,
     QScrollArea,
     QSpinBox,
     QTabWidget,
@@ -45,6 +44,11 @@ class BotSettingsView(BaseView):
     def __init__(self, repository: SettingsRepository) -> None:
         super().__init__()
         self._repository = repository
+        self._loading = False
+        self._save_timer = QTimer(self)
+        self._save_timer.setInterval(300)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.timeout.connect(self._persist)  # pragma: no cover - Qt binding
 
         self._model_combo = QComboBox()
         self._flux_combo = QComboBox()
@@ -69,6 +73,19 @@ class BotSettingsView(BaseView):
             self._vae_combo,
         ):
             combo.setEditable(True)
+            combo.currentIndexChanged.connect(self._queue_save)  # pragma: no cover - Qt binding
+            combo.editTextChanged.connect(self._queue_save)  # pragma: no cover - Qt binding
+
+        for combo in (
+            self._flux_style_combo,
+            self._sdxl_style_combo,
+            self._qwen_style_combo,
+            self._variation_mode_combo,
+            self._display_pref_combo,
+            self._default_engine_combo,
+            self._llm_provider_combo,
+        ):
+            combo.currentIndexChanged.connect(self._queue_save)  # pragma: no cover - Qt binding
 
         self._steps_spin = QSpinBox()
         self._steps_spin.setRange(1, 300)
@@ -118,6 +135,8 @@ class BotSettingsView(BaseView):
         self._llm_provider_combo = QComboBox()
         self._llm_model_combo = QComboBox()
         self._llm_model_combo.setEditable(True)
+        self._llm_model_combo.currentIndexChanged.connect(self._queue_save)  # pragma: no cover - Qt binding
+        self._llm_model_combo.editTextChanged.connect(self._queue_save)  # pragma: no cover - Qt binding
 
         self._sdxl_negative = QTextEdit()
         self._sdxl_negative.setPlaceholderText("Default negative prompt for SDXL/Qwen generations")
@@ -125,6 +144,8 @@ class BotSettingsView(BaseView):
         self._qwen_negative = QTextEdit()
         self._qwen_negative.setPlaceholderText("Default negative prompt for Qwen edits")
         self._qwen_negative.setFixedHeight(80)
+        self._sdxl_negative.textChanged.connect(self._queue_save)  # pragma: no cover - Qt binding
+        self._qwen_negative.textChanged.connect(self._queue_save)  # pragma: no cover - Qt binding
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(24, 24, 24, 24)
@@ -155,17 +176,37 @@ class BotSettingsView(BaseView):
         content_layout.addWidget(tabs)
         content_layout.addStretch()
 
-        button_row = QHBoxLayout()
-        button_row.addStretch()
-        save_button = QPushButton("Save Bot Settings")
-        save_button.clicked.connect(self._persist)  # pragma: no cover - Qt binding
-        button_row.addWidget(save_button)
-        root_layout.addLayout(button_row)
-
-        self._status_label = QLabel("Defaults mirror settings.json and slash command behaviour.")
+        self._status_label = QLabel("Changes are saved automatically.")
         self._status_label.setObjectName("MaterialCard")
         self._status_label.setWordWrap(True)
         root_layout.addWidget(self._status_label)
+
+        for spin in (
+            self._steps_spin,
+            self._sdxl_steps_spin,
+            self._batch_size_spin,
+            self._variation_batch_spin,
+            self._qwen_edit_steps_spin,
+        ):
+            spin.valueChanged.connect(self._queue_save)  # pragma: no cover - Qt binding
+
+        for dspin in (
+            self._guidance_spin,
+            self._sdxl_guidance_spin,
+            self._mp_size_spin,
+            self._upscale_factor_spin,
+            self._kontext_guidance_spin,
+            self._kontext_mp_spin,
+            self._qwen_edit_guidance_spin,
+            self._qwen_edit_denoise_spin,
+        ):
+            dspin.valueChanged.connect(self._queue_save)  # pragma: no cover - Qt binding
+
+        for checkbox in (
+            self._remix_checkbox,
+            self._llm_checkbox,
+        ):
+            checkbox.stateChanged.connect(self._queue_save)  # pragma: no cover - Qt binding
 
         self.refresh(repository)
 
@@ -324,7 +365,15 @@ class BotSettingsView(BaseView):
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
+    def _queue_save(self) -> None:  # pragma: no cover - Qt binding
+        if self._loading:
+            return
+        self._save_timer.start()
+
     def _persist(self) -> None:  # pragma: no cover - Qt binding
+        if self._loading:
+            return
+        self._save_timer.stop()
         try:
             payload = {
                 "selected_model": self._current_combo_value(self._model_combo),
@@ -374,7 +423,6 @@ class BotSettingsView(BaseView):
 
             self._repository.save_settings(payload)
             self._set_status("Bot defaults saved.")
-            self.refresh(self._repository)
         except Exception as exc:  # pragma: no cover - user feedback only
             QMessageBox.critical(self, "Save Failed", str(exc))
             self._set_status("Unable to save bot settings. See details above.")
@@ -383,6 +431,8 @@ class BotSettingsView(BaseView):
     # Lifecycle
     # ------------------------------------------------------------------
     def refresh(self, repository: SettingsRepository) -> None:  # pragma: no cover - UI wiring
+        self._loading = True
+        self._save_timer.stop()
         settings = repository.settings
 
         model_options = get_model_choices(settings)
@@ -438,6 +488,7 @@ class BotSettingsView(BaseView):
         self._default_engine_combo.setCurrentText(str(settings.get("default_edit_engine", "kontext")))
         self._sdxl_negative.setPlainText(settings.get("default_sdxl_negative_prompt", ""))
         self._qwen_negative.setPlainText(settings.get("default_qwen_negative_prompt", ""))
+        self._loading = False
 
         # LLM provider/model options
         self._llm_checkbox.setChecked(bool(settings.get("llm_enhancer_enabled", False)))
@@ -454,7 +505,7 @@ class BotSettingsView(BaseView):
             allow_blank=True,
         )
 
-        self._set_status("Adjust defaults and save to update settings.json.")
+        self._set_status("Ready. Changes save automatically.")
 
 
 __all__ = ["BotSettingsView"]
