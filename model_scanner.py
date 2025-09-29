@@ -3,6 +3,11 @@ import json
 import requests
 import traceback
 
+
+def _unique_preserve_order(strings):
+    """Return a list of unique strings preserving their first-seen order."""
+    return list(dict.fromkeys(s for s in strings if isinstance(s, str)))
+
 def scan_models(model_directory):
     """Scan for Flux model files in the specified directory."""
     models = {
@@ -65,7 +70,7 @@ def update_models_list(config_path, output_file):
 
 
         models = scan_models(model_directory)
-        models['favorites'] = current_favorites
+        models['favorites'] = _unique_preserve_order(current_favorites)
 
         try:
             with open(output_file, 'w') as f:
@@ -151,7 +156,7 @@ def update_checkpoints_list(config_path, output_file):
                 if item not in aggregated['checkpoints']:
                     aggregated['checkpoints'].append(item)
         aggregated['checkpoints'].sort(key=str.lower)
-        aggregated['favorites'] = current_favorites
+        aggregated['favorites'] = _unique_preserve_order(current_favorites)
 
         try:
             with open(output_file, 'w') as f:
@@ -217,10 +222,6 @@ def scan_clip_files(config_path, output_file):
             except Exception as e_list:
                 print(f"ModelScanner Unexpected error listing CLIP directory: {e_list}")
 
-        for bucket in clip_files.values():
-            bucket.sort(key=str.lower)
-             traceback.print_exc()
-
         for key in clip_files:
             clip_files[key].sort(key=str.lower)
 
@@ -242,7 +243,10 @@ def scan_clip_files(config_path, output_file):
             except Exception as e_read:
                  print(f"ModelScanner Warning: Unexpected error reading {output_file}: {e_read}. Favorites might be lost.")
 
-        clip_files['favorites'] = current_favorites
+        clip_files['favorites'] = {
+            't5': _unique_preserve_order(current_favorites.get('t5', [])),
+            'clip_L': _unique_preserve_order(current_favorites.get('clip_L', [])),
+        }
 
         try:
             with open(output_file, 'w') as f:
