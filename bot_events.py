@@ -20,7 +20,11 @@ from file_management import extract_job_id, delete_job_files_and_message, remove
 from queue_manager import queue_manager
 from utils.show_prompt import reconstruct_full_prompt_string
 from utils.message_utils import send_long_message
-from model_scanner import update_models_list, scan_clip_files, update_checkpoints_list
+from material_gui.model_scanner import (
+    scan_clip_files,
+    update_checkpoints_list,
+    update_models_list,
+)
 from comfyui_api import get_available_comfyui_models
 from settings_manager import load_settings, load_styles_config
 from bot_ui_components import QueuedJobView
