@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QTabWidget,
     QTextEdit,
@@ -66,6 +67,29 @@ class BotSettingsView(BaseView):
         self._default_engine_combo = QComboBox()
         self._default_engine_combo.addItems(["kontext", "qwen"])
         self._llm_provider_combo = QComboBox()
+        self._llm_model_combo = QComboBox()
+
+        configured_combos = (
+            self._model_combo,
+            self._flux_combo,
+            self._sdxl_combo,
+            self._qwen_combo,
+            self._t5_combo,
+            self._clip_l_combo,
+            self._upscale_model_combo,
+            self._vae_combo,
+            self._flux_style_combo,
+            self._sdxl_style_combo,
+            self._qwen_style_combo,
+            self._variation_mode_combo,
+            self._display_pref_combo,
+            self._default_engine_combo,
+            self._llm_provider_combo,
+            self._llm_model_combo,
+        )
+
+        for combo in configured_combos:
+            self._prepare_combo(combo)
 
         for combo in (
             self._model_combo,
@@ -76,12 +100,6 @@ class BotSettingsView(BaseView):
             self._clip_l_combo,
             self._upscale_model_combo,
             self._vae_combo,
-        ):
-            combo.setEditable(True)
-            combo.currentIndexChanged.connect(self._queue_save)  # pragma: no cover - Qt binding
-            combo.editTextChanged.connect(self._queue_save)  # pragma: no cover - Qt binding
-
-        for combo in (
             self._flux_style_combo,
             self._sdxl_style_combo,
             self._qwen_style_combo,
@@ -89,8 +107,11 @@ class BotSettingsView(BaseView):
             self._display_pref_combo,
             self._default_engine_combo,
             self._llm_provider_combo,
+            self._llm_model_combo,
         ):
             combo.currentIndexChanged.connect(self._queue_save)  # pragma: no cover - Qt binding
+
+        self._llm_provider_combo.currentIndexChanged.connect(self._handle_llm_provider_changed)  # pragma: no cover - Qt binding
 
         self._steps_spin = QSpinBox()
         self._steps_spin.setRange(1, 300)
@@ -132,10 +153,6 @@ class BotSettingsView(BaseView):
 
         self._remix_checkbox = QCheckBox("Enable Remix Mode for variation buttons")
         self._llm_checkbox = QCheckBox("Enable LLM Prompt Enhancer")
-        self._llm_model_combo = QComboBox()
-        self._llm_model_combo.setEditable(True)
-        self._llm_model_combo.currentIndexChanged.connect(self._queue_save)  # pragma: no cover - Qt binding
-        self._llm_model_combo.editTextChanged.connect(self._queue_save)  # pragma: no cover - Qt binding
 
         self._sdxl_negative = QTextEdit()
         self._sdxl_negative.setPlaceholderText("Default negative prompt for SDXL/Qwen generations")
@@ -218,6 +235,7 @@ class BotSettingsView(BaseView):
         layout.setContentsMargins(12, 12, 12, 12)
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         form.addRow("Global Default Model", self._model_combo)
         form.addRow("Default Batch Size", self._batch_size_spin)
@@ -241,6 +259,7 @@ class BotSettingsView(BaseView):
         layout.setContentsMargins(12, 12, 12, 12)
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         form.addRow("Preferred Flux Model", self._flux_combo)
         form.addRow("Default Flux Style", self._flux_style_combo)
@@ -256,6 +275,7 @@ class BotSettingsView(BaseView):
         layout.setContentsMargins(12, 12, 12, 12)
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         form.addRow("Preferred SDXL Model", self._sdxl_combo)
         form.addRow("Default SDXL Style", self._sdxl_style_combo)
@@ -272,6 +292,7 @@ class BotSettingsView(BaseView):
         layout.setContentsMargins(12, 12, 12, 12)
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         form.addRow("Preferred Qwen Model", self._qwen_combo)
         form.addRow("Default Qwen Style", self._qwen_style_combo)
@@ -286,6 +307,7 @@ class BotSettingsView(BaseView):
         layout.setContentsMargins(12, 12, 12, 12)
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         form.addRow("Kontext Steps", self._kontext_steps_spin)
         form.addRow("Kontext Guidance", self._kontext_guidance_spin)
@@ -300,6 +322,7 @@ class BotSettingsView(BaseView):
         layout.setContentsMargins(12, 12, 12, 12)
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         form.addRow("Default Edit Engine", self._default_engine_combo)
         form.addRow("Edit Steps", self._qwen_edit_steps_spin)
@@ -315,6 +338,7 @@ class BotSettingsView(BaseView):
         layout.setContentsMargins(12, 12, 12, 12)
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         form.addRow("Enhancer Enabled", self._llm_checkbox)
         form.addRow("Provider", self._llm_provider_combo)
@@ -350,6 +374,29 @@ class BotSettingsView(BaseView):
         elif combo.count():
             combo.setCurrentIndex(0)
         combo.blockSignals(False)
+
+    def _handle_llm_provider_changed(self) -> None:
+        if self._loading:
+            return
+        settings = self._repository.settings if self._repository else {}
+        provider = self._llm_provider_combo.currentData() or self._llm_provider_combo.currentText()
+        self._loading = True
+        try:
+            self._populate_combo(
+                self._llm_model_combo,
+                get_llm_model_choices(settings, provider=provider),
+                settings.get(f"llm_model_{provider}", None),
+                allow_blank=True,
+            )
+        finally:
+            self._loading = False
+        self._queue_save()
+
+    def _prepare_combo(self, combo: QComboBox) -> None:
+        combo.setEditable(False)
+        combo.setInsertPolicy(QComboBox.NoInsert)
+        combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
     def _set_status(self, message: str) -> None:
         self._status_label.setText(message)
