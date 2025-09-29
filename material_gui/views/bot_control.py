@@ -117,12 +117,20 @@ class BotControlView(BaseView):
         self._set_status("Launching bot…")
         self._toggle_button.setEnabled(False)
         self._process.setProgram(sys.executable)
-        self._process.setArguments([str(entrypoint)])
+        self._process.setArguments(["-u", str(entrypoint)])
         self._process.setWorkingDirectory(str(self._app_base_dir))
         self._process.start()
         if not self._process.waitForStarted(3000):
-            self._set_status("Failed to start bot process.")
-            self._append_log("[ERROR] Bot failed to start within timeout.")
+            error_message = self._process.errorString().strip()
+            detail = f": {error_message}" if error_message else "."
+            self._set_status(f"Failed to start bot process{detail}")
+            self._append_log(
+                "[ERROR] Bot failed to start within timeout"
+                + (f" ({error_message})" if error_message else "")
+                + "."
+            )
+            self._process.close()
+            self.runtime_state_changed.emit(False)
             return
         self._toggle_button.setEnabled(True)
         self._set_status("Bot running.")

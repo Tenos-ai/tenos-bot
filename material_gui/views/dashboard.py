@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QComboBox,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -90,6 +91,7 @@ class DashboardView(BaseView):
         quick_form = QFormLayout(quick_box)
         quick_form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         quick_form.setFormAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        quick_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         root_layout.addWidget(quick_box)
 
         output_row = QHBoxLayout()
@@ -128,6 +130,10 @@ class DashboardView(BaseView):
     def _build_model_combo(self, label: str) -> QComboBox:
         combo = QComboBox()
         combo.setObjectName(f"ModelPreference{label}")
+        combo.setEditable(False)
+        combo.setInsertPolicy(QComboBox.NoInsert)
+        combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         combo.currentIndexChanged.connect(self._handle_model_change)  # pragma: no cover - Qt binding
         return combo
 

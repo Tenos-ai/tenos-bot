@@ -236,21 +236,26 @@ class MaterialConfigWindow(QMainWindow):
 
         nav_container = QFrame()
         nav_container.setObjectName("NavigationRail")
-        nav_container.setFixedWidth(268)
-        nav_container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        nav_container.setMinimumWidth(220)
+        nav_container.setMaximumWidth(320)
+        nav_container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         nav_layout = QVBoxLayout(nav_container)
         nav_layout.setContentsMargins(22, 28, 22, 28)
         nav_layout.setSpacing(18)
+        self._nav_container = nav_container
+        self._nav_layout = nav_layout
 
         nav_header = QLabel("Workspace")
         nav_header.setObjectName("NavigationHeading")
         nav_layout.addWidget(nav_header)
+        self._nav_header = nav_header
 
         self.nav_list = QListWidget()
         self.nav_list.setObjectName("MaterialNav")
         self.nav_list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
         self.nav_list.setFocusPolicy(Qt.NoFocus)
         self.nav_list.setIconSize(QSize(18, 18))
+        self.nav_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         nav_layout.addWidget(self.nav_list, stretch=1)
 
         nav_footer = QWidget()
@@ -258,6 +263,7 @@ class MaterialConfigWindow(QMainWindow):
         footer_layout = QHBoxLayout(nav_footer)
         footer_layout.setContentsMargins(12, 10, 12, 10)
         footer_layout.setSpacing(12)
+        self._nav_footer = nav_footer
 
         self.theme_toggle = QToolButton()
         self.theme_toggle.setObjectName("ThemeToggle")
@@ -274,7 +280,8 @@ class MaterialConfigWindow(QMainWindow):
         body.addWidget(nav_container)
 
         self.stack = AnimatedStackedWidget()
-        body.addWidget(self.stack)
+        self.stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        body.addWidget(self.stack, stretch=1)
 
         parent_layout.addLayout(body)
 
@@ -383,13 +390,20 @@ class MaterialConfigWindow(QMainWindow):
             ),
         ]
 
+        self._nav_items: list[QListWidgetItem] = []
+        self._nav_label_role = Qt.UserRole + 101
+        self._compact_nav = False
+        self._responsive_breakpoint = 1120
+
         for entry in self._nav_entries:
             item = QListWidgetItem(entry.title)
             item.setData(Qt.UserRole, entry.slug)
+            item.setData(self._nav_label_role, entry.title)
             icon_role = icon_map.get(entry.slug)
             if icon_role is not None:
                 item.setIcon(self.style().standardIcon(icon_role))
             self.nav_list.addItem(item)
+            self._nav_items.append(item)
             self.stack.addWidget(entry.view)
 
         self.nav_list.currentRowChanged.connect(self._handle_nav_change)  # pragma: no cover - Qt binding
@@ -398,6 +412,7 @@ class MaterialConfigWindow(QMainWindow):
             self._handle_runtime_state_changed(True)
 
         self._update_maximize_button_icon()
+        self._update_responsive_layout()
 
     def _create_icon_button(self, icon, tooltip: str, callback: Callable[[], None]) -> QToolButton:
         button = QToolButton()
@@ -432,6 +447,45 @@ class MaterialConfigWindow(QMainWindow):
             return
         icon_role = QStyle.SP_TitleBarNormalButton if self.isMaximized() else QStyle.SP_TitleBarMaxButton
         self._maximize_button.setIcon(self.style().standardIcon(icon_role))
+
+    def _update_responsive_layout(self) -> None:
+        if not hasattr(self, "_nav_container"):
+            return
+        compact = self.width() <= self._responsive_breakpoint
+        self._apply_compact_navigation(compact)
+
+    def _apply_compact_navigation(self, compact: bool) -> None:
+        if not hasattr(self, "_nav_items"):
+            return
+        if getattr(self, "_compact_nav", False) == compact:
+            return
+        self._compact_nav = compact
+        if compact:
+            self._nav_container.setMaximumWidth(88)
+            self._nav_container.setMinimumWidth(88)
+            self._nav_layout.setContentsMargins(14, 20, 14, 20)
+            if hasattr(self, "_nav_header"):
+                self._nav_header.setVisible(False)
+            if hasattr(self, "theme_toggle"):
+                self.theme_toggle.setToolButtonStyle(Qt.ToolButtonIconOnly)
+            for item in self._nav_items:
+                label = item.data(self._nav_label_role)
+                if isinstance(label, str):
+                    item.setText("")
+                    item.setToolTip(label)
+        else:
+            self._nav_container.setMinimumWidth(220)
+            self._nav_container.setMaximumWidth(320)
+            self._nav_layout.setContentsMargins(22, 28, 22, 28)
+            if hasattr(self, "_nav_header"):
+                self._nav_header.setVisible(True)
+            if hasattr(self, "theme_toggle"):
+                self.theme_toggle.setToolButtonStyle(Qt.ToolButtonTextOnly)
+            for item in self._nav_items:
+                label = item.data(self._nav_label_role)
+                if isinstance(label, str):
+                    item.setText(label)
+                    item.setToolTip(label)
 
     def _update_theme_toggle_icon(self) -> None:
         if not hasattr(self, "theme_toggle"):
@@ -472,6 +526,10 @@ class MaterialConfigWindow(QMainWindow):
         if event.type() == QEvent.WindowStateChange:
             QTimer.singleShot(0, self._update_maximize_button_icon)
         super().changeEvent(event)
+
+    def resizeEvent(self, event):
+        self._update_responsive_layout()
+        super().resizeEvent(event)
 
     # ------------------------------------------------------------------
     # Event handlers
