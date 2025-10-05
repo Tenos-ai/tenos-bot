@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
-    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -47,7 +46,6 @@ class LoraStylesView(BaseView):
         self._current_style: Optional[str] = None
         self._slot_controls: list[LoraSlotControls] = []
         self._loading = False
-        self._known_loras: set[str] = {"NONE.safetensors"}
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(24, 24, 24, 24)
@@ -116,7 +114,6 @@ class LoraStylesView(BaseView):
 
         header_layout = QFormLayout()
         header_layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        header_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         layout.addLayout(header_layout)
 
         self._favorite_checkbox = QCheckBox("Mark as favourite in menus")
@@ -131,24 +128,22 @@ class LoraStylesView(BaseView):
         slots_group = QGroupBox("LoRA Slots")
         slots_form = QFormLayout(slots_group)
         slots_form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        slots_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         layout.addWidget(slots_group)
 
         self._slot_controls.clear()
         for index in range(1, 6):
             toggle = QCheckBox("Enabled")
             name_combo = QComboBox()
-            name_combo.setEditable(False)
-            name_combo.setInsertPolicy(QComboBox.NoInsert)
-            name_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
-            name_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            name_combo.setEditable(True)
+            name_combo.setPlaceholderText("Filename")
             strength = QDoubleSpinBox()
             strength.setRange(0.0, 2.0)
             strength.setSingleStep(0.05)
             strength.setDecimals(2)
 
             toggle.toggled.connect(self._handle_form_changed)  # pragma: no cover - Qt binding
-            name_combo.currentIndexChanged.connect(self._handle_lora_selection_changed)  # pragma: no cover - Qt binding
+            name_combo.currentIndexChanged.connect(self._handle_form_changed)  # pragma: no cover - Qt binding
+            name_combo.editTextChanged.connect(self._handle_form_changed)  # pragma: no cover - Qt binding
             strength.valueChanged.connect(self._handle_form_changed)  # pragma: no cover - Qt binding
 
             row_layout = QHBoxLayout()
@@ -176,8 +171,6 @@ class LoraStylesView(BaseView):
             QMessageBox.warning(self, "Duplicate Style", "A style with that name already exists.")
             return
         self._styles[style_name] = self._default_style_payload()
-        self._rebuild_known_loras()
-        self._repopulate_lora_combos()
         self._refresh_style_list(select=style_name)
         self._set_status(f"Style '{style_name}' created. Configure the slots; changes save automatically.")
         self._schedule_save()
@@ -194,8 +187,6 @@ class LoraStylesView(BaseView):
         self._update_style_from_form()
         self._styles[new_name] = json.loads(json.dumps(self._styles.get(base_name, {})))
         self._styles[new_name]["favorite"] = False
-        self._rebuild_known_loras()
-        self._repopulate_lora_combos()
         self._refresh_style_list(select=new_name)
         self._set_status(f"Duplicated '{base_name}' → '{new_name}'.")
         self._schedule_save()
@@ -216,8 +207,6 @@ class LoraStylesView(BaseView):
             return
         self._update_style_from_form()
         self._styles[candidate] = self._styles.pop(self._current_style)
-        self._rebuild_known_loras()
-        self._repopulate_lora_combos()
         self._refresh_style_list(select=candidate)
         self._set_status(f"Renamed style to '{candidate}'.")
         self._schedule_save()
@@ -240,8 +229,6 @@ class LoraStylesView(BaseView):
             return
         del self._styles[self._current_style]
         self._current_style = None
-        self._rebuild_known_loras()
-        self._repopulate_lora_combos()
         self._refresh_style_list()
         self._clear_form()
         self._set_status("Style removed.")
@@ -301,8 +288,6 @@ class LoraStylesView(BaseView):
             index = self._model_type_combo.findText(model_type)
         self._model_type_combo.setCurrentIndex(index if index != -1 else 0)
 
-        self._rebuild_known_loras()
-        selections: list[str] = []
         for idx, controls in enumerate(self._slot_controls, start=1):
             slot_data = data.get(f"lora_{idx}", {})
             if not isinstance(slot_data, dict):
@@ -311,14 +296,18 @@ class LoraStylesView(BaseView):
             controls.toggle.setChecked(bool(slot_data.get("on", False)))
             controls.toggle.blockSignals(False)
 
-            name_value = str(slot_data.get("lora", "NONE.safetensors")) or "NONE.safetensors"
-            selections.append(name_value)
+            name_value = str(slot_data.get("lora", "NONE.safetensors"))
+            controls.name.blockSignals(True)
+            controls.name.clear()
+            controls.name.addItem(name_value)
+            controls.name.setCurrentIndex(0)
+            controls.name.setEditText(name_value)
+            controls.name.blockSignals(False)
 
             strength_value = float(slot_data.get("strength", 0.0))
             controls.strength.blockSignals(True)
             controls.strength.setValue(strength_value)
             controls.strength.blockSignals(False)
-        self._repopulate_lora_combos(selections)
         self._loading = False
 
     def _clear_form(self) -> None:
@@ -331,11 +320,11 @@ class LoraStylesView(BaseView):
             controls.toggle.blockSignals(False)
             controls.name.blockSignals(True)
             controls.name.clear()
+            controls.name.setEditText("")
             controls.name.blockSignals(False)
             controls.strength.blockSignals(True)
             controls.strength.setValue(0.0)
             controls.strength.blockSignals(False)
-        self._repopulate_lora_combos(["NONE.safetensors"] * len(self._slot_controls))
         self._loading = False
 
     def _update_style_from_form(self) -> None:
@@ -353,15 +342,10 @@ class LoraStylesView(BaseView):
             if not isinstance(slot_payload, dict):
                 slot_payload = {}
             slot_payload["on"] = controls.toggle.isChecked()
-            selected_value = controls.name.currentData()
-            if selected_value in (None, "", "__custom__"):
-                selected_value = "NONE.safetensors"
-            slot_payload["lora"] = str(selected_value)
+            slot_payload["lora"] = controls.name.currentText().strip() or "NONE.safetensors"
             slot_payload["strength"] = controls.strength.value()
             style[slot_key] = slot_payload
         self._styles[self._current_style] = style
-        self._rebuild_known_loras()
-        self._repopulate_lora_combos()
         self._refresh_style_list(select=self._current_style, preserve_position=True)
 
     def _refresh_style_list(self, *, select: str | None = None, preserve_position: bool = False) -> None:
@@ -406,98 +390,6 @@ class LoraStylesView(BaseView):
         self._status_label.setText("Saving styles…")
         self._save_timer.start()
 
-    def _handle_lora_selection_changed(self) -> None:  # pragma: no cover - Qt binding
-        if self._loading:
-            return
-        combo = self.sender()
-        if not isinstance(combo, QComboBox):
-            return
-        data = combo.currentData()
-        if data == "__custom__":
-            new_value = self._prompt_custom_lora_name()
-            if new_value:
-                self._known_loras.add(new_value)
-                selections: list[str] = []
-                for controls in self._slot_controls:
-                    current = controls.name.currentData()
-                    if controls.name is combo:
-                        selections.append(new_value)
-                    else:
-                        if current in (None, "", "__custom__"):
-                            current = "NONE.safetensors"
-                        selections.append(str(current))
-                self._repopulate_lora_combos(selections)
-            else:
-                self._repopulate_lora_combos()
-            self._handle_form_changed()
-            return
-        self._handle_form_changed()
-
-    def _prompt_custom_lora_name(self) -> str | None:
-        name, ok = QInputDialog.getText(self, "Custom LoRA", "LoRA filename:")
-        if not ok:
-            return None
-        candidate = name.strip()
-        if not candidate:
-            return None
-        return candidate
-
-    def _rebuild_known_loras(self) -> None:
-        names = {"NONE.safetensors"}
-        for style in self._styles.values():
-            if not isinstance(style, dict):
-                continue
-            for idx in range(1, 6):
-                slot = style.get(f"lora_{idx}")
-                if not isinstance(slot, dict):
-                    continue
-                value = slot.get("lora")
-                if isinstance(value, str) and value.strip():
-                    names.add(value.strip())
-        self._known_loras = names
-
-    def _base_lora_options(self) -> list[tuple[str, str]]:
-        extras = sorted(
-            (name for name in self._known_loras if name and name.lower() != "none.safetensors"),
-            key=str.lower,
-        )
-        options: list[tuple[str, str]] = [("None (disable slot)", "NONE.safetensors")]
-        options.extend((name, name) for name in extras)
-        return options
-
-    def _repopulate_lora_combos(self, selections: list[str | None] | None = None) -> None:
-        if not self._slot_controls:
-            return
-        base_options = self._base_lora_options()
-        base_values = [value for _, value in base_options]
-        if selections is None:
-            selections = []
-            for controls in self._slot_controls:
-                current = controls.name.currentData()
-                if current in (None, "", "__custom__"):
-                    current = "NONE.safetensors"
-                selections.append(str(current))
-        self._loading = True
-        try:
-            for controls, selected in zip(self._slot_controls, selections):
-                choice = (selected or "NONE.safetensors").strip()
-                combo = controls.name
-                combo.blockSignals(True)
-                combo.clear()
-                for label, value in base_options:
-                    combo.addItem(label, value)
-                if choice not in base_values:
-                    insert_at = 1 if len(base_options) else 0
-                    combo.insertItem(insert_at, choice, choice)
-                combo.addItem("Add custom LoRA…", "__custom__")
-                index = combo.findData(choice)
-                if index == -1:
-                    index = combo.findData("NONE.safetensors")
-                combo.setCurrentIndex(index if index != -1 else 0)
-                combo.blockSignals(False)
-        finally:
-            self._loading = False
-
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -510,7 +402,6 @@ class LoraStylesView(BaseView):
             self._styles = {"off": self._default_style_payload()}
         if "off" not in self._styles:
             self._styles["off"] = self._default_style_payload()
-        self._rebuild_known_loras()
         self._refresh_style_list()
         if self._style_list.count():
             self._style_list.setCurrentRow(0)
