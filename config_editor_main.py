@@ -48,6 +48,9 @@ from editor_tab_favorites import FavoritesTab
 from editor_tab_llm_prompts import LLMPromptsTab
 from editor_tab_bot_control import BotControlTab
 from editor_tab_admin_control import AdminControlTab
+from utils.update_state import UpdateState
+from utils.versioning import normalise_tag, is_remote_version_newer
+from version_info import APP_VERSION
 
 class ConfigEditor:
     def __init__(self, master_tk_root):
@@ -69,6 +72,11 @@ class ConfigEditor:
         self.settings_vars = {}
         self.bot_settings_widgets = {}
         self.log_display = None
+
+        self.app_base_dir = os.path.dirname(os.path.abspath(__file__))
+        self.current_version = APP_VERSION
+        self.update_state = UpdateState.load(base_dir=self.app_base_dir)
+        self._reconcile_update_state()
 
         def silence_bell_global(): pass
         self.master.bell = silence_bell_global
@@ -134,6 +142,27 @@ class ConfigEditor:
         self.lora_styles_tab_manager.populate_lora_styles_tab()
         self.favorites_tab_manager.populate_all_favorites_sub_tabs()
         self.llm_prompts_tab_manager.load_and_populate_llm_prompts()
+
+    def _reconcile_update_state(self):
+        try:
+            pending_tag = self.update_state.pending_tag
+            last_success = self.update_state.last_successful_tag
+
+            normalised_current = normalise_tag(self.current_version)
+            normalised_pending = normalise_tag(pending_tag)
+            normalised_success = normalise_tag(last_success)
+
+            if pending_tag and normalised_pending == normalised_current:
+                self.log_queue.put(("worker", f"Pending update {pending_tag} matches running version; marking as applied.\n"))
+                self.update_state.mark_success(pending_tag, base_dir=self.app_base_dir)
+                return
+
+            if normalised_success is None and normalised_current is not None:
+                self.log_queue.put(("worker", f"Recording current version {self.current_version} as baseline update state.\n"))
+                self.update_state.mark_success(self.current_version, base_dir=self.app_base_dir)
+        except Exception:
+            # Update bookkeeping should never block the UI. Fail silently but log in debug console.
+            traceback.print_exc()
 
     def _set_application_icon(self):
         if os.path.exists(ICON_PATH_ICO):
@@ -255,7 +284,7 @@ class ConfigEditor:
                 create_config_row(self.api_keys_tab_frame, section, key)
 
         app_settings = self.config_manager.config.get("APP_SETTINGS", {})
-        auto_update_var = tk.BooleanVar(value=app_settings.get("AUTO_UPDATE_ON_STARTUP", True))
+        auto_update_var = tk.BooleanVar(value=app_settings.get("AUTO_UPDATE_ON_STARTUP", False))
         self.config_vars["APP_SETTINGS.AUTO_UPDATE_ON_STARTUP"] = auto_update_var
         auto_update_check = ttk.Checkbutton(self.app_settings_tab_frame, 
                                            text="Automatically check for updates on startup", 
@@ -582,8 +611,13 @@ class ConfigEditor:
         repo_owner = "Tenos-ai"
         repo_name = "Tenos-Bot"
         api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
-        
+
         try:
+            if self.update_state.pending_tag:
+                pending = self.update_state.pending_tag
+                self.log_queue.put(("worker", f"Update {pending} already pending. Restart to apply it.\n"))
+                return f"Update {pending} already pending."
+
             self.log_queue.put(("worker", f"Fetching latest release from {api_url}...\n"))
             response = requests.get(api_url, timeout=15)
             response.raise_for_status()
@@ -593,6 +627,14 @@ class ConfigEditor:
 
             if not tag_name or not zip_url:
                 raise ValueError("Could not find tag_name or zipball_url in the release data.")
+
+            if self.update_state.last_successful_tag and normalise_tag(self.update_state.last_successful_tag) == normalise_tag(tag_name):
+                self.log_queue.put(("worker", f"Release {tag_name} already applied.\n"))
+                return f"Already running {tag_name}."
+
+            if not is_remote_version_newer(tag_name, self.current_version):
+                self.log_queue.put(("worker", f"Current version {self.current_version} is up to date with {tag_name}.\n"))
+                return "You are running the latest version."
 
             self.log_queue.put(("worker", f"Latest release found: {tag_name}\n"))
             self.log_queue.put(("worker", f"Downloading from: {zip_url}\n"))
@@ -604,30 +646,33 @@ class ConfigEditor:
             # Create a temporary directory to extract the update
             temp_dir = tempfile.mkdtemp()
             self.log_queue.put(("worker", f"Created temporary update directory: {temp_dir}\n"))
-            
+
             temp_zip_path = os.path.join(temp_dir, "release.zip")
 
             with open(temp_zip_path, 'wb') as f:
                 for chunk in zip_response.iter_content(chunk_size=8192):
                     f.write(chunk)
-            
+
             self.log_queue.put(("worker", "Download complete. Extracting...\n"))
 
             with zipfile.ZipFile(temp_zip_path, 'r') as zip_ref:
                 zip_ref.extractall(temp_dir)
-            
+
             self.log_queue.put(("worker", "Extraction complete.\n"))
-            
-            updater_script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "updater.py")
+
+            self.update_state.mark_pending(tag_name, base_dir=self.app_base_dir)
+
+            updater_script_path = os.path.join(self.app_base_dir, "updater.py")
             if not os.path.exists(updater_script_path):
                 raise FileNotFoundError("updater.py script not found. Cannot proceed with update.")
 
             self.log_queue.put(("info", "Handing off to updater.py. This application will now close.\n"))
-            
+
             # This will queue a restart, which will trigger the handoff
             self.worker_queue.put({"type": "restart_required", "update_info": {
                 "temp_dir": temp_dir,
-                "dest_dir": os.path.dirname(os.path.abspath(__file__))
+                "dest_dir": self.app_base_dir,
+                "target_tag": tag_name
             }})
 
             return "Update downloaded. The application will restart to apply it."
@@ -635,6 +680,8 @@ class ConfigEditor:
         except Exception as e:
             self.log_queue.put(("stderr", f"An error occurred during update: {e}\n"))
             traceback.print_exc()
+            self.update_state.pending_tag = None
+            self.update_state.save(base_dir=self.app_base_dir)
             return f"Update failed: {e}"
 
     def _worker_install_custom_nodes(self, *args, **kwargs):
@@ -893,11 +940,14 @@ class ConfigEditor:
                 temp_dir = update_info["temp_dir"]
                 dest_dir = update_info["dest_dir"]
                 updater_script = os.path.join(dest_dir, "updater.py")
-                
+                target_tag = update_info.get("target_tag")
+
                 command = [python_exe, updater_script, str(current_pid), temp_dir, dest_dir]
-                
+                if target_tag:
+                    command.append(target_tag)
+
                 self.log_queue.put(("info", f"Executing updater: {' '.join(command)}\n"))
-                
+
                 # Use Popen to launch the updater in a new, detached process
                 subprocess.Popen(command)
                 
@@ -910,6 +960,8 @@ class ConfigEditor:
 
         except Exception as e:
             self.log_queue.put(("stderr", f"FATAL: Failed to execute restart: {e}\n"))
+            self.update_state.pending_tag = None
+            self.update_state.save(base_dir=self.app_base_dir)
             silent_showerror("Restart Failed", f"Could not restart the application.\nPlease close and start it manually.\n\nError: {e}", parent=self.master)
 
 
@@ -932,9 +984,16 @@ class ConfigEditor:
         """Checks if auto-update is enabled and runs the updater if so."""
         try:
             app_settings = self.config_manager.config.get("APP_SETTINGS", {})
-            if app_settings.get("AUTO_UPDATE_ON_STARTUP", True):
-                self.log_queue.put(("info", "--- Auto-update enabled, checking for updates... ---\n"))
-                self.run_worker_task_on_editor(self._worker_update_application, "Startup Update Check")
+            if not bool(app_settings.get("AUTO_UPDATE_ON_STARTUP", False)):
+                return
+
+            if self.update_state.pending_tag:
+                pending = self.update_state.pending_tag
+                self.log_queue.put(("info", f"--- Update {pending} already queued, skipping auto-check. ---\n"))
+                return
+
+            self.log_queue.put(("info", "--- Auto-update enabled, checking for updates... ---\n"))
+            self.run_worker_task_on_editor(self._worker_update_application, "Startup Update Check")
         except Exception as e:
             self.log_queue.put(("stderr", f"Error during startup update check: {e}\n"))
 

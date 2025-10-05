@@ -18,18 +18,23 @@ def log(message):
 
 def main():
     log("Updater script started.")
-    if len(sys.argv) != 4:
-        log(f"FATAL: Incorrect number of arguments. Expected 3, got {len(sys.argv) - 1}")
+    if len(sys.argv) not in {4, 5}:
+        log(
+            f"FATAL: Incorrect number of arguments. Expected 3 or 4, got {len(sys.argv) - 1}"
+        )
         log(f"Arguments: {sys.argv}")
         return
 
     parent_pid = int(sys.argv[1])
     source_dir = sys.argv[2]
     dest_dir = sys.argv[3]
+    target_tag = sys.argv[4] if len(sys.argv) == 5 else None
 
     log(f"Parent PID: {parent_pid}")
     log(f"Source (temp) dir: {source_dir}")
     log(f"Destination (app) dir: {dest_dir}")
+    if target_tag:
+        log(f"Target release tag: {target_tag}")
 
     # 1. Wait for the main application to close
     try:

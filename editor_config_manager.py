@@ -32,7 +32,7 @@ class EditorConfigManager:
             "ADMIN": {"USERNAME": "", "ID": ""},
             "ALLOWED_USERS": {},
             "LLM_ENHANCER": {"OPENAI_API_KEY": "", "GEMINI_API_KEY": "", "GROQ_API_KEY": ""},
-            "APP_SETTINGS": {"AUTO_UPDATE_ON_STARTUP": True}
+            "APP_SETTINGS": {"AUTO_UPDATE_ON_STARTUP": False}
         }
         self.settings_template_factory = lambda: {
              "selected_model": None, 
