@@ -61,11 +61,6 @@ class BotSettingsView(BaseView):
         self._flux_style_combo = QComboBox()
         self._sdxl_style_combo = QComboBox()
         self._qwen_style_combo = QComboBox()
-        self._variation_mode_combo = QComboBox()
-        self._display_pref_combo = QComboBox()
-        self._default_engine_combo = QComboBox()
-        self._default_engine_combo.addItems(["kontext", "qwen"])
-        self._llm_provider_combo = QComboBox()
 
         for combo in (
             self._model_combo,
@@ -130,8 +125,14 @@ class BotSettingsView(BaseView):
         self._qwen_edit_denoise_spin.setRange(0.0, 1.0)
         self._qwen_edit_denoise_spin.setSingleStep(0.01)
 
+        self._variation_mode_combo = QComboBox()
+        self._display_pref_combo = QComboBox()
+        self._default_engine_combo = QComboBox()
+        self._default_engine_combo.addItems(["kontext", "qwen"])
+
         self._remix_checkbox = QCheckBox("Enable Remix Mode for variation buttons")
         self._llm_checkbox = QCheckBox("Enable LLM Prompt Enhancer")
+        self._llm_provider_combo = QComboBox()
         self._llm_model_combo = QComboBox()
         self._llm_model_combo.setEditable(True)
         self._llm_model_combo.currentIndexChanged.connect(self._queue_save)  # pragma: no cover - Qt binding
