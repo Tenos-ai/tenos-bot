@@ -55,7 +55,7 @@ from version_info import APP_VERSION
 class ConfigEditor:
     def __init__(self, master_tk_root):
         self.master = master_tk_root
-        self.master.title("Tenos.ai Configurator v1.2.4")
+        self.master.title("Tenos.ai Configurator v1.2.5")
         self.master.geometry("850x950")
         self.master.configure(bg=BACKGROUND_COLOR)
 
