@@ -5,32 +5,25 @@ import traceback
 def load_model_node_templates():
     default_templates = {
         "MODELNODES": {
-            "GGUF_GENERATION": {
+            "GGUF_GENERATION": { 
                 "NODE_NUMBER": {
                     "inputs": {"unet_name": "model_file_name"},
                     "class_type": "UnetLoaderGGUF",
                     "_meta": {"title": "Unet Loader (GGUF)"}
                 }
             },
-            "SAFETENSORS_GENERATION": {
+            "SAFETENSORS_GENERATION": { 
                  "NODE_NUMBER": {
                     "inputs": {"unet_name": "model_file_name", "weight_dtype": "default"},
                     "class_type": "UNETLoader",
                     "_meta": {"title": "Load Diffusion Model"}
                 }
             },
-            "SDXL_CHECKPOINT_GENERATION": {
+            "SDXL_CHECKPOINT_GENERATION": { 
                 "NODE_NUMBER": {
                     "inputs": {"ckpt_name": "model_file_name"},
                     "class_type": "CheckpointLoaderSimple",
                     "_meta": {"title": "Load Checkpoint"}
-                }
-            },
-            "QWEN_IMAGE_GENERATION": {
-                "NODE_NUMBER": {
-                    "inputs": {"ckpt_name": "model_file_name"},
-                    "class_type": "CheckpointLoaderSimple",
-                    "_meta": {"title": "Load Qwen Checkpoint"}
                 }
             }
         }
@@ -48,13 +41,9 @@ def load_model_node_templates():
             print("Error: Invalid structure in modelnodes.json. Using default templates.")
             return default_templates
 
-        missing_keys = []
-        for key_name in ("SDXL_CHECKPOINT_GENERATION", "QWEN_IMAGE_GENERATION"):
-            if key_name not in templates["MODELNODES"]:
-                print(f"Warning: {key_name} template missing. Adding default.")
-                templates["MODELNODES"][key_name] = default_templates["MODELNODES"][key_name]
-                missing_keys.append(key_name)
-        if missing_keys:
+        if "SDXL_CHECKPOINT_GENERATION" not in templates["MODELNODES"]:
+            print("Warning: SDXL_CHECKPOINT_GENERATION template missing. Adding default.")
+            templates["MODELNODES"]["SDXL_CHECKPOINT_GENERATION"] = default_templates["MODELNODES"]["SDXL_CHECKPOINT_GENERATION"]
             try:
                 with open('modelnodes.json', 'w') as f:
                     json.dump(templates, f, indent=2)
@@ -85,11 +74,8 @@ def get_model_node(model_name_with_prefix: str, node_number_str: str):
         elif norm_model_name_with_prefix.upper().startswith("SDXL:"):
             model_type_lc = "sdxl"
             actual_model_name = norm_model_name_with_prefix[len("SDXL:"):].strip()
-        elif norm_model_name_with_prefix.upper().startswith("QWEN:"):
-            model_type_lc = "qwen"
-            actual_model_name = norm_model_name_with_prefix[len("QWEN:"):].strip()
         else:
-            actual_model_name = norm_model_name_with_prefix
+            actual_model_name = norm_model_name_with_prefix 
             print(f"Warning: Model '{norm_model_name_with_prefix}' has no recognized type prefix. Inferring from extension.")
             if actual_model_name.lower().endswith((".gguf", ".sft")):
                 model_type_lc = "flux"
@@ -112,9 +98,6 @@ def get_model_node(model_name_with_prefix: str, node_number_str: str):
             input_key_for_model_name = "unet_name"
         elif model_type_lc == "sdxl":
             template_key = 'SDXL_CHECKPOINT_GENERATION'
-            input_key_for_model_name = "ckpt_name"
-        elif model_type_lc == "qwen":
-            template_key = 'QWEN_IMAGE_GENERATION'
             input_key_for_model_name = "ckpt_name"
         else:
              raise ValueError(f"Internal error: model_type_lc '{model_type_lc}' not recognized.")

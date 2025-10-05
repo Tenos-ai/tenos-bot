@@ -5,44 +5,27 @@ import uuid
 import re
 import math
 import os
-import requests
+import requests 
 import traceback
-import asyncio
-from typing import Optional
+import asyncio 
 
 from prompt_templates import (
+    prompt as flux_prompt_template,
+    img2img as flux_img2img_template,
+    sdxl_prompt as sdxl_prompt_template,
+    sdxl_img2img_prompt,
     GENERATION_MODEL_NODE,
     GENERATION_WORKFLOW_STEPS_NODE,
     GENERATION_CLIP_NODE,
     GENERATION_LATENT_NODE,
     PROMPT_LORA_NODE,
     IMG2IMG_LORA_NODE,
-    SDXL_CHECKPOINT_LOADER_NODE,
-    SDXL_LORA_NODE,
-    SDXL_CLIP_SKIP_NODE,
-    SDXL_POS_PROMPT_NODE,
-    SDXL_NEG_PROMPT_NODE,
-    SDXL_KSAMPLER_NODE,
-    SDXL_VAE_DECODE_NODE,
-    SDXL_SAVE_IMAGE_NODE,
-    SDXL_LATENT_NODE,
-    SDXL_IMG2IMG_LOAD_IMAGE_NODE,
-    SDXL_IMG2IMG_RESIZE_NODE,
-    SDXL_IMG2IMG_VAE_ENCODE_NODE,
-    QWEN_CHECKPOINT_LOADER_NODE,
-    QWEN_LORA_NODE,
-    QWEN_CLIP_SKIP_NODE,
-    QWEN_POS_PROMPT_NODE,
-    QWEN_NEG_PROMPT_NODE,
-    QWEN_KSAMPLER_NODE,
-    QWEN_VAE_DECODE_NODE,
-    QWEN_SAVE_IMAGE_NODE,
-    QWEN_LATENT_NODE,
-    QWEN_IMG2IMG_LOAD_IMAGE_NODE,
-    QWEN_IMG2IMG_RESIZE_NODE,
-    QWEN_IMG2IMG_VAE_ENCODE_NODE,
+    SDXL_CHECKPOINT_LOADER_NODE, SDXL_LORA_NODE, SDXL_CLIP_SKIP_NODE,
+    SDXL_POS_PROMPT_NODE, SDXL_NEG_PROMPT_NODE,
+    SDXL_KSAMPLER_NODE, SDXL_VAE_DECODE_NODE,
+    SDXL_SAVE_IMAGE_NODE, SDXL_LATENT_NODE,
+    SDXL_IMG2IMG_LOAD_IMAGE_NODE, SDXL_IMG2IMG_RESIZE_NODE, SDXL_IMG2IMG_VAE_ENCODE_NODE
 )
-from workflows import load_workflow_template
 from utils.seed_utils import parse_seed_from_message, generate_seed
 from settings_manager import load_settings, _get_default_settings, load_styles_config
 from modelnodes import get_model_node
@@ -99,36 +82,13 @@ async def modify_prompt(
     enhancer_info: dict,
     is_img2img: bool,
     explicit_seed: int | None = None,
-    selected_model_name_with_prefix: str | None = None,  # This is the CURRENTLY selected model from settings
-    negative_prompt_text: str | None = None,
+    selected_model_name_with_prefix: str | None = None, # This is the CURRENTLY selected model from settings
+    negative_prompt_text: str | None = None 
 ):
     job_id = str(uuid.uuid4())[:8]
-    model_type = "flux"
-    actual_model_name = None
-    styles_config = load_styles_config()
-
-    try:
-        settings = load_settings()
-    except Exception as e:
-        print(f"ERROR loading settings in modify_prompt: {e}")
-        settings = _get_default_settings()
-
-    # Prefer the explicitly provided model selection, otherwise fall back to the stored setting
-    selected_model_candidate = selected_model_name_with_prefix or settings.get("selected_model")
-    if isinstance(selected_model_candidate, str):
-        selected_model_candidate = selected_model_candidate.strip()
-    else:
-        selected_model_candidate = None
-
-    if selected_model_candidate:
-        selected_model_name_with_prefix = selected_model_candidate
-    else:
-        warning_msg = (
-            "Error: No base model selected. Use the Config Editor or `/settings` to choose a Flux, "
-            "SDXL, or Qwen checkpoint before generating."
-        )
-        print(f"Generation aborted: {warning_msg}")
-        return None, None, warning_msg, None
+    model_type = "flux" 
+    actual_model_name = None 
+    styles_config = load_styles_config() 
 
     # Determine model_type and actual_model_name based on selected_model_name_with_prefix (current setting)
     if selected_model_name_with_prefix:
@@ -138,33 +98,33 @@ async def modify_prompt(
         elif selected_model_name_with_prefix.startswith("SDXL: "):
             model_type = "sdxl"
             actual_model_name = selected_model_name_with_prefix.split("SDXL: ", 1)[1].strip()
-        elif selected_model_name_with_prefix.startswith("Qwen: "):
-            model_type = "qwen"
-            actual_model_name = selected_model_name_with_prefix.split("Qwen: ", 1)[1].strip()
-        else:
+        else: 
             print(f"Warning: selected_model_name_with_prefix '{selected_model_name_with_prefix}' missing type prefix. Inferring.")
-            if selected_model_name_with_prefix.endswith((".gguf", ".sft")):
+            if selected_model_name_with_prefix.endswith((".gguf", ".sft")): 
                 model_type = "flux"
-            else:
+            else: 
                 model_type = "sdxl"
             actual_model_name = selected_model_name_with_prefix.strip()
-    if not actual_model_name:
-        error_msg = (
-            "Error: The selected model entry is empty. Please reselect a Flux, SDXL, or Qwen model in settings."
-        )
-        print(f"Generation aborted: {error_msg}")
-        return None, None, error_msg, None
+    else: # Fallback if no model selected in settings (should be rare)
+        print("image_generation: No model selected in settings. Defaulting to Flux.")
+        model_type = "flux"
+        # actual_model_name will be None, ComfyUI might use its default or error.
 
     text_for_generation = enhancer_info.get('enhanced_text') if enhancer_info.get('used') else original_prompt_text
-
+    
     print("-" * 30)
     print(f"Preparing Job: {job_id} ({model_type.upper()}{' Img2Img' if is_img2img else ''})")
     print(f"  User Prompt: {original_prompt_text}")
     if enhancer_info.get('used'): print(f"  LLM Enhanced: {text_for_generation}")
     if enhancer_info.get('error'): print(f"  LLM Error: {enhancer_info['error']}")
 
+    try:
+        settings = load_settings()
+    except Exception as e:
+        print(f"ERROR loading settings in modify_prompt: {e}"); settings = _get_default_settings()
+
     seed = explicit_seed
-    if seed is None:
+    if seed is None: 
         seed_param_val = params_dict.get('seed')
         if seed_param_val and seed_param_val is not True: 
             try: seed = int(seed_param_val)
@@ -186,39 +146,30 @@ async def modify_prompt(
         try: guidance_to_use = float(g_param_flux)
         except (ValueError, TypeError): print(f"  Warn: Invalid --g value. Using Flux default: {default_flux_guidance:.1f}")
 
-    final_negative_prompt_for_diffusion = negative_prompt_text if model_type in ("sdxl", "qwen") and negative_prompt_text is not None else ""
-    if model_type in ("sdxl", "qwen"):
-        print(f"  Negative Prompt: {final_negative_prompt_for_diffusion}")
+    final_negative_prompt_for_sdxl = negative_prompt_text if model_type == "sdxl" and negative_prompt_text is not None else ""
+    if model_type == "sdxl": print(f"  Negative Prompt: {final_negative_prompt_for_sdxl}")
 
-    aspect_ratio_str = "1:1"
+    aspect_ratio_str = "1:1" 
+    mp_size_str = settings.get('default_mp_size', "1") 
     original_ar_param_val = params_dict.get('ar')
     mp_param_val = params_dict.get('mp')
+    allowed_mp_sizes = ["0.25", "0.5", "1", "1.25", "1.5", "1.75", "2", "2.5", "3", "4"]
 
-    def _coerce_mp_size(value, fallback: Optional[float]) -> Optional[float]:
-        try:
-            candidate = float(value)
-        except (TypeError, ValueError):
-            return fallback
-        if not 0.1 <= candidate <= 8.0:
-            return fallback
-        return round(candidate, 4)
-
-    if not is_img2img:
+    if not is_img2img: 
         if original_ar_param_val and original_ar_param_val is not True:
             if re.match(r'^\d+\s*:\s*\d+$', original_ar_param_val):
                 aspect_ratio_str = original_ar_param_val
             else:
                 return None, None, f"Invalid AR format '{original_ar_param_val}'. Use W:H (e.g., 16:9).", None
-        mp_size_value = None
         if mp_param_val and mp_param_val is not True:
-            mp_size_value = _coerce_mp_size(mp_param_val, None)
-        if mp_size_value is None:
-            mp_size_value = _coerce_mp_size(settings.get('default_mp_size', 1.0), 1.0)
-        if mp_size_value is None:
-            mp_size_value = 1.0
-    else:
-        aspect_ratio_str = "From Image"
-        mp_size_value = None
+             if str(mp_param_val) in allowed_mp_sizes:
+                 mp_size_str = str(mp_param_val)
+        else: 
+            current_settings_mp_size = settings.get('default_mp_size', "1")
+            mp_size_str = current_settings_mp_size if current_settings_mp_size in allowed_mp_sizes else "1"
+    else: 
+        aspect_ratio_str = "From Image" 
+        mp_size_str = "N/A"
 
     image_source_for_node = None 
     img_strength_percent_for_job = None
@@ -289,17 +240,15 @@ async def modify_prompt(
     elif style_to_apply not in styles_config: 
         style_to_apply = 'off'
 
-    style_target_type = 'sdxl' if model_type == 'qwen' else model_type
-
     if style_to_apply != 'off':
         style_data = styles_config.get(style_to_apply, {})
         style_model_type = style_data.get('model_type', 'all')
-        if style_model_type != 'all' and style_model_type != style_target_type: # model_type is the CURRENTLY selected model type
+        if style_model_type != 'all' and style_model_type != model_type: # model_type is the CURRENTLY selected model type
             style_warning_message = f"Style '{style_to_apply}' is for {style_model_type.upper()} models only. Your current model is {model_type.upper()}. The style was disabled for this generation."
             print(f"Style Warning for job {job_id}: {style_warning_message}")
             style_to_apply = 'off'
 
-    if model_type in ("sdxl", "qwen"):
+    if model_type == "sdxl":
         steps_for_ksampler = settings.get('sdxl_steps', 26)
     else:
         steps_for_ksampler = settings.get('steps', 32)
@@ -307,17 +256,18 @@ async def modify_prompt(
     default_batch_size_from_settings = settings.get('default_batch_size', 1)
 
     print(f"  Seed: {seed}, Steps: {steps_for_ksampler}, Guidance: {guidance_to_use:.1f}, Style: {style_to_apply}")
-    if not is_img2img:
-        mp_display = f"{mp_size_value:.2f}" if mp_size_value is not None else "N/A"
-        print(f"  AR: {aspect_ratio_str}, MP: {mp_display}, Batch: {default_batch_size_from_settings}")
-    else:
-        print(f"  Img2Img: Strength {img_strength_percent_for_job}%, Denoise {denoise_for_ksampler:.2f}")
+    if not is_img2img: print(f"  AR: {aspect_ratio_str}, MP: {mp_size_str}, Batch: {default_batch_size_from_settings}")
+    else: print(f"  Img2Img: Strength {img_strength_percent_for_job}%, Denoise {denoise_for_ksampler:.2f}")
 
-    try:
-        workflow_slot = "img2img" if is_img2img else "text_to_image"
-        modified_prompt = load_workflow_template(model_type, workflow_slot, settings=settings)
-    except ValueError as exc:
-        return None, None, f"Internal error: {exc}", None
+    template_to_use = None
+    if model_type == "sdxl":
+        template_to_use = sdxl_img2img_prompt if is_img2img else sdxl_prompt_template
+    elif model_type == "flux":
+        template_to_use = flux_img2img_template if is_img2img else flux_prompt_template
+    else: 
+        return None, None, f"Internal error: Unknown model_type '{model_type}' for template selection.", None
+
+    modified_prompt = json.loads(json.dumps(template_to_use)) 
 
     try:
         flux_ksampler_node_id = str(GENERATION_WORKFLOW_STEPS_NODE) 
@@ -334,18 +284,9 @@ async def modify_prompt(
         sdxl_ksampler_node_id = str(SDXL_KSAMPLER_NODE)
         sdxl_lora_node_id = str(SDXL_LORA_NODE)
         sdxl_clip_skip_node_id = str(SDXL_CLIP_SKIP_NODE)
-        sdxl_latent_node_id = str(SDXL_LATENT_NODE)
-        sdxl_img2img_load_image_node_id = str(SDXL_IMG2IMG_LOAD_IMAGE_NODE)
+        sdxl_latent_node_id = str(SDXL_LATENT_NODE) 
+        sdxl_img2img_load_image_node_id = str(SDXL_IMG2IMG_LOAD_IMAGE_NODE) 
         sdxl_img2img_vae_encode_node_id = str(SDXL_IMG2IMG_VAE_ENCODE_NODE)
-
-        qwen_pos_prompt_node_id = str(QWEN_POS_PROMPT_NODE)
-        qwen_neg_prompt_node_id = str(QWEN_NEG_PROMPT_NODE)
-        qwen_ksampler_node_id = str(QWEN_KSAMPLER_NODE)
-        qwen_lora_node_id = str(QWEN_LORA_NODE)
-        qwen_clip_skip_node_id = str(QWEN_CLIP_SKIP_NODE)
-        qwen_latent_node_id = str(QWEN_LATENT_NODE)
-        qwen_img2img_load_image_node_id = str(QWEN_IMG2IMG_LOAD_IMAGE_NODE)
-        qwen_img2img_vae_encode_node_id = str(QWEN_IMG2IMG_VAE_ENCODE_NODE)
 
         if model_type == "flux":
             current_flux_lora_node_id = flux_lora_node_id_img2img if is_img2img else flux_lora_node_id_gen
@@ -363,15 +304,12 @@ async def modify_prompt(
             else: 
                 modified_prompt[flux_ksampler_node_id]["inputs"]["denoise"] = 1.0
                 if flux_latent_node_id in modified_prompt and "inputs" in modified_prompt[flux_latent_node_id]:
-                    latent_inputs = modified_prompt[flux_latent_node_id].setdefault("inputs", {})
-                    latent_inputs.update({
+                    modified_prompt[flux_latent_node_id]["inputs"].update({
                         "aspect_ratio": aspect_ratio_str,
-                        "mp_size_float": mp_size_value,
-                        "model_type": "FLUX",
-                        "batch_size": default_batch_size_from_settings
+                        "mp_size_float": mp_size_str,
+                        "model_type": "FLUX", 
+                        "batch_size": default_batch_size_from_settings 
                     })
-                    if modified_prompt[flux_latent_node_id].get("class_type") != "BobsLatentNodeAdvanced":
-                        modified_prompt[flux_latent_node_id]["class_type"] = "BobsLatentNodeAdvanced"
                     modified_prompt[flux_ksampler_node_id]["inputs"]["latent_image"] = [flux_latent_node_id, 0]
                 else: raise KeyError(f"Flux latent node {flux_latent_node_id} or its inputs not found for Text2Img.")
 
@@ -379,7 +317,7 @@ async def modify_prompt(
             modified_prompt[sdxl_clip_skip_node_id]["inputs"]["clip"] = [sdxl_lora_node_id, 1]
             modified_prompt[sdxl_pos_prompt_node_id]["inputs"]["text"] = text_for_generation
             modified_prompt[sdxl_pos_prompt_node_id]["inputs"]["clip"] = [sdxl_clip_skip_node_id, 0]
-            modified_prompt[sdxl_neg_prompt_node_id]["inputs"]["text"] = final_negative_prompt_for_diffusion
+            modified_prompt[sdxl_neg_prompt_node_id]["inputs"]["text"] = final_negative_prompt_for_sdxl
             modified_prompt[sdxl_neg_prompt_node_id]["inputs"]["clip"] = [sdxl_clip_skip_node_id, 0]
             modified_prompt[sdxl_ksampler_node_id]["inputs"].update({
                 "seed": seed, "steps": steps_for_ksampler, "cfg": guidance_to_use,
@@ -393,49 +331,14 @@ async def modify_prompt(
             else: 
                 modified_prompt[sdxl_ksampler_node_id]["inputs"]["denoise"] = 1.0
                 if sdxl_latent_node_id in modified_prompt and "inputs" in modified_prompt[sdxl_latent_node_id]:
-                    latent_inputs = modified_prompt[sdxl_latent_node_id].setdefault("inputs", {})
-                    latent_inputs.update({
+                    modified_prompt[sdxl_latent_node_id]["inputs"].update({
                         "aspect_ratio": aspect_ratio_str,
-                        "mp_size_float": mp_size_value,
-                        "model_type": "SDXL",
-                        "batch_size": default_batch_size_from_settings
+                        "mp_size_float": mp_size_str,
+                        "model_type": "SDXL", 
+                        "batch_size": default_batch_size_from_settings 
                     })
-                    if modified_prompt[sdxl_latent_node_id].get("class_type") != "BobsLatentNodeAdvanced":
-                        modified_prompt[sdxl_latent_node_id]["class_type"] = "BobsLatentNodeAdvanced"
                     modified_prompt[sdxl_ksampler_node_id]["inputs"]["latent_image"] = [sdxl_latent_node_id, 0]
                 else: raise KeyError(f"SDXL latent node {sdxl_latent_node_id} or its inputs not found for Text2Img.")
-        elif model_type == "qwen":
-            modified_prompt[qwen_clip_skip_node_id]["inputs"]["clip"] = [qwen_lora_node_id, 1]
-            modified_prompt[qwen_pos_prompt_node_id]["inputs"]["text"] = text_for_generation
-            modified_prompt[qwen_pos_prompt_node_id]["inputs"]["clip"] = [qwen_clip_skip_node_id, 0]
-            modified_prompt[qwen_neg_prompt_node_id]["inputs"]["text"] = final_negative_prompt_for_diffusion
-            modified_prompt[qwen_neg_prompt_node_id]["inputs"]["clip"] = [qwen_clip_skip_node_id, 0]
-            modified_prompt[qwen_ksampler_node_id]["inputs"].update({
-                "seed": seed,
-                "steps": steps_for_ksampler,
-                "cfg": guidance_to_use,
-                "model": [qwen_lora_node_id, 0]
-            })
-
-            if is_img2img:
-                modified_prompt[qwen_img2img_load_image_node_id]["inputs"]["url_or_path"] = image_source_for_node
-                modified_prompt[qwen_ksampler_node_id]["inputs"]["denoise"] = denoise_for_ksampler
-                modified_prompt[qwen_ksampler_node_id]["inputs"]["latent_image"] = [qwen_img2img_vae_encode_node_id, 0]
-            else:
-                modified_prompt[qwen_ksampler_node_id]["inputs"]["denoise"] = 1.0
-                if qwen_latent_node_id in modified_prompt and "inputs" in modified_prompt[qwen_latent_node_id]:
-                    latent_inputs = modified_prompt[qwen_latent_node_id].setdefault("inputs", {})
-                    latent_inputs.update({
-                        "aspect_ratio": aspect_ratio_str,
-                        "mp_size_float": mp_size_value,
-                        "model_type": "QWEN",
-                        "batch_size": default_batch_size_from_settings
-                    })
-                    if modified_prompt[qwen_latent_node_id].get("class_type") != "BobsLatentNodeAdvanced":
-                        modified_prompt[qwen_latent_node_id]["class_type"] = "BobsLatentNodeAdvanced"
-                    modified_prompt[qwen_ksampler_node_id]["inputs"]["latent_image"] = [qwen_latent_node_id, 0]
-                else:
-                    raise KeyError(f"Qwen latent node {qwen_latent_node_id} or its inputs not found for Text2Img.")
     except KeyError as e_key:
         print(f"ERROR (KeyError) during core input application: {e_key}"); traceback.print_exc()
         return None, None, f"Internal Error: Template invalid (KeyError: {e_key}).", None
@@ -450,12 +353,7 @@ async def modify_prompt(
         
         filename_prefix_full = normalize_path_for_comfyui(os.path.join(GENERATIONS_DIR, f"{filename_prefix_base}{job_id}"))
         
-        if model_type == "sdxl":
-            save_node_id_final = str(SDXL_SAVE_IMAGE_NODE)
-        elif model_type == "qwen":
-            save_node_id_final = str(QWEN_SAVE_IMAGE_NODE)
-        else:
-            save_node_id_final = "7"
+        save_node_id_final = str(SDXL_SAVE_IMAGE_NODE) if model_type == "sdxl" else "7" 
             
         if save_node_id_final in modified_prompt and "inputs" in modified_prompt[save_node_id_final]:
              modified_prompt[save_node_id_final]["inputs"]["filename_prefix"] = filename_prefix_full
@@ -467,61 +365,34 @@ async def modify_prompt(
         print(f"ERROR (General) during filename prefix application: {e_fn}"); traceback.print_exc()
         return None, None, "Error processing output filename.", None
 
-    model_warning_message = None
-
     try:
         comfy_models_data = check_available_models_api(suppress_summary_print=True)
         comfy_unet_list_lower = {m.lower() for m in comfy_models_data.get("unet", []) if isinstance(m, str)}
         comfy_checkpoint_list_lower = {m.lower() for m in comfy_models_data.get("checkpoint", []) if isinstance(m, str)}
+        
+        is_actual_model_valid_in_comfy = False
+        if model_type == "flux" and actual_model_name: is_actual_model_valid_in_comfy = actual_model_name.lower() in comfy_unet_list_lower
+        elif model_type == "sdxl" and actual_model_name: is_actual_model_valid_in_comfy = actual_model_name.lower() in comfy_checkpoint_list_lower
 
         model_applied_successfully = False
-        model_loader_node_id_target = (
-            str(SDXL_CHECKPOINT_LOADER_NODE)
-            if model_type == "sdxl"
-            else str(QWEN_CHECKPOINT_LOADER_NODE)
-            if model_type == "qwen"
-            else str(GENERATION_MODEL_NODE)
-        )
-
-        if model_loader_node_id_target in modified_prompt:
-            try:
+        if is_actual_model_valid_in_comfy and actual_model_name:
+            model_loader_node_id_target = str(SDXL_CHECKPOINT_LOADER_NODE) if model_type == "sdxl" else str(GENERATION_MODEL_NODE) 
+            if model_loader_node_id_target in modified_prompt:
+                # selected_model_name_with_prefix IS the current setting (e.g. "Flux: model.gguf")
                 model_node_update_dict = get_model_node(selected_model_name_with_prefix, model_loader_node_id_target)
                 if model_loader_node_id_target in model_node_update_dict:
-                    modified_prompt[model_loader_node_id_target] = model_node_update_dict[model_loader_node_id_target]
-                    model_applied_successfully = True
-            except Exception as e_model_node:
-                print(f"ERROR applying selected model '{actual_model_name}': {e_model_node}")
-                traceback.print_exc()
-                return None, None, (
-                    f"Error: Failed to configure the selected model '{actual_model_name}'. "
-                    "Verify the model file exists in ComfyUI."
-                ), None
+                     modified_prompt[model_loader_node_id_target] = model_node_update_dict[model_loader_node_id_target]
+                     model_applied_successfully = True
 
-        if model_type == "flux":
+        if model_type == "flux": 
             sel_t5_clip = settings.get('selected_t5_clip'); sel_clip_l = settings.get('selected_clip_l')
             comfy_clip_list_lower = {m.lower() for m in comfy_models_data.get("clip", []) if isinstance(m, str)}
             valid_t5 = sel_t5_clip and sel_t5_clip.lower() in comfy_clip_list_lower
             valid_cl = sel_clip_l and sel_clip_l.lower() in comfy_clip_list_lower
             if valid_t5 and valid_cl:
-                flux_clip_loader_node_id = str(GENERATION_CLIP_NODE)
+                flux_clip_loader_node_id = str(GENERATION_CLIP_NODE) 
                 if flux_clip_loader_node_id in modified_prompt and "inputs" in modified_prompt[flux_clip_loader_node_id]:
                     modified_prompt[flux_clip_loader_node_id]["inputs"].update({"clip_name1": sel_t5_clip, "clip_name2": sel_clip_l})
-
-        if not model_applied_successfully:
-            return None, None, (
-                f"Error: Could not apply the selected model '{actual_model_name}'. "
-                "Ensure it is compatible with the chosen workflow type."
-            ), None
-
-        target_collection = (
-            comfy_unet_list_lower if model_type == "flux" else comfy_checkpoint_list_lower
-        )
-        if target_collection and actual_model_name.lower() not in target_collection:
-            model_warning_message = (
-                f"Selected model '{actual_model_name}' is not currently visible in ComfyUI's model list. "
-                "Double-check that it is installed and scanned."
-            )
-            print(f"Model warning: {model_warning_message}")
     except Exception as e_model_clip:
         print(f"ERROR during model/CLIP application: {e_model_clip}"); traceback.print_exc()
         return None, None, "Internal Error: Failed during model/CLIP setup.", None
@@ -531,9 +402,7 @@ async def modify_prompt(
         if model_type == "flux":
             lora_node_key_final = flux_lora_node_id_img2img if is_img2img else flux_lora_node_id_gen
         elif model_type == "sdxl":
-            lora_node_key_final = sdxl_lora_node_id
-        elif model_type == "qwen":
-            lora_node_key_final = qwen_lora_node_id
+            lora_node_key_final = sdxl_lora_node_id 
 
         if lora_node_key_final and lora_node_key_final in modified_prompt:
             if "inputs" not in modified_prompt[lora_node_key_final] or not isinstance(modified_prompt[lora_node_key_final]["inputs"], dict):
@@ -578,13 +447,8 @@ async def modify_prompt(
         return None, None, "Internal Error: Failed during LoRA application.", None
     
     final_batch_size_for_job_details = 1 
-    if not is_img2img:
-        if model_type == "sdxl":
-            latent_node_id_for_batch_check = sdxl_latent_node_id
-        elif model_type == "qwen":
-            latent_node_id_for_batch_check = qwen_latent_node_id
-        else:
-            latent_node_id_for_batch_check = flux_latent_node_id
+    if not is_img2img: 
+        latent_node_id_for_batch_check = sdxl_latent_node_id if model_type == "sdxl" else flux_latent_node_id
         if latent_node_id_for_batch_check in modified_prompt and \
            isinstance(modified_prompt.get(latent_node_id_for_batch_check), dict) and \
            isinstance(modified_prompt[latent_node_id_for_batch_check].get("inputs"), dict):
@@ -597,15 +461,15 @@ async def modify_prompt(
 
     job_details_dict = {
         "job_id": job_id,
-        "prompt": text_for_generation,
-        "negative_prompt": final_negative_prompt_for_diffusion if model_type in ("sdxl", "qwen") else None,
+        "prompt": text_for_generation, 
+        "negative_prompt": final_negative_prompt_for_sdxl if model_type == "sdxl" else None,
         "seed": seed,
         "guidance": guidance_to_use if model_type == "flux" else None,
-        "guidance_sdxl": guidance_to_use if model_type in ("sdxl", "qwen") else None,
+        "guidance_sdxl": guidance_to_use if model_type == "sdxl" else None,
         "steps": steps_for_ksampler,
         "width": "N/A", "height": "N/A", 
         "aspect_ratio_str": aspect_ratio_str, 
-        "mp_size": mp_size_value if mp_size_value is not None else "N/A",
+        "mp_size": mp_size_str if not is_img2img else "N/A", 
         "original_ar_param": original_ar_param_val, 
         "image_url": image_source_for_node, 
         "img_strength_percent": img_strength_percent_for_job, 
@@ -626,8 +490,7 @@ async def modify_prompt(
         "original_prompt": original_prompt_text, 
         "enhanced_prompt": enhancer_info.get('enhanced_text'), 
         "enhancer_error": enhancer_info.get('error'),
-        "style_warning_message": style_warning_message,
-        "model_warning_message": model_warning_message,
+        "style_warning_message": style_warning_message
     }
     status_message_for_user = f"Prompt prepared for job {job_id} ({model_type.upper()}{' Img2Img' if is_img2img else ' Text2Img'})."
     return job_id, modified_prompt, status_message_for_user, job_details_dict

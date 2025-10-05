@@ -4,22 +4,10 @@
 
 **COMPLETED UPDATES**
 
-**8/18/25**
-- **Update 8**: Added custom workflow overrides so each Flux/SDXL/Qwen command can run a user-supplied ComfyUI graph without touching the defaults. Introduced ten curated Material palettes plus a configurable custom theme, and exposed Discord bot branding controls (name + avatar) directly in the configurator.
-
-**8/12/25**
-- **Update 7**: Rebuilt the configurator around a PySide6 Material shell with live diagnostics, curated Qwen workflow queueing/export, and a hardened updater hand-off so first-run installs no longer loop. Added Qwen Image Edit support to `/edit` (use `--engine qwen` or pick "Qwen Image Edit" from the slash command) and expanded settings to cover default edit engine, steps, guidance, and denoise controls.
-
-**8/03/25**
-- **Update 6**: Added an in-app shortcut to the official [Qwen-Image workflow guide](https://docs.comfy.org/tutorials/image/qwen/qwen-image), refreshed the updater to target the current GitHub API version, and bundled a portable HTTP client so first-run environments no longer require installing third-party packages.
-
-**7/30/25**
-- **Update 5**: Added native **Qwen image workflow** support across generation, variation, and upscale flows, refreshed the configurator theme, and hardened the auto-updater with release version checks.
-
 **7/29/25**
 - **Update 4**: **Version 1.2.4**
 
-This update introduces a more organized and powerful configuration experience, adds dedicated settings for Kontext and Qwen Image editing, and refines the user interface.
+This update introduces a more organized and powerful configuration experience, adds dedicated settings for Kontext editing, and refines the user interface.
 
 -   **Tabbed Bot Settings in Configurator:** The "Bot Settings" tab in the GUI has been reorganized into five distinct sub-tabs for clarity:
     -   **General:** Core model selections, VAE, variation settings, batch sizes, MP size, and upscale factor.
@@ -72,48 +60,9 @@ This update introduces a more organized and powerful configuration experience, a
 
 ## First-Time Setup
 
-**(IF YOU DO NOT HAVE A DISCORD BOT ACCOUNT ALREADY CREATED, OPEN `docs/HOW TO DISCORD BOT.txt` AND FOLLOW INSTRUCTIONS)**
+**(IF YOU DO NOT HAVE A DISCORD BOT ACCOUNT ALREADY CREATED, OPEN "HOW TO DISCORD BOT.txt" AND FOLLOW INSTRUCTIONS)**
 
 Make sure you already have ComfyUI installed. If you need ComfyUI still, you can download it [`HERE`](https://www.comfy.org/download).
-
-### Portable Windows build (GUI executable)
-
-If running `TENOSAI-BOT.bat` does not launch the configurator, use the
-automated Windows installer which provisions dependencies, builds the
-executable, and launches the Material GUI in one pass:
-
-```powershell
-python scripts/windows/install_and_launch.py
-```
-
-The installer performs these steps:
-
-1. Creates `.venv` (if necessary) and installs the Python dependency stack
-   from `requirements/`.
-2. Invokes the PyInstaller helper to build a portable bundle, copying the
-   required `python*.dll` and `vcruntime140.dll` so the executable starts on
-   clean systems.
-3. Drops a shortcut named `TenosAIConfigurator.lnk` in the repository root
-   that points to `dist/TenosAIConfigurator/TenosAIConfigurator.exe`.
-4. Launches the freshly built executable.
-
-If you prefer to rebuild manually, the helper can still be invoked directly:
-
-```bash
-python tools/build_configurator.py --zip
-```
-
-The script generates `dist/TenosAIConfigurator/TenosAIConfigurator.exe`
-alongside a ready-to-distribute `dist/TenosAIConfigurator-portable.zip`
-archive containing the executable and default configuration files.
-
-### Python Dependencies
-
-Install the UI dependency stack before launching the configurator:
-
-```bash
-pip install PySide6
-```
 
 Download the portable zip from this repository via the "Code" button at the top of the page, or click [`HERE`](https://github.com/Tenos-ai/tenos-bot/archive/refs/heads/main.zip) to download the zip directly. I recommend placing it in your ComfyUI Portable folder, but you can put it anywhere and it should work just fine.
 
@@ -137,16 +86,6 @@ Before using Tenosai-Bot, you **MUST** run the configurator (`TENOSAI-BOT.bat` o
 
 This step is crucial for the bot to function correctly. After initial setup, use the "Bot Control" tab in the configurator to start the bot. The bot uses the model selected via `/settings` or the Configurator as the default for new generations.
 
-### Material Configurator Preview
-
-Prefer a Material Design UI? Install `PySide6` and launch the configurator:
-
-```bash
-python -m material_gui.app
-```
-
-The Material interface includes navigation for the overview, Discord enhancer toggles, live diagnostics, an activity log that streams updater output, and a dedicated Qwen workflow gallery for quick queueing or export. Living Material-inspired animations add breathing status indicators and cross-fading navigation to keep the experience lively without sacrificing focus.
-
 ### OPTIONAL: Download the Tenos Official Flux Dev Finetune from Huggingface [`HERE`](https://huggingface.co/Tenos-ai/Tenos)
 |||
 |---|---|
@@ -163,15 +102,13 @@ Usage: `/gen [prompt] [options]` or `/please [prompt] [options]`
 Options:
 - `--seed [number]`: Set a specific seed for reproducibility.
 - `--g [number]`: Set guidance scale for **Flux** models (e.g., `3.5`). Default in `/settings`.
-- `--g_sdxl [number]`: Set guidance scale for **SDXL** and **Qwen Image** models (e.g., `7.0`). Default in `/settings`.
-- `--model [flux|sdxl|qwen]`: Override the saved default workflow for a single run without changing `/settings`.
-- `--engine qwen`: When using `/edit`, switch from Kontext to the Qwen Image Edit workflow on demand (also available as a slash command dropdown).
+- `--g_sdxl [number]`: Set guidance scale for **SDXL** models (e.g., `7.0`). Default in `/settings`.
 - `--ar [W:H]`: Set aspect ratio (e.g., `--ar 16:9`). Default is `1:1`.
 - `--mp [M]`: (Flux & SDXL) Set Megapixel target size (e.g., `0.5`, `1`, `1.75`). Default in `/settings`.
 - `--img [strength] [URL]`: **(Flux Only)** Use img2img. Strength `S` (0-100), `URL` of input image.
 - `--style [style_name]`: Apply a predefined LoRA style (see `/styles`). Default in `/settings`.
 - `--r [N]`: Run the prompt `N` times with different seeds (max 10).
-- `--no "[negative_prompt_text]"`: **(SDXL & Qwen)** Provide a negative prompt.
+- `--no "[negative_prompt_text]"`: **(SDXL Only)** Provide a negative prompt.
 
 Example: `/gen a majestic lion --ar 16:9 --seed 1234 --style realistic --g_sdxl 6.5`
 Example (SDXL with custom negative): `/gen cyberpunk city --no "trees, nature, day"`
@@ -182,23 +119,19 @@ Example (SDXL with custom negative): `/gen cyberpunk city --no "trees, nature, d
 - Generated messages will have a ✨ icon if the enhancer was used successfully.
 - Edit the system prompts used by the enhancer via the Configurator's "LLM Prompts" tab.
 
-### 2. Image Editing (Kontext & Qwen)
+### 2. Image Editing with Kontext
 Command: `/edit`
 Usage: `/edit [instruction] [image1] [image2] [image3] [image4] [options]`
 
-Edit with **FLUX Kontext** (multi-image edits, stitching, MP control) or **Qwen Image Edit** (single-image diffusion edits with denoise control). Kontext accepts up to four reference images; Qwen currently supports one image per request.
+This powerful feature uses FLUX Kontext to edit up to 4 images based on your text instructions. You can blend images, change objects, alter styles, and much more.
 
 Options:
-- `--g [number]`: Set guidance scale for the edit (e.g., `3.0` for Kontext, `6.0` for Qwen).
-- `--ar [W:H]`: Set aspect ratio for the final output canvas (Kontext only).
-- `--steps [number]`: Set the number of steps for the generation (both engines).
-- `--mp [number]`: Target megapixels for Kontext edits.
-- `--denoise [0-1]`: Control the strength of Qwen edits (default in `/settings`).
-- `--engine [kontext|qwen]`: Override the default edit engine saved in `/settings`.
+- `--g [number]`: Set guidance scale for the edit (e.g., `3.0`).
+- `--ar [W:H]`: Set aspect ratio for the final output canvas.
+- `--steps [number]`: Set the number of steps for the generation.
 
-Example (Kontext): `/edit instruction:make the cat wear a wizard hat image1:<upload_cat_image>`
-Example (Qwen): `/edit instruction:add neon city lights image1:<upload_cat_image> --denoise 0.55 --engine qwen`
-Example (Kontext multi-image): `/edit instruction:blend these two styles image1:<upload_style1_image> image2:<upload_style2_image> --ar 16:9`
+Example: `/edit instruction:make the cat wear a wizard hat image1:<upload_cat_image>`
+Example: `/edit instruction:blend these two styles image1:<upload_style1_image> image2:<upload_style2_image> --ar 16:9`
 
 ### 3. Image Upscaling
 Command: Reply with `--up` or click the `Upscale ⬆️` button.
@@ -220,7 +153,7 @@ Types:
 
 Options (for reply command):
 - `--prompt "[new_prompt]"`: If Remix Mode is ON (via `/settings`), use this new prompt for the variation.
-- `--no "[negative_prompt_text]"`: **(SDXL & Qwen)** Sets/replaces the negative prompt for this variation.
+- `--no "[negative_prompt_text]"`: **(SDXL Variation Only)** Sets/replaces the negative prompt for this variation.
 - `--style [style_name]`: Apply a different style to the variation.
 
 **Remix Mode:**
@@ -228,7 +161,7 @@ Options (for reply command):
 
 ### 5. Rerunning & Editing
 - **Rerun 🔄**: Reruns the original generation prompt and parameters with a new seed.
-- **Edit ✏️**: Opens a modal to perform a new edit on the selected image(s). Kontext supports up to four references; add `--engine qwen` if you prefer the Qwen Image Edit workflow.
+- **Edit ✏️**: Opens a modal to perform a new **Kontext Edit** on the selected image(s). You can provide new instructions and even add more images to blend.
 
 ### 6. Utility Commands
 - `/styles`: View available style presets via DM.

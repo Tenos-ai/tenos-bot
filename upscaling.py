@@ -13,34 +13,25 @@ import asyncio
 from queue_manager import queue_manager
 
 from prompt_templates import (
-    UPSCALE_MODEL_NODE as FLUX_UPSCALE_BASE_MODEL_NODE,
-    UPSCALE_CLIP_NODE as FLUX_UPSCALE_CLIP_NODE,
+    upscale_prompt as flux_upscale_template,
+    sdxl_upscale_prompt,
+    UPSCALE_MODEL_NODE as FLUX_UPSCALE_BASE_MODEL_NODE, 
+    UPSCALE_CLIP_NODE as FLUX_UPSCALE_CLIP_NODE,      
     UPSCALE_LORA_NODE as FLUX_UPSCALE_LORA_NODE,
     UPSCALE_HELPER_LATENT_NODE as FLUX_UPSCALE_HELPER_LATENT_NODE,
-    SDXL_CHECKPOINT_LOADER_NODE as SDXL_UPSCALE_BASE_MODEL_NODE,
-    QWEN_CHECKPOINT_LOADER_NODE,
-    SDXL_UPSCALE_LORA_NODE,
-    SDXL_UPSCALE_LOAD_IMAGE_NODE,
-    SDXL_UPSCALE_MODEL_LOADER_NODE,
-    SDXL_UPSCALE_ULTIMATE_NODE,
+    SDXL_CHECKPOINT_LOADER_NODE as SDXL_UPSCALE_BASE_MODEL_NODE, 
+    SDXL_UPSCALE_LORA_NODE, 
+    SDXL_UPSCALE_LOAD_IMAGE_NODE, 
+    SDXL_UPSCALE_MODEL_LOADER_NODE, 
+    SDXL_UPSCALE_ULTIMATE_NODE, 
     SDXL_UPSCALE_HELPER_LATENT_NODE,
     SDXL_UPSCALE_SAVE_IMAGE_NODE,
-    SDXL_UPSCALE_CLIP_SKIP_NODE,
+    SDXL_UPSCALE_CLIP_SKIP_NODE, 
     SDXL_UPSCALE_POS_PROMPT_NODE,
-    SDXL_UPSCALE_NEG_PROMPT_NODE,
-    QWEN_UPSCALE_LORA_NODE,
-    QWEN_UPSCALE_LOAD_IMAGE_NODE,
-    QWEN_UPSCALE_MODEL_LOADER_NODE,
-    QWEN_UPSCALE_ULTIMATE_NODE,
-    QWEN_UPSCALE_HELPER_LATENT_NODE,
-    QWEN_UPSCALE_SAVE_IMAGE_NODE,
-    QWEN_UPSCALE_CLIP_SKIP_NODE,
-    QWEN_UPSCALE_POS_PROMPT_NODE,
-    QWEN_UPSCALE_NEG_PROMPT_NODE,
+    SDXL_UPSCALE_NEG_PROMPT_NODE
 )
-from workflows import load_workflow_template
 from utils.seed_utils import parse_seed_from_message, generate_seed
-from settings_manager import load_settings, load_styles_config
+from settings_manager import load_settings, load_styles_config, _get_default_settings
 from modelnodes import get_model_node
 from comfyui_api import get_available_comfyui_models as check_available_models_api
 
@@ -125,33 +116,30 @@ def modify_upscale_prompt(
     styles_config = load_styles_config() 
     upscale_job_id = str(uuid.uuid4())[:8]
 
-    current_base_model_type = "flux"
+    current_base_model_type = "flux" 
     actual_base_model_filename = None
     selected_base_model_setting = settings.get('selected_model')
 
-    if isinstance(selected_base_model_setting, str):
+    if selected_base_model_setting and isinstance(selected_base_model_setting, str):
         selected_base_model_stripped = selected_base_model_setting.strip()
-    else:
-        selected_base_model_stripped = ""
-
-    if selected_base_model_stripped:
         if ":" in selected_base_model_stripped:
             prefix, name = selected_base_model_stripped.split(":", 1)
             current_base_model_type = prefix.strip().lower()
             actual_base_model_filename = name.strip()
-        else:
+        else: 
             actual_base_model_filename = selected_base_model_stripped
-            if actual_base_model_filename.endswith((".gguf", ".sft")):
-                current_base_model_type = "flux"
-            else:
-                current_base_model_type = "sdxl"
-
-    if not actual_base_model_filename:
-        error_msg_no_model = (
-            "Error: No base model is selected. Choose a Flux, SDXL, or Qwen model in settings before upscaling."
-        )
-        print(f"Upscale aborted: {error_msg_no_model}")
-        return None, None, error_msg_no_model, None
+            if actual_base_model_filename.endswith((".gguf", ".sft")): current_base_model_type = "flux"
+            else: current_base_model_type = "sdxl"
+    else:
+        print("Upscaling: No model selected in settings. Defaulting to Flux (this might cause issues).")
+        default_settings = _get_default_settings()
+        fallback_model_setting = default_settings.get('selected_model')
+        if fallback_model_setting and isinstance(fallback_model_setting, str):
+             selected_base_model_stripped = fallback_model_setting.strip()
+             if ":" in selected_base_model_stripped:
+                prefix, name = selected_base_model_stripped.split(":", 1)
+                current_base_model_type = prefix.strip().lower()
+                actual_base_model_filename = name.strip()
 
     model_name_to_print_in_log = actual_base_model_filename if actual_base_model_filename else "Settings Default (or ComfyUI Default)"
     print(f"Upscale job {upscale_job_id}: Using CURRENTLY SELECTED model type '{current_base_model_type.upper()}' and model '{model_name_to_print_in_log}'.")
@@ -239,11 +227,10 @@ def modify_upscale_prompt(
     if style_for_this_upscale not in styles_config: style_for_this_upscale = "off"
 
     style_warning_message_ups = None
-    style_target_type_ups = 'sdxl' if current_base_model_type == 'qwen' else current_base_model_type
     if style_for_this_upscale != 'off':
         style_data_ups = styles_config.get(style_for_this_upscale, {})
         style_model_type_ups = style_data_ups.get('model_type', 'all')
-        if style_model_type_ups != 'all' and style_model_type_ups != style_target_type_ups:
+        if style_model_type_ups != 'all' and style_model_type_ups != current_base_model_type:
             style_warning_message_ups = f"Style '{style_for_this_upscale}' is for {style_model_type_ups.upper()} models only. Upscaling with {current_base_model_type.upper()}. Style disabled."
             print(f"Style Warning for upscale job {upscale_job_id}: {style_warning_message_ups}")
             style_for_this_upscale = 'off'
@@ -256,17 +243,11 @@ def modify_upscale_prompt(
         if not (1.5 <= upscale_factor_setting <= 4.0): upscale_factor_setting = 1.85
     except (ValueError, TypeError): upscale_factor_setting = 1.85
 
-    try:
-        modified_upscale_prompt = load_workflow_template(current_base_model_type, "upscale", settings=settings)
-    except ValueError as exc:
-        return None, None, f"Internal error: {exc}", None
+    template_to_use = sdxl_upscale_prompt if current_base_model_type == "sdxl" else flux_upscale_template
+    modified_upscale_prompt = json.loads(json.dumps(template_to_use))
     final_upscaler_denoise = 0.25
     upscale_job_steps = original_steps 
     upscale_job_guidance = original_guidance_flux if current_base_model_type == "flux" else original_guidance_sdxl
-
-    final_diffusion_upscale_neg_prompt = ""
-    if current_base_model_type in ("sdxl", "qwen"):
-        final_diffusion_upscale_neg_prompt = original_job_sdxl_negative_prompt if original_job_sdxl_negative_prompt else settings.get('default_sdxl_negative_prompt', "")
 
     if current_base_model_type == "flux":
         modified_upscale_prompt["1"]["inputs"]["text"] = prompt_for_upscaler_text_node
@@ -285,7 +266,8 @@ def modify_upscale_prompt(
             modified_upscale_prompt[flux_upscaler_model_loader_node_id]["inputs"]["model_name"] = selected_upscaler_model_file
     elif current_base_model_type == "sdxl":
         modified_upscale_prompt[str(SDXL_UPSCALE_POS_PROMPT_NODE)]["inputs"]["text"] = prompt_for_upscaler_text_node
-        modified_upscale_prompt[str(SDXL_UPSCALE_NEG_PROMPT_NODE)]["inputs"]["text"] = final_diffusion_upscale_neg_prompt
+        final_sdxl_upscale_neg_prompt = original_job_sdxl_negative_prompt if original_job_sdxl_negative_prompt else settings.get('default_sdxl_negative_prompt', "")
+        modified_upscale_prompt[str(SDXL_UPSCALE_NEG_PROMPT_NODE)]["inputs"]["text"] = final_sdxl_upscale_neg_prompt
         modified_upscale_prompt[str(SDXL_UPSCALE_LOAD_IMAGE_NODE)]["inputs"]["url_or_path"] = target_image_url
         sdxl_helper_node_id = str(SDXL_UPSCALE_HELPER_LATENT_NODE)
         modified_upscale_prompt[sdxl_helper_node_id]["inputs"].update({
@@ -301,25 +283,6 @@ def modify_upscale_prompt(
         sdxl_upscaler_model_loader_node_id = str(SDXL_UPSCALE_MODEL_LOADER_NODE)
         if sdxl_upscaler_model_loader_node_id in modified_upscale_prompt and selected_upscaler_model_file:
             modified_upscale_prompt[sdxl_upscaler_model_loader_node_id]["inputs"]["model_name"] = selected_upscaler_model_file
-    elif current_base_model_type == "qwen":
-        modified_upscale_prompt[str(QWEN_UPSCALE_POS_PROMPT_NODE)]["inputs"]["text"] = prompt_for_upscaler_text_node
-        modified_upscale_prompt[str(QWEN_UPSCALE_NEG_PROMPT_NODE)]["inputs"]["text"] = final_diffusion_upscale_neg_prompt
-        modified_upscale_prompt[str(QWEN_UPSCALE_LOAD_IMAGE_NODE)]["inputs"]["image"] = target_image_url
-        qwen_helper_node_id = str(QWEN_UPSCALE_HELPER_LATENT_NODE)
-        modified_upscale_prompt[qwen_helper_node_id]["inputs"].update({
-            "scale_factor": upscale_factor_setting,
-            "model_type": "QWEN"
-        })
-        qwen_ultimate_node_id = str(QWEN_UPSCALE_ULTIMATE_NODE)
-        if "seed" in modified_upscale_prompt[qwen_ultimate_node_id]["inputs"]:
-            modified_upscale_prompt[qwen_ultimate_node_id]["inputs"]["seed"] = upscale_seed
-        final_upscaler_denoise = modified_upscale_prompt[qwen_ultimate_node_id]["inputs"].get("denoise", 0.25)
-        upscale_job_steps = modified_upscale_prompt[qwen_ultimate_node_id]["inputs"].get("steps", original_steps)
-        upscale_job_guidance = modified_upscale_prompt[qwen_ultimate_node_id]["inputs"].get("cfg", original_guidance_sdxl)
-
-        qwen_upscaler_model_loader_node_id = str(QWEN_UPSCALE_MODEL_LOADER_NODE)
-        if qwen_upscaler_model_loader_node_id in modified_upscale_prompt and selected_upscaler_model_file:
-            modified_upscale_prompt[qwen_upscaler_model_loader_node_id]["inputs"]["model_name"] = selected_upscaler_model_file
 
     os.makedirs(UPSCALES_DIR, exist_ok=True)
     filename_suffix_detail_ups = f"_from_img{image_index}_srcID{source_job_id_for_tracking}"
@@ -328,22 +291,12 @@ def modify_upscale_prompt(
     final_filename_prefix_ups = normalize_path_for_comfyui(
         os.path.join(UPSCALES_DIR, f"{file_prefix_base_ups}{upscale_job_id}{filename_suffix_detail_ups}")
     )
-    if current_base_model_type == "sdxl":
-        save_node_id_final_ups = str(SDXL_UPSCALE_SAVE_IMAGE_NODE)
-    elif current_base_model_type == "qwen":
-        save_node_id_final_ups = str(QWEN_UPSCALE_SAVE_IMAGE_NODE)
-    else:
-        save_node_id_final_ups = "58"
+    save_node_id_final_ups = str(SDXL_UPSCALE_SAVE_IMAGE_NODE) if current_base_model_type == "sdxl" else "58"
     if save_node_id_final_ups in modified_upscale_prompt:
         modified_upscale_prompt[save_node_id_final_ups]["inputs"]["filename_prefix"] = final_filename_prefix_ups
 
     if actual_base_model_filename:
-        if current_base_model_type == "sdxl":
-            base_model_loader_node_id_ups = str(SDXL_UPSCALE_BASE_MODEL_NODE)
-        elif current_base_model_type == "qwen":
-            base_model_loader_node_id_ups = str(QWEN_CHECKPOINT_LOADER_NODE)
-        else:
-            base_model_loader_node_id_ups = str(FLUX_UPSCALE_BASE_MODEL_NODE)
+        base_model_loader_node_id_ups = str(SDXL_UPSCALE_BASE_MODEL_NODE) if current_base_model_type == "sdxl" else str(FLUX_UPSCALE_BASE_MODEL_NODE)
         if base_model_loader_node_id_ups in modified_upscale_prompt:
             try:
                 prefixed_base_model_name_ups = f"{current_base_model_type.capitalize()}: {actual_base_model_filename}"
@@ -364,25 +317,16 @@ def modify_upscale_prompt(
             if "inputs" in modified_upscale_prompt[flux_clip_node_id_ups]:
                  modified_upscale_prompt[flux_clip_node_id_ups]["inputs"].update({"clip_name1": sel_t5_clip_ups, "clip_name2": sel_clip_l_ups})
 
-    if current_base_model_type == "sdxl":
-        lora_loader_node_id_for_ups_style = str(SDXL_UPSCALE_LORA_NODE)
-    elif current_base_model_type == "qwen":
-        lora_loader_node_id_for_ups_style = str(QWEN_UPSCALE_LORA_NODE)
-    else:
-        lora_loader_node_id_for_ups_style = str(FLUX_UPSCALE_LORA_NODE)
+    lora_loader_node_id_for_ups_style = str(SDXL_UPSCALE_LORA_NODE) if current_base_model_type == "sdxl" else str(FLUX_UPSCALE_LORA_NODE)
     if lora_loader_node_id_for_ups_style in modified_upscale_prompt:
         if isinstance(modified_upscale_prompt[lora_loader_node_id_for_ups_style].get("inputs"), dict):
             lora_inputs_dict_ups = modified_upscale_prompt[lora_loader_node_id_for_ups_style]["inputs"]
             
             if current_base_model_type == "flux":
-                lora_inputs_dict_ups["model"] = [str(FLUX_UPSCALE_BASE_MODEL_NODE), 0]
-                lora_inputs_dict_ups["clip"] = [str(FLUX_UPSCALE_CLIP_NODE), 0]
+                 pass 
             elif current_base_model_type == "sdxl":
                 lora_inputs_dict_ups["model"] = [str(SDXL_UPSCALE_BASE_MODEL_NODE), 0]
                 lora_inputs_dict_ups["clip"] = [str(SDXL_UPSCALE_BASE_MODEL_NODE), 1]
-            elif current_base_model_type == "qwen":
-                lora_inputs_dict_ups["model"] = [str(QWEN_CHECKPOINT_LOADER_NODE), 0]
-                lora_inputs_dict_ups["clip"] = [str(QWEN_CHECKPOINT_LOADER_NODE), 1]
             
             if style_for_this_upscale != 'off':
                 style_data_loras_ups = styles_config.get(style_for_this_upscale, {})
@@ -409,11 +353,11 @@ def modify_upscale_prompt(
         "job_id": upscale_job_id, "prompt": prompt_for_upscaler_text_node,
         "original_prompt": original_unenhanced_prompt_from_source,
         "enhanced_prompt": original_job_data.get('enhanced_prompt') if original_job_data else None,
-        "negative_prompt": final_diffusion_upscale_neg_prompt if current_base_model_type in ("sdxl", "qwen") else None,
+        "negative_prompt": final_sdxl_upscale_neg_prompt if current_base_model_type == "sdxl" else None,
         "seed": upscale_seed,
-        "steps": upscale_job_steps,
-        "guidance": upscale_job_guidance if current_base_model_type == 'flux' else None,
-        "guidance_sdxl": upscale_job_guidance if current_base_model_type in ('sdxl', 'qwen') else None,
+        "steps": upscale_job_steps, 
+        "guidance": upscale_job_guidance if current_base_model_type == 'flux' else None, 
+        "guidance_sdxl": upscale_job_guidance if current_base_model_type == 'sdxl' else None, 
         "image_url": target_image_url, 
         "original_width": original_image_width_val, 
         "original_height": original_image_height_val, 
