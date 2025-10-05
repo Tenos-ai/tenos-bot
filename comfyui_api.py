@@ -7,7 +7,7 @@ import traceback
 import time
 from socket import error as SocketError
 from urllib.error import URLError
-from websocket_client import get_initialized_websocket_client
+from websocket_client import WebsocketClient
 
 class ConnectionRefusedError(Exception):
     """Custom exception for connection refused errors."""
@@ -92,7 +92,7 @@ def queue_prompt(prompt, comfyui_host=COMFYUI_HOST, comfyui_port=COMFYUI_PORT, i
 
         update_last_prompt(prompt)
 
-        ws_client = get_initialized_websocket_client()
+        ws_client = WebsocketClient()
         client_id = ws_client.client_id if ws_client and ws_client.is_connected else None
         
         p = {"prompt": prompt}
