@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QColorDialog,
@@ -113,7 +113,6 @@ class AppearanceSettingsView(BaseView):
         self._repository = repository
         self._on_palette_change = on_palette_change
         self._on_mode_change = on_mode_change
-        self._loading = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -143,7 +142,7 @@ class AppearanceSettingsView(BaseView):
         for key, palette in PALETTES.items():
             self.palette_combo.addItem(palette.display_name, key)
         self.palette_combo.addItem("Custom (Material guided)", CUSTOM_PALETTE_KEY)
-        self.palette_combo.currentIndexChanged.connect(self._handle_palette_changed)  # pragma: no cover - Qt binding
+        self.palette_combo.currentIndexChanged.connect(self._update_custom_fields_visibility)  # pragma: no cover - Qt binding
         form.addRow("Palette", self.palette_combo)
 
         self.custom_widget = QWidget()
@@ -167,19 +166,17 @@ class AppearanceSettingsView(BaseView):
         custom_layout.addLayout(custom_form)
         layout.addWidget(self.custom_widget)
 
-        self.status_label = QLabel("Changes are saved automatically.")
+        button_row = QHBoxLayout()
+        button_row.addStretch()
+        self.save_button = QPushButton("Save Appearance Settings")
+        self.save_button.clicked.connect(self._persist)  # pragma: no cover - Qt binding
+        button_row.addWidget(self.save_button)
+        layout.addLayout(button_row)
+
+        self.status_label = QLabel("Select a palette and click save to apply.")
         self.status_label.setObjectName("MaterialCard")
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
-
-        self._save_timer = QTimer(self)
-        self._save_timer.setSingleShot(True)
-        self._save_timer.setInterval(600)
-        self._save_timer.timeout.connect(self._persist)
-
-        self.custom_primary_picker.color_changed.connect(self._handle_custom_color_changed)  # pragma: no cover - Qt binding
-        self.custom_surface_picker.color_changed.connect(self._handle_custom_color_changed)  # pragma: no cover - Qt binding
-        self.custom_text_picker.color_changed.connect(self._handle_custom_color_changed)  # pragma: no cover - Qt binding
 
         self.refresh(repository)
 
@@ -194,30 +191,8 @@ class AppearanceSettingsView(BaseView):
         mode_value = self.mode_combo.currentData()
         if callable(self._on_mode_change):
             self._on_mode_change(mode_value)
-        if not self._loading:
-            self.status_label.setText("Saving appearance preferences…")
-            self._save_timer.start()
 
-    def _handle_palette_changed(self) -> None:  # pragma: no cover - Qt binding
-        self._update_custom_fields_visibility()
-        if self._loading:
-            return
-        payload = self._collect_preferences()
-        if payload is None:
-            return
-        mode_value, palette_key, primary, surface, text_color = payload
-        if callable(self._on_palette_change):
-            self._on_palette_change(palette_key, primary, surface, text_color)
-        self.status_label.setText("Saving appearance preferences…")
-        self._save_timer.start()
-
-    def _handle_custom_color_changed(self, _color: str) -> None:  # pragma: no cover - Qt binding
-        if self._loading:
-            return
-        self.status_label.setText("Saving appearance preferences…")
-        self._save_timer.start()
-
-    def _collect_preferences(self) -> tuple[str, str, str, str, str] | None:
+    def _persist(self) -> None:  # pragma: no cover - Qt binding
         mode_value = self.mode_combo.currentData()
         palette_key = self.palette_combo.currentData()
 
@@ -228,26 +203,18 @@ class AppearanceSettingsView(BaseView):
         if palette_key == CUSTOM_PALETTE_KEY:
             if not _is_valid_hex(primary):
                 self.status_label.setText("Enter a valid hex colour for the accent.")
-                return None
+                return
             if not _is_valid_hex(surface):
                 self.status_label.setText("Enter a valid hex colour for the surface.")
-                return None
+                return
             if not _is_valid_hex(text_color):
                 self.status_label.setText("Enter a valid hex colour for the text.")
-                return None
+                return
         else:
             current = self._repository.get_theme_preferences()
             primary = current.get("custom_primary", "#2563EB")
             surface = current.get("custom_surface", "#0F172A")
             text_color = current.get("custom_text", "#F1F5F9")
-
-        return mode_value, palette_key, primary, surface, text_color
-
-    def _persist(self) -> None:  # pragma: no cover - Qt binding
-        payload = self._collect_preferences()
-        if payload is None:
-            return
-        mode_value, palette_key, primary, surface, text_color = payload
 
         self._repository.save_theme_preferences(
             mode=mode_value,
@@ -268,7 +235,6 @@ class AppearanceSettingsView(BaseView):
     # Lifecycle
     # ------------------------------------------------------------------
     def refresh(self, repository: SettingsRepository) -> None:  # pragma: no cover - UI wiring
-        self._loading = True
         prefs = repository.get_theme_preferences()
         mode = prefs.get("mode", "dark").lower()
         palette = prefs.get("palette", "oceanic").lower()
@@ -292,8 +258,7 @@ class AppearanceSettingsView(BaseView):
         self.custom_surface_picker.set_color(_normalise_hex(surface) or "#0F172A")
         self.custom_text_picker.set_color(_normalise_hex(text_color) or "#F1F5F9")
         self._update_custom_fields_visibility()
-        self._loading = False
-        self.status_label.setText("Adjust the appearance settings; changes save automatically.")
+        self.status_label.setText("Adjust the appearance settings and click save to apply.")
 
 
 __all__ = ["AppearanceSettingsView"]

@@ -10,10 +10,6 @@
     "UPSCALE_MODELS": "",
     "VAE_MODELS": ""
   },
-  "QWEN": {
-    "MODEL_FILES": "",
-    "CLIP_FILES": ""
-  },
   "CLIP": {
     "CLIP_FILES": ""
   },

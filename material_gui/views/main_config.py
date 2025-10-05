@@ -39,12 +39,9 @@ class MainConfigView(BaseView):
 
         self._output_fields: Dict[str, QLineEdit] = {}
         self._model_fields: Dict[str, QLineEdit] = {}
-        self._field_map: Dict[QLineEdit, tuple[str, str]] = {}
         self._clip_field: QLineEdit | None = None
         self._lora_field: QLineEdit | None = None
         self._nodes_field: QLineEdit | None = None
-        self._qwen_model_field: QLineEdit | None = None
-        self._qwen_clip_field: QLineEdit | None = None
         self._comfy_host: QLineEdit | None = None
         self._comfy_port: QSpinBox | None = None
         self._bot_host: QLineEdit | None = None
@@ -55,7 +52,6 @@ class MainConfigView(BaseView):
         self._openai_key: QLineEdit | None = None
         self._auto_update_checkbox: QCheckBox | None = None
         self._status_label: QLabel | None = None
-        self._loading = False
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(24, 24, 24, 24)
@@ -92,7 +88,14 @@ class MainConfigView(BaseView):
         content_layout.addWidget(tabs)
         content_layout.addStretch()
 
-        self._status_label = QLabel("Changes are saved automatically.")
+        button_row = QHBoxLayout()
+        button_row.addStretch()
+        save_button = QPushButton("Save Main Config")
+        save_button.clicked.connect(self._persist)  # pragma: no cover - Qt binding
+        button_row.addWidget(save_button)
+        root_layout.addLayout(button_row)
+
+        self._status_label = QLabel("Values mirror config.json. Save to apply changes.")
         self._status_label.setObjectName("MaterialCard")
         self._status_label.setWordWrap(True)
         root_layout.addWidget(self._status_label)
@@ -159,10 +162,6 @@ class MainConfigView(BaseView):
             row.addWidget(browse)
             form.addRow(label, row)
             self._output_fields[key] = field
-            self._field_map[field] = ("OUTPUTS", key)
-            field.editingFinished.connect(
-                lambda key=key, f=field: self._persist_path("OUTPUTS", key, f.text().strip())
-            )  # pragma: no cover
 
         return group
 
@@ -186,8 +185,6 @@ class MainConfigView(BaseView):
             row.addWidget(browse)
             form.addRow(label, row)
             self._model_fields[key] = field
-            self._field_map[field] = ("MODELS", key)
-            field.editingFinished.connect(lambda key=key, f=field: self._persist_path("MODELS", key, f.text().strip()))  # pragma: no cover
 
         self._clip_field = QLineEdit()
         clip_browse = QPushButton("Browse…")
@@ -196,10 +193,6 @@ class MainConfigView(BaseView):
         clip_row.addWidget(self._clip_field)
         clip_row.addWidget(clip_browse)
         form.addRow("CLIP Files", clip_row)
-        self._field_map[self._clip_field] = ("CLIP", "CLIP_FILES")
-        self._clip_field.editingFinished.connect(
-            lambda: self._persist_path("CLIP", "CLIP_FILES", self._clip_field.text().strip())
-        )  # pragma: no cover
 
         self._lora_field = QLineEdit()
         lora_browse = QPushButton("Browse…")
@@ -208,10 +201,6 @@ class MainConfigView(BaseView):
         lora_row.addWidget(self._lora_field)
         lora_row.addWidget(lora_browse)
         form.addRow("LoRA Files", lora_row)
-        self._field_map[self._lora_field] = ("LORAS", "LORA_FILES")
-        self._lora_field.editingFinished.connect(
-            lambda: self._persist_path("LORAS", "LORA_FILES", self._lora_field.text().strip())
-        )  # pragma: no cover
 
         self._nodes_field = QLineEdit()
         nodes_browse = QPushButton("Browse…")
@@ -220,34 +209,6 @@ class MainConfigView(BaseView):
         nodes_row.addWidget(self._nodes_field)
         nodes_row.addWidget(nodes_browse)
         form.addRow("Custom Nodes", nodes_row)
-        self._field_map[self._nodes_field] = ("NODES", "CUSTOM_NODES")
-        self._nodes_field.editingFinished.connect(
-            lambda: self._persist_path("NODES", "CUSTOM_NODES", self._nodes_field.text().strip())
-        )  # pragma: no cover
-
-        self._qwen_model_field = QLineEdit()
-        qwen_model_browse = QPushButton("Browse…")
-        qwen_model_browse.clicked.connect(lambda _=False: self._browse_directory(self._qwen_model_field))  # pragma: no cover
-        qwen_model_row = QHBoxLayout()
-        qwen_model_row.addWidget(self._qwen_model_field)
-        qwen_model_row.addWidget(qwen_model_browse)
-        form.addRow("Qwen Models", qwen_model_row)
-        self._field_map[self._qwen_model_field] = ("QWEN", "MODEL_FILES")
-        self._qwen_model_field.editingFinished.connect(
-            lambda: self._persist_path("QWEN", "MODEL_FILES", self._qwen_model_field.text().strip())
-        )  # pragma: no cover
-
-        self._qwen_clip_field = QLineEdit()
-        qwen_clip_browse = QPushButton("Browse…")
-        qwen_clip_browse.clicked.connect(lambda _=False: self._browse_directory(self._qwen_clip_field))  # pragma: no cover
-        qwen_clip_row = QHBoxLayout()
-        qwen_clip_row.addWidget(self._qwen_clip_field)
-        qwen_clip_row.addWidget(qwen_clip_browse)
-        form.addRow("Qwen CLIP", qwen_clip_row)
-        self._field_map[self._qwen_clip_field] = ("QWEN", "CLIP_FILES")
-        self._qwen_clip_field.editingFinished.connect(
-            lambda: self._persist_path("QWEN", "CLIP_FILES", self._qwen_clip_field.text().strip())
-        )  # pragma: no cover
 
         return group
 
@@ -264,12 +225,6 @@ class MainConfigView(BaseView):
         comfy_row.addWidget(self._comfy_host)
         comfy_row.addWidget(self._comfy_port)
         form.addRow("ComfyUI API (Host / Port)", comfy_row)
-        self._comfy_host.editingFinished.connect(
-            lambda: self._persist_path("COMFYUI_API", "HOST", self._comfy_host.text().strip())
-        )  # pragma: no cover
-        self._comfy_port.valueChanged.connect(
-            lambda value: self._persist_path("COMFYUI_API", "PORT", int(value))
-        )  # pragma: no cover
 
         self._bot_host = QLineEdit()
         self._bot_host.setPlaceholderText("127.0.0.1")
@@ -279,12 +234,6 @@ class MainConfigView(BaseView):
         bot_row.addWidget(self._bot_host)
         bot_row.addWidget(self._bot_port)
         form.addRow("Bot Internal API (Host / Port)", bot_row)
-        self._bot_host.editingFinished.connect(
-            lambda: self._persist_path("BOT_INTERNAL_API", "HOST", self._bot_host.text().strip())
-        )  # pragma: no cover
-        self._bot_port.valueChanged.connect(
-            lambda value: self._persist_path("BOT_INTERNAL_API", "PORT", int(value))
-        )  # pragma: no cover
 
         return group
 
@@ -297,9 +246,6 @@ class MainConfigView(BaseView):
         self._bot_token.setEchoMode(QLineEdit.Password)
         self._bot_token.setPlaceholderText("Bot token from Discord developer portal")
         form.addRow("Bot Token", self._bot_token)
-        self._bot_token.editingFinished.connect(
-            lambda: self._persist_path("BOT_API", "KEY", self._bot_token.text().strip())
-        )  # pragma: no cover
 
         return group
 
@@ -311,23 +257,14 @@ class MainConfigView(BaseView):
         self._gemini_key = QLineEdit()
         self._gemini_key.setPlaceholderText("Google Gemini API key")
         form.addRow("Gemini", self._gemini_key)
-        self._gemini_key.editingFinished.connect(
-            lambda: self._persist_path("LLM_ENHANCER", "GEMINI_API_KEY", self._gemini_key.text().strip())
-        )  # pragma: no cover
 
         self._groq_key = QLineEdit()
         self._groq_key.setPlaceholderText("Groq API key")
         form.addRow("Groq", self._groq_key)
-        self._groq_key.editingFinished.connect(
-            lambda: self._persist_path("LLM_ENHANCER", "GROQ_API_KEY", self._groq_key.text().strip())
-        )  # pragma: no cover
 
         self._openai_key = QLineEdit()
         self._openai_key.setPlaceholderText("OpenAI API key")
         form.addRow("OpenAI", self._openai_key)
-        self._openai_key.editingFinished.connect(
-            lambda: self._persist_path("LLM_ENHANCER", "OPENAI_API_KEY", self._openai_key.text().strip())
-        )  # pragma: no cover
 
         return group
 
@@ -345,9 +282,6 @@ class MainConfigView(BaseView):
         layout.addWidget(info)
 
         self._auto_update_checkbox = QCheckBox("Automatically check for updates on launch")
-        self._auto_update_checkbox.stateChanged.connect(
-            lambda state: self._persist_path("APP_SETTINGS", "AUTO_UPDATE_ON_STARTUP", bool(state))
-        )  # pragma: no cover
         layout.addWidget(self._auto_update_checkbox)
 
         button_row = QHBoxLayout()
@@ -431,16 +365,47 @@ class MainConfigView(BaseView):
         directory = QFileDialog.getExistingDirectory(self, "Select Directory", start_dir)
         if directory:
             field.setText(directory)
-            mapping = self._field_map.get(field)
-            if mapping:
-                section, key = mapping
-                self._persist_path(section, key, field.text().strip())
+
+    def _persist(self) -> None:  # pragma: no cover - Qt binding
+        try:
+            payload = {
+                "OUTPUTS": {key: field.text().strip() for key, field in self._output_fields.items()},
+                "MODELS": {key: field.text().strip() for key, field in self._model_fields.items()},
+                "CLIP": {"CLIP_FILES": (self._clip_field.text().strip() if self._clip_field else "")},
+                "LORAS": {"LORA_FILES": (self._lora_field.text().strip() if self._lora_field else "")},
+                "NODES": {"CUSTOM_NODES": (self._nodes_field.text().strip() if self._nodes_field else "")},
+                "COMFYUI_API": {
+                    "HOST": self._comfy_host.text().strip() if self._comfy_host else "127.0.0.1",
+                    "PORT": int(self._comfy_port.value()) if self._comfy_port else 8188,
+                },
+                "BOT_INTERNAL_API": {
+                    "HOST": self._bot_host.text().strip() if self._bot_host else "127.0.0.1",
+                    "PORT": int(self._bot_port.value()) if self._bot_port else 8189,
+                },
+                "BOT_API": {"KEY": self._bot_token.text().strip() if self._bot_token else ""},
+                "LLM_ENHANCER": {
+                    "GEMINI_API_KEY": self._gemini_key.text().strip() if self._gemini_key else "",
+                    "GROQ_API_KEY": self._groq_key.text().strip() if self._groq_key else "",
+                    "OPENAI_API_KEY": self._openai_key.text().strip() if self._openai_key else "",
+                },
+                "APP_SETTINGS": {
+                    "AUTO_UPDATE_ON_STARTUP": bool(self._auto_update_checkbox.isChecked())
+                    if self._auto_update_checkbox
+                    else False
+                },
+            }
+
+            self._repository.save_config(payload)
+            self._set_status("Configuration saved.")
+            self.refresh(self._repository)
+        except Exception as exc:  # pragma: no cover - user feedback only
+            QMessageBox.critical(self, "Save Failed", str(exc))
+            self._set_status("Unable to save configuration. See details above.")
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
     def refresh(self, repository: SettingsRepository) -> None:  # pragma: no cover - UI wiring
-        self._loading = True
         config = repository.config or {}
 
         outputs = config.get("OUTPUTS", {})
@@ -450,12 +415,6 @@ class MainConfigView(BaseView):
         models = config.get("MODELS", {})
         for key, field in self._model_fields.items():
             field.setText(str(models.get(key, "")))
-
-        qwen = config.get("QWEN", {})
-        if self._qwen_model_field is not None:
-            self._qwen_model_field.setText(str(qwen.get("MODEL_FILES", "")))
-        if self._qwen_clip_field is not None:
-            self._qwen_clip_field.setText(str(qwen.get("CLIP_FILES", "")))
 
         if self._clip_field is not None:
             self._clip_field.setText(str(config.get("CLIP", {}).get("CLIP_FILES", "")))
@@ -492,24 +451,12 @@ class MainConfigView(BaseView):
         if self._auto_update_checkbox is not None:
             self._auto_update_checkbox.setChecked(bool(app_settings.get("AUTO_UPDATE_ON_STARTUP", False)))
 
-        self._loading = False
-
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
     def _set_status(self, message: str) -> None:
         if self._status_label is not None:
             self._status_label.setText(message)
-
-    def _persist_path(self, section: str, key: str | None, value: object) -> None:
-        if self._loading or key is None:
-            return
-        try:
-            self._repository.save_config({section: {key: value}})
-            self._set_status("Configuration saved.")
-        except Exception as exc:  # pragma: no cover - user feedback only
-            QMessageBox.critical(self, "Save Failed", str(exc))
-            self._set_status("Unable to save configuration. See details above.")
 
 
 __all__ = ["MainConfigView"]

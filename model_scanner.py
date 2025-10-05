@@ -117,16 +117,9 @@ def update_checkpoints_list(config_path, output_file):
         with open(config_path, 'r') as config_file:
             config_data = json.load(config_file)
 
-        checkpoint_directories = []
         checkpoint_directory = config_data.get('MODELS', {}).get('CHECKPOINTS_FOLDER')
-        if checkpoint_directory:
-            checkpoint_directories.append(checkpoint_directory)
-        qwen_directory = config_data.get('QWEN', {}).get('MODEL_FILES')
-        if qwen_directory and qwen_directory not in checkpoint_directories:
-            checkpoint_directories.append(qwen_directory)
-
-        if not checkpoint_directories:
-            print("ModelScanner Error: No checkpoint directories configured for SDXL/Qwen models.")
+        if not checkpoint_directory:
+            print("ModelScanner Error: CHECKPOINTS_FOLDER path not found in config for SDXL checkpoints.")
             return
 
         if os.path.exists(output_file):
@@ -144,18 +137,12 @@ def update_checkpoints_list(config_path, output_file):
             except Exception as e_read:
                  print(f"ModelScanner Warning: Unexpected error reading {output_file} (checkpoints): {e_read}. Favorites might be lost.")
 
-        aggregated = {"checkpoints": []}
-        for directory in checkpoint_directories:
-            data = scan_checkpoints(directory)
-            for item in data.get('checkpoints', []):
-                if item not in aggregated['checkpoints']:
-                    aggregated['checkpoints'].append(item)
-        aggregated['checkpoints'].sort(key=str.lower)
-        aggregated['favorites'] = current_favorites
+        checkpoints_data_scanned = scan_checkpoints(checkpoint_directory)
+        checkpoints_data_scanned['favorites'] = current_favorites
 
         try:
             with open(output_file, 'w') as f:
-                json.dump(aggregated, f, indent=2)
+                json.dump(checkpoints_data_scanned, f, indent=2)
             print(f"ModelScanner: Successfully updated SDXL checkpoints list in {output_file}")
         except OSError as e:
             print(f"ModelScanner Error writing SDXL checkpoints file {output_file}: {e}")
@@ -177,16 +164,15 @@ def scan_clip_files(config_path, output_file):
         with open(config_path, 'r') as config_file:
             config_data = json.load(config_file)
 
-        clip_directories = []
         clip_directory = config_data.get('CLIP', {}).get('CLIP_FILES')
-        if clip_directory:
-            clip_directories.append(clip_directory)
-        qwen_clip_directory = config_data.get('QWEN', {}).get('CLIP_FILES')
-        if qwen_clip_directory and qwen_clip_directory not in clip_directories:
-            clip_directories.append(qwen_clip_directory)
+        if not clip_directory:
+            print("ModelScanner Error: CLIP_FILES path not found in config.")
+            return
 
-        if not clip_directories:
-            print("ModelScanner Error: CLIP directories not configured in config.json.")
+        print(f"ModelScanner: CLIP directory: {clip_directory}")
+
+        if not os.path.exists(clip_directory):
+            print(f"ModelScanner Error: CLIP directory does not exist: {clip_directory}")
             return
 
         clip_files = {
@@ -194,31 +180,24 @@ def scan_clip_files(config_path, output_file):
             "clip_L": []
         }
 
-        for directory in clip_directories:
-            if not os.path.exists(directory):
-                print(f"ModelScanner Error: CLIP directory does not exist: {directory}")
-                continue
-            print(f"ModelScanner: CLIP directory: {directory}")
-            try:
-                for filename in os.listdir(directory):
-                    if filename.lower().endswith(".safetensors"):
-                        file_path = os.path.join(directory, filename)
-                        try:
-                            file_size = os.path.getsize(file_path) / (1024 * 1024 * 1024)
-                            target_bucket = "t5" if file_size >= 2.0 else "clip_L"
-                            if filename not in clip_files[target_bucket]:
-                                clip_files[target_bucket].append(filename)
-                        except OSError as e:
-                            print(f"ModelScanner Error accessing file {file_path}: {e}")
-                        except Exception as e_size:
-                            print(f"ModelScanner Unexpected error getting size for {file_path}: {e_size}")
-            except OSError as e:
-                print(f"ModelScanner Error listing CLIP directory: {e}")
-            except Exception as e_list:
-                print(f"ModelScanner Unexpected error listing CLIP directory: {e_list}")
-
-        for bucket in clip_files.values():
-            bucket.sort(key=str.lower)
+        try:
+            for filename in os.listdir(clip_directory):
+                if filename.lower().endswith(".safetensors"):
+                    file_path = os.path.join(clip_directory, filename)
+                    try:
+                        file_size = os.path.getsize(file_path) / (1024 * 1024 * 1024)
+                        if file_size >= 2.0:
+                            clip_files["t5"].append(filename)
+                        else:
+                            clip_files["clip_L"].append(filename)
+                    except OSError as e:
+                        print(f"ModelScanner Error accessing file {file_path}: {e}")
+                    except Exception as e_size:
+                         print(f"ModelScanner Unexpected error getting size for {file_path}: {e_size}")
+        except OSError as e:
+            print(f"ModelScanner Error listing CLIP directory: {e}")
+        except Exception as e_list:
+             print(f"ModelScanner Unexpected error listing CLIP directory: {e_list}")
              traceback.print_exc()
 
         for key in clip_files:

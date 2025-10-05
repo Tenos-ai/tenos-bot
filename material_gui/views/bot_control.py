@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Callable
 
 from PySide6.QtCore import QProcess, QTimer, Signal
 from PySide6.QtGui import QGuiApplication
@@ -19,6 +20,8 @@ from PySide6.QtWidgets import (
 
 from material_gui.repository import SettingsRepository
 from material_gui.views.base import BaseView
+from services.system_diagnostics import DiagnosticsReport
+from services.usage_analytics import AnalyticsReport
 
 
 class BotControlView(BaseView):
@@ -30,10 +33,15 @@ class BotControlView(BaseView):
         self,
         app_base_dir: Path,
         repository: SettingsRepository,
+        *,
+        diagnostics_callback: Callable[[], None] | None = None,
+        analytics_callback: Callable[[], None] | None = None,
     ) -> None:
         super().__init__()
         self._app_base_dir = app_base_dir
         self._repository = repository
+        self._diagnostics_callback = diagnostics_callback
+        self._analytics_callback = analytics_callback
         self._process = QProcess(self)
         self._process.setProcessChannelMode(QProcess.MergedChannels)
         self._process.readyReadStandardOutput.connect(self._handle_output)  # pragma: no cover - Qt binding
@@ -62,10 +70,28 @@ class BotControlView(BaseView):
         root_layout.addWidget(self._runtime_card)
 
         controls = QHBoxLayout()
-        self._toggle_button = QPushButton("Start Bot")
-        self._toggle_button.clicked.connect(self._toggle_runtime)  # pragma: no cover - Qt binding
-        controls.addWidget(self._toggle_button)
+        self._start_button = QPushButton("Start Bot")
+        self._start_button.clicked.connect(self._start_bot)  # pragma: no cover - Qt binding
+        self._stop_button = QPushButton("Stop Bot")
+        self._stop_button.clicked.connect(self._stop_bot)  # pragma: no cover - Qt binding
+        controls.addWidget(self._start_button)
+        controls.addWidget(self._stop_button)
         root_layout.addLayout(controls)
+
+        insight_container = QHBoxLayout()
+        insight_container.setSpacing(12)
+
+        self._diagnostics_card = QLabel("Diagnostics have not run yet.")
+        self._diagnostics_card.setObjectName("MaterialCard")
+        self._diagnostics_card.setWordWrap(True)
+        insight_container.addWidget(self._diagnostics_card, stretch=1)
+
+        self._analytics_card = QLabel("Usage analytics have not run yet.")
+        self._analytics_card.setObjectName("MaterialCard")
+        self._analytics_card.setWordWrap(True)
+        insight_container.addWidget(self._analytics_card, stretch=1)
+
+        root_layout.addLayout(insight_container)
 
         action_row = QHBoxLayout()
         self._clear_log_button = QPushButton("Clear Console")
@@ -75,6 +101,16 @@ class BotControlView(BaseView):
         self._copy_log_button = QPushButton("Copy Console")
         self._copy_log_button.clicked.connect(self._copy_log)  # pragma: no cover - Qt binding
         action_row.addWidget(self._copy_log_button)
+
+        if self._diagnostics_callback:
+            diag_button = QPushButton("Run Diagnostics")
+            diag_button.clicked.connect(self._trigger_diagnostics)  # pragma: no cover - Qt binding
+            action_row.addWidget(diag_button)
+
+        if self._analytics_callback:
+            analytics_button = QPushButton("Refresh Analytics")
+            analytics_button.clicked.connect(self._trigger_analytics)  # pragma: no cover - Qt binding
+            action_row.addWidget(analytics_button)
 
         action_row.addStretch()
         root_layout.addLayout(action_row)
@@ -89,6 +125,7 @@ class BotControlView(BaseView):
         self._status_label.setWordWrap(True)
         root_layout.addWidget(self._status_label)
 
+        self._stop_button.setEnabled(False)
         self._render_runtime_card()
 
     # ------------------------------------------------------------------
@@ -115,7 +152,6 @@ class BotControlView(BaseView):
         self._log_view.clear()
         self._append_log("[CONTROL] Launching bot…")
         self._set_status("Launching bot…")
-        self._toggle_button.setEnabled(False)
         self._process.setProgram(sys.executable)
         self._process.setArguments([str(entrypoint)])
         self._process.setWorkingDirectory(str(self._app_base_dir))
@@ -124,7 +160,8 @@ class BotControlView(BaseView):
             self._set_status("Failed to start bot process.")
             self._append_log("[ERROR] Bot failed to start within timeout.")
             return
-        self._toggle_button.setEnabled(True)
+        self._start_button.setEnabled(False)
+        self._stop_button.setEnabled(True)
         self._set_status("Bot running.")
         self.runtime_state_changed.emit(True)
 
@@ -134,7 +171,6 @@ class BotControlView(BaseView):
             return
         self._append_log("[CONTROL] Stopping bot…")
         self._set_status("Stopping bot…")
-        self._toggle_button.setEnabled(False)
         self._process.terminate()
         QTimer.singleShot(5000, self._ensure_killed)  # pragma: no cover - Qt binding
 
@@ -155,7 +191,8 @@ class BotControlView(BaseView):
         self.runtime_state_changed.emit(False)
 
     def _handle_finished(self, exit_code: int, _status: QProcess.ExitStatus) -> None:  # pragma: no cover - Qt binding
-        self._toggle_button.setEnabled(True)
+        self._start_button.setEnabled(True)
+        self._stop_button.setEnabled(False)
         self._append_log(f"[CONTROL] Bot stopped (exit code {exit_code}).")
         self._set_status(f"Bot stopped (exit code {exit_code}).")
         self.runtime_state_changed.emit(False)
@@ -176,6 +213,43 @@ class BotControlView(BaseView):
         channel_label = channel.upper() if channel else "INFO"
         self._append_log(f"[{channel_label}] {message}")
 
+    def show_diagnostics_loading(self) -> None:
+        self._diagnostics_card.setText("Collecting diagnostics…")
+
+    def update_diagnostics(self, report: DiagnosticsReport) -> None:
+        summary_lines = [
+            f"ComfyUI connected: {'Yes' if report.comfy_connected else 'No'}",
+            f"Qwen ready: {'Yes' if report.qwen_ready else 'No'}",
+            f"Curated workflows: {sum(report.workflow_group_counts.values())}",
+            f"Style presets available: {report.style_count}",
+        ]
+        if report.workflow_group_counts:
+            breakdown = ", ".join(
+                f"{key.replace('_', ' ').title()}: {count}"
+                for key, count in sorted(report.workflow_group_counts.items())
+            )
+            summary_lines.append(f"Workflow breakdown: {breakdown}")
+        if report.issues:
+            issue_lines = [f"• {item.label}: {item.message}" for item in report.issues[:4]]
+            summary_lines.append("Issues:\n" + "\n".join(issue_lines))
+        self._diagnostics_card.setText("\n".join(summary_lines))
+
+    def show_analytics_loading(self) -> None:
+        self._analytics_card.setText("Collecting network analytics…")
+
+    def update_analytics(self, report: AnalyticsReport) -> None:
+        summary_parts = [
+            f"Completed jobs: {report.total_completed}",
+            f"Cancelled jobs: {report.total_cancelled}",
+        ]
+        if report.feature_totals:
+            top_feature = max(report.feature_totals.items(), key=lambda item: item[1])
+            summary_parts.append(f"Top feature: {top_feature[0]} ({top_feature[1]})")
+        if report.model_totals:
+            top_model = max(report.model_totals.items(), key=lambda item: item[1])
+            summary_parts.append(f"Most used model: {top_model[0]} ({top_model[1]})")
+        self._analytics_card.setText(" • ".join(summary_parts) or "No activity recorded yet.")
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -190,6 +264,18 @@ class BotControlView(BaseView):
         clipboard = QGuiApplication.clipboard()
         clipboard.setText(self._log_view.toPlainText())
         self._set_status("Console copied to clipboard.")
+
+    def _trigger_diagnostics(self) -> None:  # pragma: no cover - Qt binding
+        if self._diagnostics_callback:
+            self._diagnostics_callback()
+        else:
+            self._set_status("Diagnostics not available.")
+
+    def _trigger_analytics(self) -> None:  # pragma: no cover - Qt binding
+        if self._analytics_callback:
+            self._analytics_callback()
+        else:
+            self._set_status("Analytics not available.")
 
     def _set_status(self, message: str) -> None:
         self._status_label.setText(message)
@@ -215,15 +301,6 @@ class BotControlView(BaseView):
                 ]
             )
         )
-
-        self._toggle_button.setText("Stop Bot" if state == "Running" else "Start Bot")
-        self._toggle_button.setEnabled(True)
-
-    def _toggle_runtime(self) -> None:  # pragma: no cover - Qt binding
-        if self._process.state() == QProcess.NotRunning:
-            self._start_bot()
-        else:
-            self._stop_bot()
 
     def _ensure_output_folder(self) -> bool:
         config = self._repository.config or {}
