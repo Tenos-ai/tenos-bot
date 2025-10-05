@@ -40,12 +40,10 @@ DATA_FILES: tuple[tuple[Path, str], ...] = (
     (PROJECT_ROOT / "styles.json", "."),
     (PROJECT_ROOT / "styles_config.json", "."),
     (PROJECT_ROOT / "llm_prompts.json", "."),
-    (PROJECT_ROOT / "prompt_templates.py", "."),
     (PROJECT_ROOT / "llm_models.json", "."),
     (PROJECT_ROOT / "modelnodes.json", "."),
     (PROJECT_ROOT / "tenosai_theme.json", "."),
     (PROJECT_ROOT / "tenos-ai_icon.png", "."),
-    (PROJECT_ROOT / "main_bot.py", "."),
 )
 
 # PySide6 occasionally requires explicit hidden-import hints for widgets

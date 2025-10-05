@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Dict, List
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -35,7 +36,6 @@ class FavoritesView(BaseView):
         self._checkpoints_data: Dict = {}
         self._clips_data: Dict = {}
         self._styles_data: Dict = {}
-        self._loading = False
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(24, 24, 24, 24)
@@ -77,24 +77,24 @@ class FavoritesView(BaseView):
         for widget, label in ((self._clip_t5_list, "T5"), (self._clip_clip_l_list, "CLIP-L")):
             widget.setAlternatingRowColors(True)
             widget.setProperty("heading", label)
-            widget.itemChanged.connect(self._handle_item_changed)  # pragma: no cover - Qt binding
 
         styles_group = QGroupBox("Styles")
         styles_layout = QVBoxLayout(styles_group)
         self._styles_list = QListWidget()
         styles_layout.addWidget(self._styles_list)
-        self._styles_list.itemChanged.connect(self._handle_item_changed)  # pragma: no cover - Qt binding
         column_right.addWidget(styles_group)
 
-        self._status_label = QLabel("Tick entries to mark them as favourites. Changes save automatically.")
+        button_row = QHBoxLayout()
+        button_row.addStretch()
+        save_button = QPushButton("Save Favorites")
+        save_button.clicked.connect(self._persist)  # pragma: no cover - Qt binding
+        button_row.addWidget(save_button)
+        root_layout.addLayout(button_row)
+
+        self._status_label = QLabel("Tick entries to mark them as favourites. Save to persist changes.")
         self._status_label.setObjectName("MaterialCard")
         self._status_label.setWordWrap(True)
         root_layout.addWidget(self._status_label)
-
-        self._save_timer = QTimer(self)
-        self._save_timer.setSingleShot(True)
-        self._save_timer.setInterval(600)
-        self._save_timer.timeout.connect(self._persist)
 
         self.refresh(None)
 
@@ -108,7 +108,6 @@ class FavoritesView(BaseView):
         list_widget.setAlternatingRowColors(True)
         layout.addWidget(list_widget)
         parent.addWidget(group)
-        list_widget.itemChanged.connect(self._handle_item_changed)  # pragma: no cover - Qt binding
         return list_widget
 
     def _add_checkable_item(self, widget: QListWidget, label: str, data: str, checked: bool) -> None:
@@ -120,12 +119,6 @@ class FavoritesView(BaseView):
 
     def _set_status(self, message: str) -> None:
         self._status_label.setText(message)
-
-    def _handle_item_changed(self, _item: QListWidgetItem) -> None:  # pragma: no cover - Qt binding
-        if self._loading:
-            return
-        self._set_status("Saving favourites…")
-        self._save_timer.start()
 
     # ------------------------------------------------------------------
     # Persistence
@@ -198,7 +191,6 @@ class FavoritesView(BaseView):
     # ------------------------------------------------------------------
     def refresh(self, repository) -> None:  # pragma: no cover - UI wiring
         del repository
-        self._loading = True
         self._models_data = self._load_json(MODELS_PATH)
         self._checkpoints_data = self._load_json(CHECKPOINTS_PATH)
         self._clips_data = self._load_json(CLIP_PATH)
@@ -211,7 +203,6 @@ class FavoritesView(BaseView):
         self._populate_checkpoints()
         self._populate_clips()
         self._populate_styles()
-        self._loading = False
 
     # ------------------------------------------------------------------
     # Population helpers

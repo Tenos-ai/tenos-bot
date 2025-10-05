@@ -72,9 +72,13 @@ class DashboardView(BaseView):
         runtime_buttons = QHBoxLayout()
         runtime_buttons.setSpacing(12)
 
-        self._runtime_toggle_button = QPushButton("Start Bot")
-        self._runtime_toggle_button.clicked.connect(self._handle_toggle_clicked)  # pragma: no cover - Qt binding
-        runtime_buttons.addWidget(self._runtime_toggle_button)
+        self._runtime_start_button = QPushButton("Start Bot")
+        self._runtime_start_button.clicked.connect(self._handle_start_clicked)  # pragma: no cover - Qt binding
+        runtime_buttons.addWidget(self._runtime_start_button)
+
+        self._runtime_stop_button = QPushButton("Stop Bot")
+        self._runtime_stop_button.clicked.connect(self._handle_stop_clicked)  # pragma: no cover - Qt binding
+        runtime_buttons.addWidget(self._runtime_stop_button)
         runtime_buttons.addStretch(1)
 
         runtime_layout.addLayout(runtime_buttons)
@@ -112,8 +116,8 @@ class DashboardView(BaseView):
         self._sdxl_combo = self._build_model_combo("SDXL")
         quick_form.addRow("SDXL default", self._sdxl_combo)
 
-        self._qwen_combo = self._build_model_combo("Qwen")
-        quick_form.addRow("Qwen default", self._qwen_combo)
+        self._qwen_combo = self._build_model_combo("LLM")
+        quick_form.addRow("LLM default", self._qwen_combo)
 
         self._status_label = QLabel()
         self._status_label.setObjectName("MaterialCard")
@@ -141,7 +145,7 @@ class DashboardView(BaseView):
         key_map = {
             self._flux_combo: ("preferred_model_flux", "Flux"),
             self._sdxl_combo: ("preferred_model_sdxl", "SDXL"),
-            self._qwen_combo: ("preferred_model_qwen", "Qwen"),
+            self._qwen_combo: ("preferred_model_qwen", "LLM"),
         }
         if sender not in key_map:
             return
@@ -224,7 +228,7 @@ class DashboardView(BaseView):
         prefix_map = {
             self._flux_combo: "Flux: ",
             self._sdxl_combo: "SDXL: ",
-            self._qwen_combo: "Qwen: ",
+            self._qwen_combo: "LLM: ",
         }
         prefix = prefix_map.get(combo, "")
         value = value.strip()
@@ -241,40 +245,40 @@ class DashboardView(BaseView):
             f"Output folder: {output_display}",
             f"Flux default: {self._flux_combo.currentText()}",
             f"SDXL default: {self._sdxl_combo.currentText()}",
-            f"Qwen default: {self._qwen_combo.currentText()}",
+            f"LLM default: {self._qwen_combo.currentText()}",
         ]
         self._summary_label.setText("\n".join(summary_lines))
 
-    def _handle_toggle_clicked(self) -> None:  # pragma: no cover - Qt binding
-        running = self._running_state()
-        if running:
-            if self._stop_callback is None:
-                self._status_label.setText("Stop control unavailable. Open Bot Control to manage runtime.")
-                return
-            self._status_label.setText("Attempting to stop the bot…")
-            self._status_callback("Stopping bot…")
-            try:
-                self._stop_callback()
-            except Exception as exc:  # pragma: no cover - safety net
-                self._status_label.setText(f"Unable to stop bot: {exc}")
-                self._status_callback("Bot stop failed")
-                return
-            self._status_label.setText("Stop command sent. The bot will shut down shortly.")
-            self._status_callback("Bot stop requested")
-        else:
-            if self._start_callback is None:
-                self._status_label.setText("Start control unavailable. Open Bot Control to manage runtime.")
-                return
-            self._status_label.setText("Attempting to start the bot…")
-            self._status_callback("Launching bot…")
-            try:
-                self._start_callback()
-            except Exception as exc:  # pragma: no cover - safety net
-                self._status_label.setText(f"Unable to start bot: {exc}")
-                self._status_callback("Bot launch failed")
-                return
-            self._status_label.setText("Start command sent. Watch Bot Control for logs.")
-            self._status_callback("Bot start requested")
+    def _handle_start_clicked(self) -> None:  # pragma: no cover - Qt binding
+        if self._start_callback is None:
+            self._status_label.setText("Start control unavailable. Open Bot Control to manage runtime.")
+            return
+        self._status_label.setText("Attempting to start the bot…")
+        self._status_callback("Launching bot…")
+        try:
+            self._start_callback()
+        except Exception as exc:  # pragma: no cover - safety net
+            self._status_label.setText(f"Unable to start bot: {exc}")
+            self._status_callback("Bot launch failed")
+            return
+        self._status_label.setText("Start command sent. Watch Bot Control for logs.")
+        self._status_callback("Bot start requested")
+        self._update_runtime_controls()
+
+    def _handle_stop_clicked(self) -> None:  # pragma: no cover - Qt binding
+        if self._stop_callback is None:
+            self._status_label.setText("Stop control unavailable. Open Bot Control to manage runtime.")
+            return
+        self._status_label.setText("Attempting to stop the bot…")
+        self._status_callback("Stopping bot…")
+        try:
+            self._stop_callback()
+        except Exception as exc:  # pragma: no cover - safety net
+            self._status_label.setText(f"Unable to stop bot: {exc}")
+            self._status_callback("Bot stop failed")
+            return
+        self._status_label.setText("Stop command sent. The bot will shut down shortly.")
+        self._status_callback("Bot stop requested")
         self._update_runtime_controls()
 
     def _running_state(self) -> bool:
@@ -290,13 +294,12 @@ class DashboardView(BaseView):
         if running is None:
             running = self._running_state()
 
-        can_toggle = (
-            (self._start_callback is not None and not running)
-            or (self._stop_callback is not None and running)
-        )
+        can_start = self._start_callback is not None and not running
+        can_stop = self._stop_callback is not None and running
 
-        self._runtime_toggle_button.setEnabled(can_toggle)
-        self._runtime_toggle_button.setText("Stop Bot" if running else "Start Bot")
+        self._runtime_start_button.setEnabled(can_start)
+        self._runtime_stop_button.setEnabled(can_stop)
+
         self._runtime_status_label.setText("Bot is running." if running else "Bot idle.")
 
     def set_runtime_state(self, running: bool) -> None:
