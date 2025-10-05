@@ -1,0 +1,82 @@
+How to Create and Set Up Your Tenosai-Bot on Discord
+
+1. Create a Discord Account:
+   If you don't already have one, go to https://discord.com and create an account.
+
+2. Access the Discord Developer Portal:
+   - Go to https://discord.com/developers/applications
+   - Log in with your Discord account.
+
+3. Create a New Application:
+   - Click on the "New Application" button (usually in the top right).
+   - Give your application a name (e.g., "Tenosai-Bot" or your bot's desired name).
+   - Agree to Discord's Terms of Service if prompted.
+   - Click "Create".
+
+4. Navigate to the "Bot" Tab:
+   - Once your application is created, you'll be taken to its settings page.
+   - On the left sidebar, click on "Bot".
+
+5. Create a Bot User:
+   - Click the "Add Bot" button.
+   - A confirmation pop-up will appear; click "Yes, do it!".
+
+6. Configure Your Bot User:
+   - **Get Your Bot Token:**
+     - Under the "TOKEN" section (you might see "View Token" or "Reset Token"), click "Reset Token".
+     - Confirm by clicking "Yes, do it!".
+     - **COPY THE TOKEN IMMEDIATELY.** This is your bot's secret key. You will need this for the Tenosai-Bot configurator.
+     - **Treat this token like a password. Keep it secret and safe! Do not share it.**
+   - **Enable Privileged Gateway Intents:**
+     - Scroll down to the "Privileged Gateway Intents" section.
+     - Enable the following three intents:
+       * **Presence Intent**
+       * **Server Members Intent**
+       * **Message Content Intent**
+     - Make sure to click "Save Changes" at the bottom of the page if it appears.
+
+7. Set Up Bot Permissions (OAuth2 URL Generator):
+   - On the left sidebar, click on "OAuth2", then select "URL Generator" from the submenu.
+   - **Scopes:** In the "SCOPES" section, check the box next to "bot".
+   - **Bot Permissions:** A new "BOT PERMISSIONS" section will appear below. Select the following permissions:
+     * Read Messages/View Channels
+     * Send Messages
+     * Send Messages in Threads (recommended)
+     * Manage Messages (for deleting bot's own messages or admin-deleting others)
+     * Embed Links
+     * Attach Files
+     * Read Message History
+     * Add Reactions (for features like 🗑️ quick delete)
+     * Use Application Commands (absolutely necessary for slash commands like `/gen`)
+
+8. Generate the Invite Link:
+   - After selecting the scopes and permissions, a "GENERATED URL" will appear at the bottom of the page.
+   - Click "Copy" to copy this URL.
+
+9. Invite the Bot to Your Server:
+   - Open a new tab in your web browser and paste the copied invite URL.
+   - Select the Discord server you want to add the bot to from the dropdown menu.
+   - Click "Continue" or "Authorize".
+   - Review the permissions you are granting and click "Authorize".
+   - Complete the CAPTCHA if prompted.
+   - The bot should now appear in your server's member list (it will be offline until you run the Python script).
+
+10. Configure Your Tenosai-Bot:
+    - Run the Tenosai-Bot configurator (`TENOSAI-BOT.bat` or `python config-editor-script.py`).
+    - Go to the "Main Config" tab.
+    - In the `BOT_API` section, paste your copied bot token into the `KEY` field.
+    - In the `ADMIN` section, enter your Discord username (e.g., `yourusername` - without the #numbers) into the `USERNAME` field.
+    - Configure all other necessary paths for "Outputs", "Models", "CLIP", "LoRAs", and "Custom Nodes".
+    - Click "Save Main Config".
+    - Review settings in other tabs (Bot Settings, LoRA Styles, Favorites, LLM Prompts) and save them as needed.
+
+11. Start Your Tenosai-Bot:
+    - In the Tenosai-Bot configurator, go to the "Bot Control" tab.
+    - Click the "Start Bot" button.
+    - Check the log output in the configurator and your command prompt/terminal for any errors.
+
+**Important Reminders:**
+- **Keep your bot token secret.** Never share it publicly or commit it to version control systems (like GitHub).
+- If you suspect your token has been compromised, go back to the Discord Developer Portal ("Bot" tab for your application) and reset it immediately, then update it in the Tenosai-Bot configurator.
+
+Enjoy using your Tenosai-Bot!

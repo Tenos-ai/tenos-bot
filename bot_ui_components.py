@@ -19,13 +19,11 @@ from bot_core_logic import (
     process_variation_request as core_process_variation,
     process_rerun_request as core_process_rerun,
     process_cancel_request,
-    process_image_edit_request,
-    execute_generation_logic,
+    process_kontext_edit_request,
+    execute_generation_logic
 )
 
-class ImageEditModal(Modal, title='Edit Image'):
-    """Discord modal that supports Kontext and Qwen edit workflows."""
-
+class EditKontextModal(Modal, title='Edit with Kontext'):
     def __init__(self, primary_image_url: str, interaction: discord.Interaction):
         super().__init__(timeout=600)
         self.primary_image_url = primary_image_url
@@ -35,11 +33,8 @@ class ImageEditModal(Modal, title='Edit Image'):
         self.instruction_input = TextInput(
             label="Edit Command & Optional Parameters",
             style=discord.TextStyle.paragraph,
-            placeholder=(
-                "add a hat on the man --steps 40 --ar 1:1\n"
-                "make the sky night time --g 4.5 --engine qwen"
-            ),
-            required=True,
+            placeholder="add a hat on the man --steps 40 --ar 1:1\nmake the sky night time --g 4.5",
+            required=True
         )
 
         # Field for the primary image URL - pre-filled
@@ -49,23 +44,11 @@ class ImageEditModal(Modal, title='Edit Image'):
             style=discord.TextStyle.short,
             required=True,
         )
-
+        
         # Optional fields for additional images
-        self.image2_input = TextInput(
-            label="Image 2 (Optional URL)",
-            required=False,
-            placeholder="Paste another image URL to stitch...",
-        )
-        self.image3_input = TextInput(
-            label="Image 3 (Optional URL)",
-            required=False,
-            placeholder="Paste another image URL to stitch...",
-        )
-        self.image4_input = TextInput(
-            label="Image 4 (Optional URL)",
-            required=False,
-            placeholder="Paste another image URL to stitch...",
-        )
+        self.image2_input = TextInput(label="Image 2 (Optional URL)", required=False, placeholder="Paste another image URL to stitch...")
+        self.image3_input = TextInput(label="Image 3 (Optional URL)", required=False, placeholder="Paste another image URL to stitch...")
+        self.image4_input = TextInput(label="Image 4 (Optional URL)", required=False, placeholder="Paste another image URL to stitch...")
 
         self.add_item(self.instruction_input)
         self.add_item(self.image1_input)
@@ -77,31 +60,24 @@ class ImageEditModal(Modal, title='Edit Image'):
         await interaction.response.defer(ephemeral=False, thinking=True)
 
         instruction = self.instruction_input.value
-
-        image_urls = [self.image1_input.value]
-        if self.image2_input.value:
-            image_urls.append(self.image2_input.value)
-        if self.image3_input.value:
-            image_urls.append(self.image3_input.value)
-        if self.image4_input.value:
-            image_urls.append(self.image4_input.value)
-
-        await process_image_edit_request(
+        
+        image_urls = [self.image1_input.value] 
+        if self.image2_input.value: image_urls.append(self.image2_input.value)
+        if self.image3_input.value: image_urls.append(self.image3_input.value)
+        if self.image4_input.value: image_urls.append(self.image4_input.value)
+        
+        await process_kontext_edit_request(
             context_user=interaction.user,
             context_channel=interaction.channel,
             instruction=instruction,
             image_urls=image_urls,
-            initial_interaction_obj=interaction,
+            initial_interaction_obj=interaction
         )
 
     async def on_error(self, interaction: discord.Interaction, error: Exception):
-        print(f"Error in ImageEditModal: {error}")
+        print(f"Error in EditKontextModal: {error}")
         traceback.print_exc()
-        await safe_interaction_response(
-            interaction,
-            "An error occurred with the editing form.",
-            ephemeral=True,
-        )
+        await safe_interaction_response(interaction, "An error occurred with the editing form.", ephemeral=True)
 
 
 class RemixModal(Modal, title='Remix Variation'):
@@ -202,7 +178,7 @@ class ImageSelectionView(View):
             button = Button(label=f"Edit Image {i+1}", style=discord.ButtonStyle.primary, custom_id=f"select_edit_img_{i}")
             
             async def callback(interaction: discord.Interaction, image_url=attachment.url):
-                modal = ImageEditModal(primary_image_url=image_url, interaction=interaction)
+                modal = EditKontextModal(primary_image_url=image_url, interaction=interaction)
                 await interaction.response.send_modal(modal)
             
             button.callback = callback
@@ -428,7 +404,7 @@ class GenerationActionsView(View):
 
         attachments = ref_msg.attachments
         if len(attachments) == 1:
-            modal = ImageEditModal(primary_image_url=attachments[0].url, interaction=interaction)
+            modal = EditKontextModal(primary_image_url=attachments[0].url, interaction=interaction)
             await interaction.response.send_modal(modal)
         else:
             view = ImageSelectionView(attachments=attachments, original_interaction=interaction)

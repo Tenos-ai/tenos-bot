@@ -33,17 +33,6 @@
           "title": "Load Checkpoint"
         }
       }
-    },
-    "QWEN_IMAGE_GENERATION": {
-      "NODE_NUMBER": {
-        "inputs": {
-          "ckpt_name": "model_file_name"
-        },
-        "class_type": "CheckpointLoaderSimple",
-        "_meta": {
-          "title": "Load Qwen Checkpoint"
-        }
-      }
     }
   }
 }

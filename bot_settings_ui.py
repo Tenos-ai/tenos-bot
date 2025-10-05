@@ -5,12 +5,11 @@ import json
 from settings_manager import (
     load_settings, save_settings,
     get_model_choices, get_steps_choices, get_sdxl_steps_choices, get_guidance_choices, get_sdxl_guidance_choices,
-    get_t5_clip_choices, get_clip_l_choices, get_style_choices_flux, get_style_choices_sdxl, get_style_choices_qwen,
+    get_t5_clip_choices, get_clip_l_choices, get_style_choices_flux, get_style_choices_sdxl,
     get_variation_mode_choices, get_batch_size_choices, get_variation_batch_size_choices,
     get_remix_mode_choices, get_upscale_factor_choices,
     get_llm_enhancer_choices, get_llm_provider_choices, get_llm_model_choices,
-    get_mp_size_choices, get_display_prompt_preference_choices,
-    get_qwen_edit_steps_choices, get_qwen_edit_guidance_choices, get_qwen_edit_denoise_choices,
+    get_mp_size_choices, get_display_prompt_preference_choices
 )
 
 # --- UI Select Components for /settings ---
@@ -19,17 +18,11 @@ class ModelSelect(discord.ui.Select):
     def __init__(self, settings):
         self.settings = settings
         choices = get_model_choices(self.settings)
-        super().__init__(options=choices, placeholder="Select Default Model (Flux, SDXL, or Qwen)")
+        super().__init__(options=choices, placeholder="Select Default Model (Flux or SDXL)")
 
     async def callback(self, interaction: discord.Interaction):
         if not self.values: return
-        selected_value = self.values[0]
-        self.settings['selected_model'] = selected_value
-        value_lower = selected_value.lower()
-        if value_lower.startswith("flux:"):
-            self.settings['preferred_model_flux'] = selected_value
-        elif value_lower.startswith("sdxl:"):
-            self.settings['preferred_model_sdxl'] = selected_value
+        self.settings['selected_model'] = self.values[0]
         save_settings(self.settings)
         view = ModelClipSettingsView(self.settings)
         await interaction.response.edit_message(content="Configure Model & CLIP Settings:", view=view)
@@ -194,71 +187,6 @@ class DefaultStyleSelectSDXL(discord.ui.Select):
         view = SDXLSettingsView(self.settings)
         await interaction.response.edit_message(content="Configure SDXL Model Settings:", view=view)
 
-class DefaultStyleSelectQwen(discord.ui.Select):
-    def __init__(self, settings):
-        self.settings = settings
-        choices = get_style_choices_qwen(self.settings)
-        super().__init__(options=choices, placeholder="Select Default Style (Qwen)")
-
-    async def callback(self, interaction: discord.Interaction):
-        if not self.values:
-            return
-        self.settings['default_style_qwen'] = self.values[0]
-        save_settings(self.settings)
-        view = QwenSettingsView(self.settings)
-        await interaction.response.edit_message(content="Configure Qwen Image Settings:", view=view)
-
-class QwenEditStepsSelect(discord.ui.Select):
-    def __init__(self, settings):
-        self.settings = settings
-        choices = get_qwen_edit_steps_choices(self.settings)
-        super().__init__(options=choices, placeholder="Select Qwen Edit Steps")
-
-    async def callback(self, interaction: discord.Interaction):
-        if not self.values:
-            return
-        try:
-            self.settings['qwen_edit_steps'] = int(self.values[0])
-            save_settings(self.settings)
-            view = QwenSettingsView(self.settings)
-            await interaction.response.edit_message(content="Configure Qwen Image Settings:", view=view)
-        except ValueError:
-            await interaction.followup.send("Invalid Qwen edit steps value selected.", ephemeral=True)
-
-class QwenEditGuidanceSelect(discord.ui.Select):
-    def __init__(self, settings):
-        self.settings = settings
-        choices = get_qwen_edit_guidance_choices(self.settings)
-        super().__init__(options=choices, placeholder="Select Qwen Edit Guidance")
-
-    async def callback(self, interaction: discord.Interaction):
-        if not self.values:
-            return
-        try:
-            self.settings['qwen_edit_guidance'] = float(self.values[0])
-            save_settings(self.settings)
-            view = QwenSettingsView(self.settings)
-            await interaction.response.edit_message(content="Configure Qwen Image Settings:", view=view)
-        except ValueError:
-            await interaction.followup.send("Invalid Qwen edit guidance value selected.", ephemeral=True)
-
-class QwenEditDenoiseSelect(discord.ui.Select):
-    def __init__(self, settings):
-        self.settings = settings
-        choices = get_qwen_edit_denoise_choices(self.settings)
-        super().__init__(options=choices, placeholder="Select Qwen Edit Denoise")
-
-    async def callback(self, interaction: discord.Interaction):
-        if not self.values:
-            return
-        try:
-            self.settings['qwen_edit_denoise'] = float(self.values[0])
-            save_settings(self.settings)
-            view = QwenSettingsView(self.settings)
-            await interaction.response.edit_message(content="Configure Qwen Image Settings:", view=view)
-        except ValueError:
-            await interaction.followup.send("Invalid Qwen edit denoise value selected.", ephemeral=True)
-
 class VariationModeSelect(discord.ui.Select):
     def __init__(self, settings):
         self.settings = settings
@@ -372,29 +300,6 @@ class BaseSettingsView(discord.ui.View):
         except Exception as e:
             print(f"Error during settings back callback edit: {e}")
 
-class QwenNegativePromptModal(discord.ui.Modal):
-    def __init__(self, settings_ref):
-        super().__init__(title="Default Qwen Negative Prompt")
-        self.settings = settings_ref
-        default_prompt = ""
-        existing = settings_ref.get('default_qwen_negative_prompt') if isinstance(settings_ref, dict) else None
-        if isinstance(existing, str):
-            default_prompt = existing
-        self.prompt_input = discord.ui.TextInput(
-            label="Negative prompt (optional)",
-            style=discord.TextStyle.paragraph,
-            default=default_prompt,
-            required=False,
-            max_length=1200,
-        )
-        self.add_item(self.prompt_input)
-
-    async def on_submit(self, interaction: discord.Interaction) -> None:  # pragma: no cover - discord runtime
-        value = self.prompt_input.value.strip()
-        self.settings['default_qwen_negative_prompt'] = value
-        save_settings(self.settings)
-        await interaction.response.send_message("Default Qwen negative prompt saved.", ephemeral=True)
-
 class MainSettingsButtonView(discord.ui.View):
     def __init__(self, settings_ref):
         super().__init__(timeout=180) 
@@ -419,12 +324,7 @@ class MainSettingsButtonView(discord.ui.View):
     async def sdxl_settings_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = SDXLSettingsView(self.settings)
         await interaction.response.edit_message(content="Configure SDXL Model Settings:", view=view)
-
-    @discord.ui.button(label="Qwen Image", style=discord.ButtonStyle.secondary, row=1)
-    async def qwen_settings_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        view = QwenSettingsView(self.settings)
-        await interaction.response.edit_message(content="Configure Qwen Image Settings:", view=view)
-
+        
     @discord.ui.button(label="Variation & Remix", style=discord.ButtonStyle.primary, row=2)
     async def variation_remix_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = VariationRemixSettingsView(self.settings)
@@ -467,25 +367,6 @@ class SDXLSettingsView(BaseSettingsView):
         self.add_item(DefaultStyleSelectSDXL(self.settings))
         self.add_item(SDXLStepsSelect(self.settings))
         self.add_item(SDXLGuidanceSelect(self.settings))
-
-class QwenSettingsView(BaseSettingsView):
-    def __init__(self, settings_ref):
-        super().__init__(settings_ref)
-        self.add_item(DefaultStyleSelectQwen(self.settings))
-        self.add_item(QwenEditStepsSelect(self.settings))
-        self.add_item(QwenEditGuidanceSelect(self.settings))
-        self.add_item(QwenEditDenoiseSelect(self.settings))
-        negative_prompt_button = discord.ui.Button(
-            label="Edit Default Negative Prompt",
-            style=discord.ButtonStyle.primary,
-            row=3,
-        )
-        negative_prompt_button.callback = self._open_negative_prompt_modal
-        self.add_item(negative_prompt_button)
-
-    async def _open_negative_prompt_modal(self, interaction: discord.Interaction):
-        modal = QwenNegativePromptModal(self.settings)
-        await interaction.response.send_modal(modal)
 
 class VariationRemixSettingsView(BaseSettingsView):
     def __init__(self, settings_ref):
