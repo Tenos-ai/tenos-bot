@@ -569,7 +569,8 @@ class ConfigEditor:
                         if hasattr(self, 'favorites_tab_manager'): self.favorites_tab_manager.populate_all_favorites_sub_tabs()
                 else: silent_showerror(f"{task_name_done} Failed", message_details, parent=self.master)
             elif worker_status_update.get("type") == "restart_required":
-                self._restart_application()
+                update_info = worker_status_update.get("update_info")
+                self._restart_application(update_info=update_info)
         except queue.Empty: pass
         except Exception: pass
         if self.master.winfo_exists(): self.master.after(100, self._process_gui_updates_loop)
