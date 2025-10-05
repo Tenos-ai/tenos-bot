@@ -17,11 +17,7 @@ from PySide6.QtWidgets import (
 
 from material_gui.repository import SettingsRepository
 from material_gui.views.base import BaseView
-from material_gui.model_scanner import (
-    scan_clip_files,
-    update_checkpoints_list,
-    update_models_list,
-)
+from model_scanner import update_models_list, update_checkpoints_list, scan_clip_files
 
 CUSTOM_NODE_REPOS = [
     "https://github.com/rgthree/rgthree-comfy.git",
