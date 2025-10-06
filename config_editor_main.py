@@ -50,7 +50,17 @@ from editor_tab_bot_control import BotControlTab
 from editor_tab_admin_control import AdminControlTab
 from utils.update_state import UpdateState
 from utils.versioning import normalise_tag, is_remote_version_newer
-from version_info import APP_VERSION
+try:
+    from version_info import APP_VERSION
+except ModuleNotFoundError:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.insert(0, current_dir)
+
+    try:
+        from version_info import APP_VERSION
+    except ModuleNotFoundError:
+        APP_VERSION = "unknown"
 
 class ConfigEditor:
     def __init__(self, master_tk_root):
