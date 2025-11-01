@@ -15,7 +15,6 @@ import sys
 from datetime import datetime
 import zipfile
 import tempfile
-import webbrowser
 import difflib
 import shutil
 
@@ -784,7 +783,6 @@ class ConfigEditor:
         self._spinbox_validator_cache = {}
 
         self._create_menu_bar()
-        self._create_restart_note_label()
 
         self.notebook = ttk.Notebook(self.master, style="Tenos.TNotebook")
         self.notebook.pack(expand=True, fill="both", padx=10, pady=10)
@@ -1055,69 +1053,6 @@ class ConfigEditor:
 
     def _on_theme_toggle(self):
         self.set_theme("light" if self.theme_toggle_var.get() else "dark")
-
-    def _create_restart_note_label(self):
-        header_frame = ttk.Frame(self.master, style="Tenos.Header.TFrame", padding=(16, 14, 16, 12))
-        header_frame.pack(fill=tk.X, padx=10, pady=(6, 4))
-        header_frame.columnconfigure(0, weight=1)
-        header_frame.columnconfigure(1, weight=0)
-        self.header_frame = header_frame
-        ttk.Label(
-            header_frame,
-            text="Tenos.ai Configurator",
-            style="Tenos.Header.TLabel"
-        ).grid(row=0, column=0, sticky="w")
-
-        ttk.Label(
-            header_frame,
-            text=("Update paths, credentials, and model defaults here. "
-                  "Restart the bot after saving to apply runtime changes."),
-            style="Tenos.Subtle.TLabel",
-            wraplength=560,
-            justify=tk.LEFT
-        ).grid(row=1, column=0, sticky="w", pady=(6, 0))
-
-        actions_frame = ttk.Frame(header_frame, style="Tenos.Header.TFrame")
-        actions_frame.grid(row=0, column=1, rowspan=2, sticky="e")
-
-        theme_toggle = ttk.Checkbutton(
-            actions_frame,
-            text="Light Mode",
-            variable=self.theme_toggle_var,
-            command=self._on_theme_toggle,
-            style="Tenos.Switch.TCheckbutton"
-        )
-        theme_toggle.pack(side=tk.RIGHT, padx=(12, 0))
-        self.attach_tooltip(theme_toggle, "Toggle between light and dark themes.")
-
-        update_btn = ttk.Button(
-            actions_frame,
-            text="Check Updates",
-            style="Tenos.Command.TButton",
-            command=lambda: self.run_worker_task_on_editor(self._worker_update_application, "Updating Application")
-        )
-        update_btn.pack(side=tk.RIGHT, padx=4)
-        self.attach_tooltip(update_btn, "Download and install the latest configurator update.")
-
-        docs_btn = ttk.Button(
-            actions_frame,
-            text="Documentation",
-            style="Tenos.Command.TButton",
-            command=lambda: webbrowser.open("https://docs.tenos.ai/configurator")
-        )
-        docs_btn.pack(side=tk.RIGHT, padx=4)
-        self.attach_tooltip(docs_btn, "Open the online configuration handbook.")
-
-        folder_btn = ttk.Button(
-            actions_frame,
-            text="Open Config Folder",
-            style="Tenos.Command.TButton",
-            command=self._open_config_folder
-        )
-        folder_btn.pack(side=tk.RIGHT, padx=4)
-        self.attach_tooltip(folder_btn, "View configuration files in your system file browser.")
-
-        ttk.Separator(self.master, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=10, pady=(0, 4))
 
     def _configure_main_editor_style(self):
         s = self.style
@@ -1565,12 +1500,6 @@ class ConfigEditor:
 
         for step in steps:
             ttk.Label(frame, text=f"• {step}", style="Tenos.TLabel", wraplength=520, justify=tk.LEFT).pack(anchor="w", padx=12, pady=2)
-
-        button_bar = ttk.Frame(frame, style="Tenos.TFrame")
-        button_bar.pack(anchor="w", padx=6, pady=(12, 4))
-
-        ttk.Button(button_bar, text="Open Setup Guide", command=lambda: webbrowser.open("https://docs.tenos.ai/configurator"))\
-            .pack(side=tk.LEFT)
 
     def _open_search_dialog(self, title, options, tk_var):
         if not options:
@@ -2074,8 +2003,7 @@ class ConfigEditor:
             ttk.Combobox,
             [f"Flux: {m}" for m in self.available_models] + [f"SDXL: {c}" for c in self.available_checkpoints],
             'selected_model',
-            section_key='general',
-            quick_actions=[("Docs", lambda url="https://docs.tenos.ai/models": webbrowser.open(url))]
+            section_key='general'
         )
         create_setting_row_ui(general_models_section.body(), "Selected T5 Clip", ttk.Combobox, self.available_clips_t5, 'selected_t5_clip', section_key='general')
         create_setting_row_ui(general_models_section.body(), "Selected Clip-L", ttk.Combobox, self.available_clips_l, 'selected_clip_l', section_key='general')
@@ -2085,8 +2013,7 @@ class ConfigEditor:
             ttk.Combobox,
             self.available_upscale_models,
             'selected_upscale_model',
-            section_key='general',
-            quick_actions=[("Docs", lambda url="https://docs.tenos.ai/upscalers": webbrowser.open(url))]
+            section_key='general'
         )
         create_setting_row_ui(
             general_models_section.body(),
@@ -2094,8 +2021,7 @@ class ConfigEditor:
             ttk.Combobox,
             self.available_vaes,
             'selected_vae',
-            section_key='general',
-            quick_actions=[("Docs", lambda url="https://docs.tenos.ai/vae": webbrowser.open(url))]
+            section_key='general'
         )
 
         general_defaults_section = CollapsibleSection(self.general_settings_content_frame, "Generation Defaults", self.color)
