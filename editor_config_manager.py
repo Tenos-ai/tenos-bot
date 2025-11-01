@@ -2,9 +2,10 @@
 import json
 import os
 import traceback
+from datetime import datetime
 from tkinter import scrolledtext, BooleanVar
 
-from editor_utils import load_json_config, save_json_config, silent_showerror, silent_showinfo
+from editor_utils import load_json_config, save_json_config, silent_showerror
 from editor_constants import CONFIG_FILE_NAME, SETTINGS_FILE_NAME
 
 class EditorConfigManager:
@@ -143,11 +144,12 @@ class EditorConfigManager:
             if save_json_config(CONFIG_FILE_NAME, config_to_write, "main application config"):
                 self.config = config_to_write
                 if show_success_message:
-                    silent_showinfo("Success", "Main configuration saved successfully!", parent=self.editor_app.master)
-                    # After a successful manual save, trigger a full UI refresh in the main app
+                    if hasattr(self.editor_app, 'main_config_status_var'):
+                        self.editor_app.main_config_status_var.set(f"Saved at {datetime.now().strftime('%H:%M:%S')}")
+                    self.editor_app.show_status_message("Main configuration saved successfully!", level="success")
                     self.editor_app.master.after(50, self.editor_app.refresh_all_ui_tabs)
         except Exception as e_save:
-            silent_showerror("Save Error", f"Failed to save main config: {str(e_save)}", parent=self.editor_app.master)
+            self.editor_app.show_status_message(f"Failed to save main config: {str(e_save)}", level="error", duration=2200)
             traceback.print_exc()
 
 
@@ -231,7 +233,11 @@ class EditorConfigManager:
                         settings_to_write[key_to_save] = internal_pref_value
                     elif isinstance(current_settings_template_for_save.get(key_to_save), float): settings_to_write[key_to_save] = float(value_from_ui)
                     elif isinstance(current_settings_template_for_save.get(key_to_save), int): settings_to_write[key_to_save] = int(value_from_ui)
-                    elif isinstance(current_settings_template_for_save.get(key_to_save), bool): settings_to_write[key_to_save] = bool(value_from_ui)
+                    elif isinstance(current_settings_template_for_save.get(key_to_save), bool):
+                        if isinstance(value_from_ui, str):
+                            settings_to_write[key_to_save] = value_from_ui.lower() in ['true', '1', 't', 'y', 'yes', 'on']
+                        else:
+                            settings_to_write[key_to_save] = bool(value_from_ui)
                     else: settings_to_write[key_to_save] = str(value_from_ui) if value_from_ui is not None else None
             saved_provider = settings_to_write.get('llm_provider', 'gemini')
             if 'llm_model' in self.editor_app.settings_vars:
@@ -242,8 +248,11 @@ class EditorConfigManager:
                 self.settings = settings_to_write
                 try: self.settings_last_mtime = os.path.getmtime(SETTINGS_FILE_NAME)
                 except OSError as e_mtime: self.settings_last_mtime = 0
-                if show_success_message: silent_showinfo("Success", "Bot settings saved successfully!", parent=self.editor_app.master)
+                if show_success_message:
+                    if hasattr(self.editor_app, 'bot_settings_status_var'):
+                        self.editor_app.bot_settings_status_var.set(f"Saved at {datetime.now().strftime('%H:%M:%S')}")
+                    self.editor_app.show_status_message("Bot settings saved successfully!", level="success")
         except Exception as e_save_settings:
-            silent_showerror("Save Error", f"Failed to save bot settings: {str(e_save_settings)}", parent=self.editor_app.master)
+            self.editor_app.show_status_message(f"Failed to save bot settings: {str(e_save_settings)}", level="error", duration=2200)
             traceback.print_exc()
 # --- END OF FILE editor_config_manager.py ---

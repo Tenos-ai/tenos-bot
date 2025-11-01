@@ -1,6 +1,6 @@
 # --- START OF FILE config_editor_main.py ---
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext, filedialog
+from tkinter import ttk, scrolledtext, filedialog
 import os
 import json
 import traceback
@@ -15,6 +15,465 @@ import sys
 from datetime import datetime
 import zipfile
 import tempfile
+import webbrowser
+import difflib
+
+
+class Tooltip:
+    """Lightweight tooltip that follows the active theme."""
+
+    def __init__(self, widget, text, color_getter, delay=500):
+        self.widget = widget
+        self.text = text
+        self.color_getter = color_getter
+        self.delay = delay
+        self._after_id = None
+        self.tip_window = None
+
+        self.widget.bind("<Enter>", self._schedule)
+        self.widget.bind("<Leave>", self._hide)
+        self.widget.bind("<FocusOut>", self._hide)
+
+    def _schedule(self, _event=None):
+        self._cancel()
+        self._after_id = self.widget.after(self.delay, self._show)
+
+    def _cancel(self):
+        if self._after_id is not None:
+            try:
+                self.widget.after_cancel(self._after_id)
+            except tk.TclError:
+                pass
+            self._after_id = None
+
+    def _show(self):
+        if self.tip_window or not self.widget.winfo_viewable():
+            return
+        try:
+            x_root = self.widget.winfo_rootx() + 20
+            y_root = self.widget.winfo_rooty() + self.widget.winfo_height() + 6
+        except tk.TclError:
+            return
+
+        self.tip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_attributes("-topmost", True)
+        bg = self.color_getter("TOOLTIP_BG", "#1E293B")
+        fg = self.color_getter("TOOLTIP_FG", "#F8FAFC")
+        border = self.color_getter("BORDER_COLOR", "#1E293B")
+        tw.configure(bg=border)
+
+        label = tk.Label(
+            tw,
+            text=self.text,
+            justify=tk.LEFT,
+            relief=tk.FLAT,
+            padx=8,
+            pady=4,
+            wraplength=320,
+            background=bg,
+            foreground=fg,
+            font=("Segoe UI", 10)
+        )
+        label.pack()
+        tw.wm_geometry(f"+{x_root}+{y_root}")
+
+    def _hide(self, _event=None):
+        self._cancel()
+        if self.tip_window is not None:
+            try:
+                self.tip_window.destroy()
+            except tk.TclError:
+                pass
+            self.tip_window = None
+
+
+class StatusBanner(ttk.Frame):
+    """Single place to surface transient status, prompts, and progress."""
+
+    def __init__(self, master, color_getter, register_theme_callback):
+        super().__init__(master, style="Tenos.TFrame")
+        self.color_getter = color_getter
+        self._hide_after_id = None
+        self._active_actions = []
+
+        self.columnconfigure(1, weight=1)
+
+        self.icon_var = tk.StringVar(value="")
+        self.message_var = tk.StringVar(value="")
+
+        self.icon_label = ttk.Label(self, textvariable=self.icon_var, width=2, anchor="center", style="Tenos.TLabel")
+        self.icon_label.grid(row=0, column=0, padx=(10, 4), pady=6)
+
+        self.message_label = ttk.Label(self, textvariable=self.message_var, style="Tenos.TLabel", wraplength=640, anchor="w")
+        self.message_label.grid(row=0, column=1, sticky="ew", pady=6)
+
+        self.action_frame = ttk.Frame(self, style="Tenos.TFrame")
+        self.action_frame.grid(row=0, column=2, padx=(6, 10), pady=6, sticky="e")
+
+        self.progress = ttk.Progressbar(self.action_frame, mode="indeterminate", length=140, style="Tenos.Horizontal.TProgressbar")
+
+        register_theme_callback(self._refresh_theme)
+        self._refresh_theme()
+
+    def _refresh_theme(self):
+        try:
+            self.configure(style="Tenos.TFrame")
+            self.message_label.configure(style="Tenos.TLabel")
+            self.icon_label.configure(style="Tenos.TLabel")
+            bg = self.color_getter("FRAME_BG_COLOR")
+            if bg:
+                self.configure(padding=(0, 0, 0, 4))
+        except tk.TclError:
+            pass
+
+    def _cancel_hide(self):
+        if self._hide_after_id:
+            try:
+                self.after_cancel(self._hide_after_id)
+            except tk.TclError:
+                pass
+            self._hide_after_id = None
+
+    def clear(self):
+        self._cancel_hide()
+        self.icon_var.set("")
+        self.message_var.set("")
+        for widget in self._active_actions:
+            try:
+                widget.destroy()
+            except tk.TclError:
+                pass
+        self._active_actions.clear()
+        try:
+            self.progress.stop()
+            self.progress.pack_forget()
+        except tk.TclError:
+            pass
+        self.pack_forget()
+
+    def show(self, message, level="info", duration=2000, icon=None):
+        self._cancel_hide()
+        self._ensure_visible()
+        symbol_map = {
+            "info": "ℹ", "warning": "⚠", "error": "✖", "success": "✔", "question": "?"
+        }
+        self.icon_var.set(icon if icon is not None else symbol_map.get(level, "ℹ"))
+        self.message_var.set(message)
+
+        fg = self.color_getter("TEXT_COLOR_NORMAL")
+        if level == "error":
+            fg = self.color_getter("ERROR_FG", "#F05252")
+        elif level == "warning":
+            fg = self.color_getter("WARNING_FG", "#F59E0B")
+        elif level == "success":
+            fg = self.color_getter("SUCCESS_FG", "#10B981")
+        elif level == "question":
+            fg = self.color_getter("ACCENT_FG", "#2C7BE5")
+        try:
+            self.message_label.configure(foreground=fg)
+            self.icon_label.configure(foreground=fg)
+        except tk.TclError:
+            pass
+
+        if duration:
+            self._hide_after_id = self.after(duration, self.clear)
+
+    def _ensure_visible(self):
+        if not self.winfo_ismapped():
+            self.pack(fill=tk.X, pady=(0, 4))
+
+    def show_progress(self, message, level="info"):
+        self.show(message, level=level, duration=None, icon="…")
+        try:
+            if not self.progress.winfo_ismapped():
+                self.progress.pack(side=tk.RIGHT, padx=4)
+            self.progress.start(12)
+        except tk.TclError:
+            pass
+
+    def _install_actions(self, widgets):
+        for widget in self._active_actions:
+            try:
+                widget.destroy()
+            except tk.TclError:
+                pass
+        self._active_actions = widgets
+
+    def ask_yes_no(self, title, message):
+        result_var = tk.BooleanVar(value=False)
+        decided = tk.BooleanVar(value=False)
+
+        def _respond(value):
+            result_var.set(value)
+            decided.set(True)
+            self.clear()
+
+        self._ensure_visible()
+        self.show(f"{title}: {message}", level="question", duration=None, icon="?")
+
+        yes_btn = ttk.Button(self.action_frame, text="Yes", command=lambda: _respond(True))
+        no_btn = ttk.Button(self.action_frame, text="No", command=lambda: _respond(False))
+        yes_btn.pack(side=tk.LEFT, padx=4)
+        no_btn.pack(side=tk.LEFT, padx=4)
+        self._install_actions([yes_btn, no_btn])
+
+        self.wait_variable(decided)
+        return result_var.get()
+
+    def ask_string(self, title, prompt, initialvalue="", show=None, validate=None):
+        result_var = tk.StringVar(value=initialvalue or "")
+        decided = tk.BooleanVar(value=False)
+
+        def _commit():
+            value = result_var.get()
+            if callable(validate) and not validate(value):
+                self.show("Please enter a valid value.", level="warning", duration=2000)
+                return
+            decided.set(True)
+            self.clear()
+
+        def _cancel():
+            result_var.set("")
+            decided.set(True)
+            self.clear()
+
+        self._ensure_visible()
+        self.show(f"{title}: {prompt}", level="question", duration=None, icon="✎")
+
+        entry = ttk.Entry(self.action_frame, textvariable=result_var, width=28, show=show)
+        entry.pack(side=tk.LEFT, padx=(0, 6))
+        ok_btn = ttk.Button(self.action_frame, text="OK", command=_commit)
+        cancel_btn = ttk.Button(self.action_frame, text="Cancel", command=_cancel)
+        ok_btn.pack(side=tk.LEFT, padx=4)
+        cancel_btn.pack(side=tk.LEFT, padx=4)
+        self._install_actions([entry, ok_btn, cancel_btn])
+
+        try:
+            entry.focus_set()
+            entry.icursor(tk.END)
+        except tk.TclError:
+            pass
+
+        self.wait_variable(decided)
+        return result_var.get() or None
+
+
+class SearchableListDialog(tk.Toplevel):
+    """Popup dialog with live filtering for long option lists."""
+
+    def __init__(self, master, title, values, color_getter):
+        super().__init__(master)
+        color_getter = color_getter or (lambda _key, default=None: default)
+        self.result = None
+        self.title(title)
+        self.transient(master)
+        self.grab_set()
+        self.resizable(True, True)
+        self.configure(bg=color_getter("FRAME_BG_COLOR", "#111827"))
+        self._color_getter = color_getter
+
+        self.minsize(320, 320)
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(1, weight=1)
+
+        ttk.Label(self, text="Type to filter:", style="Tenos.TLabel").grid(row=0, column=0, sticky="w", padx=12, pady=(12, 4))
+
+        self.filter_var = tk.StringVar()
+        entry = ttk.Entry(self, textvariable=self.filter_var)
+        entry.grid(row=0, column=0, sticky="ew", padx=12, pady=(0, 12))
+
+        self.listbox = tk.Listbox(self, activestyle="none", selectmode=tk.SINGLE, borderwidth=1, relief=tk.SOLID)
+        self.listbox.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        self._apply_theme_to_listbox()
+
+        button_bar = ttk.Frame(self, style="Tenos.TFrame")
+        button_bar.grid(row=2, column=0, sticky="e", padx=12, pady=(0, 12))
+        ttk.Button(button_bar, text="Select", command=self._confirm).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(button_bar, text="Cancel", command=self._cancel).pack(side=tk.LEFT)
+
+        self.values = list(values)
+        self._filtered_values = self.values
+        self._populate_list()
+
+        entry.bind("<KeyRelease>", self._on_filter_change)
+        entry.bind("<Return>", lambda _e: self._confirm())
+        self.listbox.bind("<Return>", lambda _e: self._confirm())
+        self.listbox.bind("<Double-Button-1>", lambda _e: self._confirm())
+        self.listbox.bind("<Escape>", lambda _e: self._cancel())
+        self.bind("<Escape>", lambda _e: self._cancel())
+
+        self.after(50, entry.focus_set)
+        self.after(75, self._center_over_master)
+        self.wait_window(self)
+
+    def _apply_theme_to_listbox(self):
+        try:
+            bg = self._color_getter("LISTBOX_BG", "#0F172A")
+            fg = self._color_getter("LISTBOX_FG", "#E2E8F0")
+            sel_bg = self._color_getter("LISTBOX_SELECT_BG", "#2563EB")
+            sel_fg = self._color_getter("LISTBOX_SELECT_FG", "#FFFFFF")
+            border = self._color_getter("BORDER_COLOR", "#1E293B")
+            self.listbox.configure(
+                background=bg,
+                foreground=fg,
+                selectbackground=sel_bg,
+                selectforeground=sel_fg,
+                highlightcolor=border,
+                highlightbackground=border,
+            )
+        except tk.TclError:
+            pass
+
+    def _center_over_master(self):
+        try:
+            self.update_idletasks()
+            master = self.master
+            master.update_idletasks()
+            master_width = master.winfo_width() or 800
+            master_height = master.winfo_height() or 600
+            width = max(360, min(int(master_width * 0.55), 720))
+            height = max(320, min(int(master_height * 0.7), 720))
+            master_x = master.winfo_rootx()
+            master_y = master.winfo_rooty()
+            pos_x = master_x + (master_width - width) // 2
+            pos_y = master_y + (master_height - height) // 2
+            self.geometry(f"{width}x{height}+{pos_x}+{pos_y}")
+        except tk.TclError:
+            pass
+
+    def _populate_list(self):
+        self.listbox.delete(0, tk.END)
+        for value in self._filtered_values:
+            self.listbox.insert(tk.END, value)
+
+    def _on_filter_change(self, _event=None):
+        needle = self.filter_var.get().lower()
+        if not needle:
+            self._filtered_values = self.values
+        else:
+            self._filtered_values = [v for v in self.values if needle in str(v).lower()]
+        self._populate_list()
+
+    def _confirm(self):
+        selection = self.listbox.curselection()
+        if not selection:
+            return
+        self.result = self._filtered_values[selection[0]]
+        self._cleanup()
+
+    def _cancel(self):
+        self.result = None
+        self._cleanup()
+
+    def _cleanup(self):
+        try:
+            self.grab_release()
+        except tk.TclError:
+            pass
+        self.destroy()
+
+
+class SideNavigationView(ttk.Frame):
+    """Provides a list-driven navigation layout to reduce nested notebooks."""
+
+    def __init__(self, master, sections, on_select=None, listbox_width=22):
+        super().__init__(master, style="Tenos.TFrame")
+        self.sections = sections
+        self.on_select = on_select
+        self.section_frames = {}
+
+        self.columnconfigure(1, weight=1)
+        self.rowconfigure(0, weight=1)
+
+        self.listbox = tk.Listbox(
+            self,
+            exportselection=False,
+            activestyle="none",
+            width=listbox_width,
+            relief=tk.FLAT,
+            highlightthickness=0
+        )
+        self.listbox.grid(row=0, column=0, sticky="ns", padx=(0, 10), pady=4)
+
+        self.content_container = ttk.Frame(self, style="Tenos.TFrame")
+        self.content_container.grid(row=0, column=1, sticky="nsew")
+        self.content_container.columnconfigure(0, weight=1)
+        self.content_container.rowconfigure(0, weight=1)
+
+        for index, (section_key, section_label) in enumerate(self.sections):
+            self.listbox.insert(tk.END, section_label)
+            frame = ttk.Frame(self.content_container, style="Tenos.TFrame")
+            frame.grid(row=0, column=0, sticky="nsew")
+            frame.grid_remove()
+            self.section_frames[section_key] = frame
+            if index == 0:
+                self._current_key = section_key
+
+        self.listbox.bind("<<ListboxSelect>>", self._on_listbox_select)
+        if self.sections:
+            self.listbox.selection_set(0)
+            self.show_section(self.sections[0][0])
+
+    def show_section(self, section_key):
+        if section_key not in self.section_frames:
+            return
+        for key, frame in self.section_frames.items():
+            if frame.winfo_ismapped():
+                frame.grid_remove()
+        self.section_frames[section_key].grid()
+        self._current_key = section_key
+        if callable(self.on_select):
+            self.on_select(section_key)
+
+    def _on_listbox_select(self, _event=None):
+        selection = self.listbox.curselection()
+        if not selection:
+            return
+        index = selection[0]
+        section_key = self.sections[index][0]
+        self.show_section(section_key)
+
+    def get_section_frame(self, section_key):
+        return self.section_frames.get(section_key)
+
+
+class CollapsibleSection(ttk.Frame):
+    """Reusable collapsible panel for grouping related controls."""
+
+    def __init__(self, master, title, color_getter, initially_open=True):
+        super().__init__(master, style="Tenos.TFrame")
+        self.color_getter = color_getter
+        self._open = initially_open
+
+        self.columnconfigure(0, weight=1)
+
+        header = ttk.Frame(self, style="SectionHeader.TFrame")
+        header.grid(row=0, column=0, sticky="ew")
+
+        self.toggle_symbol = tk.StringVar(value="▼" if initially_open else "►")
+        toggle_btn = ttk.Button(header, textvariable=self.toggle_symbol, width=2, command=self.toggle, style="Toggle.TButton")
+        toggle_btn.pack(side=tk.LEFT, padx=(0, 6), pady=4)
+
+        ttk.Label(header, text=title, style="SectionHeader.TLabel").pack(side=tk.LEFT, pady=4)
+
+        self.content = ttk.Frame(self, style="SectionBody.TFrame")
+        self.content.grid(row=1, column=0, sticky="nsew")
+
+        if not initially_open:
+            self.content.grid_remove()
+
+    def toggle(self):
+        self._open = not self._open
+        if self._open:
+            self.content.grid()
+            self.toggle_symbol.set("▼")
+        else:
+            self.content.grid_remove()
+            self.toggle_symbol.set("►")
+
+    def body(self):
+        return self.content
 
 from editor_constants import (
     TENOS_DARK_BLUE_BG, TENOS_MEDIUM_BLUE_ACCENT, TENOS_LIGHT_BLUE_ACCENT2,
@@ -38,7 +497,7 @@ from editor_constants import (
 )
 
 from editor_utils import (
-    silent_showinfo, silent_showerror, silent_askyesno, silent_askstring, browse_folder_dialog,
+    silent_askyesno, silent_askstring, browse_folder_dialog,
     load_llm_models_config_util, load_llm_prompts_config_util, load_styles_config_editor_util,
     save_json_config
 )
@@ -65,12 +524,118 @@ except ModuleNotFoundError:
 class ConfigEditor:
     def __init__(self, master_tk_root):
         self.master = master_tk_root
-        self.master.title("Tenos.ai Configurator v1.2.5")
-        self.master.geometry("850x950")
-        self.master.configure(bg=BACKGROUND_COLOR)
+
+        version_display = None
+        if APP_VERSION and APP_VERSION.lower() != "unknown":
+            version_display = APP_VERSION
+            if not version_display.lower().startswith("v"):
+                version_display = f"v{version_display}"
+
+        if version_display:
+            self.master.title(f"Tenos.ai Configurator {version_display}")
+        else:
+            self.master.title("Tenos.ai Configurator")
+        self.master.minsize(960, 640)
+
+        self.base_colors = {
+            "BACKGROUND_COLOR": BACKGROUND_COLOR,
+            "FRAME_BG_COLOR": FRAME_BG_COLOR,
+            "WIDGET_BG": WIDGET_BG,
+            "TEXT_COLOR_NORMAL": TEXT_COLOR_NORMAL,
+            "TEXT_COLOR_DISABLED": TEXT_COLOR_DISABLED,
+            "ENTRY_BG_COLOR": ENTRY_BG_COLOR,
+            "ENTRY_FG_COLOR": ENTRY_FG_COLOR,
+            "ENTRY_INSERT_COLOR": ENTRY_INSERT_COLOR,
+            "SELECT_BG_COLOR": SELECT_BG_COLOR,
+            "SELECT_FG_COLOR": SELECT_FG_COLOR,
+            "BUTTON_BG_COLOR": BUTTON_BG_COLOR,
+            "BUTTON_FG_COLOR": BUTTON_FG_COLOR,
+            "BUTTON_ACTIVE_BG_COLOR": BUTTON_ACTIVE_BG_COLOR,
+            "BUTTON_ACTIVE_FG_COLOR": BUTTON_ACTIVE_FG_COLOR,
+            "BORDER_COLOR": BORDER_COLOR,
+            "TENOS_LIGHT_BLUE_ACCENT2": TENOS_LIGHT_BLUE_ACCENT2,
+            "TENOS_MEDIUM_BLUE_ACCENT": TENOS_MEDIUM_BLUE_ACCENT,
+            "TENOS_DARK_BLUE_BG": TENOS_DARK_BLUE_BG,
+            "TENOS_WHITE_FG": TENOS_WHITE_FG,
+            "TENOS_BLACK_DETAIL": TENOS_BLACK_DETAIL,
+            "CANVAS_BG_COLOR": CANVAS_BG_COLOR,
+            "SCROLLBAR_TROUGH_COLOR": SCROLLBAR_TROUGH_COLOR,
+            "SCROLLBAR_SLIDER_COLOR": SCROLLBAR_SLIDER_COLOR,
+            "LISTBOX_BG": LISTBOX_BG,
+            "LISTBOX_FG": LISTBOX_FG,
+            "LISTBOX_SELECT_BG": LISTBOX_SELECT_BG,
+            "LISTBOX_SELECT_FG": LISTBOX_SELECT_FG,
+            "ACTIVE_TAB_BG": ACTIVE_TAB_BG,
+            "INACTIVE_TAB_BG": INACTIVE_TAB_BG,
+            "ACTIVE_TAB_FG": ACTIVE_TAB_FG,
+            "INACTIVE_TAB_FG": INACTIVE_TAB_FG,
+            "LOG_STDOUT_FG": LOG_STDOUT_FG,
+            "LOG_STDERR_FG": LOG_STDERR_FG,
+            "LOG_INFO_FG": LOG_INFO_FG,
+            "LOG_WORKER_FG": LOG_WORKER_FG,
+            "TOOLTIP_BG": "#1F2937",
+            "TOOLTIP_FG": "#F8FAFC",
+            "ACCENT_FG": TENOS_LIGHT_BLUE_ACCENT2,
+            "SUCCESS_FG": "#22C55E",
+            "WARNING_FG": "#F59E0B",
+            "ERROR_FG": "#F05252",
+        }
+
+        self.theme_presets = {
+            "dark": dict(self.base_colors),
+            "light": {
+                "BACKGROUND_COLOR": "#F5F7FB",
+                "FRAME_BG_COLOR": "#FFFFFF",
+                "WIDGET_BG": "#FFFFFF",
+                "TEXT_COLOR_NORMAL": "#1F2933",
+                "TEXT_COLOR_DISABLED": "#9AA5B1",
+                "ENTRY_BG_COLOR": "#FFFFFF",
+                "ENTRY_FG_COLOR": "#1F2933",
+                "ENTRY_INSERT_COLOR": "#2C7BE5",
+                "SELECT_BG_COLOR": "#2C7BE5",
+                "SELECT_FG_COLOR": "#FFFFFF",
+                "BUTTON_BG_COLOR": "#2C7BE5",
+                "BUTTON_FG_COLOR": "#FFFFFF",
+                "BUTTON_ACTIVE_BG_COLOR": "#1B6AD6",
+                "BUTTON_ACTIVE_FG_COLOR": "#FFFFFF",
+                "BORDER_COLOR": "#D0D7E2",
+                "TENOS_LIGHT_BLUE_ACCENT2": "#4F83F1",
+                "TENOS_MEDIUM_BLUE_ACCENT": "#3756CC",
+                "TENOS_DARK_BLUE_BG": "#E4EDFC",
+                "TENOS_WHITE_FG": "#FFFFFF",
+                "TENOS_BLACK_DETAIL": "#111827",
+                "CANVAS_BG_COLOR": "#F1F5FB",
+                "SCROLLBAR_TROUGH_COLOR": "#E5E9F2",
+                "SCROLLBAR_SLIDER_COLOR": "#C7D2FE",
+                "LISTBOX_BG": "#FFFFFF",
+                "LISTBOX_FG": "#1F2933",
+                "LISTBOX_SELECT_BG": "#2C7BE5",
+                "LISTBOX_SELECT_FG": "#FFFFFF",
+                "ACTIVE_TAB_BG": "#FFFFFF",
+                "INACTIVE_TAB_BG": "#E8EEF9",
+                "ACTIVE_TAB_FG": "#1F2933",
+                "INACTIVE_TAB_FG": "#4B5563",
+                "LOG_STDOUT_FG": "#2563EB",
+                "LOG_STDERR_FG": "#B91C1C",
+                "LOG_INFO_FG": "#2563EB",
+                "LOG_WORKER_FG": "#0F766E",
+                "TOOLTIP_BG": "#1E40AF",
+                "TOOLTIP_FG": "#F8FAFC",
+                "ACCENT_FG": "#1D4ED8",
+                "SUCCESS_FG": "#0F766E",
+                "WARNING_FG": "#B45309",
+                "ERROR_FG": "#B91C1C",
+            }
+        }
+
+        self.current_theme_name = "dark"
+        self.theme_colors = dict(self.theme_presets[self.current_theme_name])
+        self._theme_subscribers = []
+        self.theme_watchers = []
 
         self.style = ttk.Style()
         self._configure_main_editor_style()
+        self.master.configure(bg=self.color("BACKGROUND_COLOR"))
 
         self.bot_process = None
         self.log_queue = queue.Queue()
@@ -81,6 +646,9 @@ class ConfigEditor:
         self.config_vars = {}
         self.settings_vars = {}
         self.bot_settings_widgets = {}
+        self.config_input_widgets = {}
+        self.last_focused_config_key = None
+        self.last_focused_setting_key = None
         self.log_display = None
 
         self.app_base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -120,6 +688,69 @@ class ConfigEditor:
         self.provider_display_map = { k: v.get("display_name", k.capitalize()) for k, v in self.llm_models_config.get("providers", {}).items() }
         self.display_prompt_map = { "enhanced": "Show Enhanced Prompt ✨", "original": "Show Original Prompt ✍️" }
 
+        self.config_help_text = {
+            "OUTPUTS.UPSCALES": "Directory where upscaled images are saved after processing.",
+            "OUTPUTS.VARIATIONS": "Storage location for variation batches generated from a prompt.",
+            "OUTPUTS.GENERATIONS": "Primary folder for brand-new image generations.",
+            "MODELS.MODEL_FILES": "Root directory containing your Flux model checkpoints.",
+            "MODELS.CHECKPOINTS_FOLDER": "Location for SDXL checkpoints used by the bot.",
+            "MODELS.UPSCALE_MODELS": "Folder with upscale models available to ComfyUI.",
+            "MODELS.VAE_MODELS": "Directory containing VAE files referenced by SDXL.",
+            "CLIP.CLIP_FILES": "Folder where CLIP model files are stored.",
+            "LORAS.LORA_FILES": "Directory with LoRA assets available for selection.",
+            "NODES.CUSTOM_NODES": "ComfyUI custom nodes folder used during node installation.",
+            "COMFYUI_API.HOST": "Hostname for your ComfyUI server.",
+            "COMFYUI_API.PORT": "Port exposed by the ComfyUI API service.",
+            "BOT_INTERNAL_API.HOST": "Host for the Tenos internal bot API.",
+            "BOT_INTERNAL_API.PORT": "Internal API port for bot coordination.",
+            "BOT_INTERNAL_API.AUTH_TOKEN": "Token required for the configurator to talk to the bot API.",
+            "BOT_API.KEY": "Public bot command API key issued by Tenos.",
+            "ADMIN.USERNAME": "Default administrator Discord username for privileged actions.",
+            "ADMIN.ID": "Discord snowflake ID for the administrator account.",
+            "LLM_ENHANCER.OPENAI_API_KEY": "Key used when sending prompt enhancement requests to OpenAI.",
+            "LLM_ENHANCER.GEMINI_API_KEY": "Key used for Google Gemini prompt enhancements.",
+            "LLM_ENHANCER.GROQ_API_KEY": "Key used for Groq LLM prompt enhancements.",
+            "APP_SETTINGS.AUTO_UPDATE_ON_STARTUP": "When enabled the configurator will check for updates on launch."
+        }
+
+        self.settings_help_text = {
+            "selected_model": "Default Flux/SDXL model used for general image generation.",
+            "selected_kontext_model": "Flux model dedicated to Kontext workflows.",
+            "selected_t5_clip": "T5 text encoder paired with your primary model.",
+            "selected_clip_l": "CLIP-L encoder providing textual guidance to Flux.",
+            "selected_upscale_model": "Upscaler used when enhancing image resolution.",
+            "selected_vae": "VAE loaded for color-space decoding during SDXL generations.",
+            "default_style_flux": "Starting style applied to Flux prompts.",
+            "default_style_sdxl": "Starting style applied to SDXL prompts.",
+            "default_variation_mode": "Controls how strongly variation prompts deviate.",
+            "variation_batch_size": "Number of variation images generated at once.",
+            "default_batch_size": "Default image count per generation request.",
+            "upscale_factor": "Multiplier used when upscaling images via the bot.",
+            "default_mp_size": "Target megapixel size for Flux renders.",
+            "steps": "Number of inference steps Flux will run.",
+            "sdxl_steps": "Number of inference steps for SDXL workflows.",
+            "default_guidance": "Flux guidance scale balancing prompt adherence.",
+            "default_guidance_sdxl": "Guidance scale for SDXL prompts.",
+            "default_sdxl_negative_prompt": "Baseline negative prompt applied to SDXL generations.",
+            "kontext_guidance": "Guidance scale used in Kontext operations.",
+            "kontext_steps": "Inference steps used for Kontext prompts.",
+            "kontext_mp_size": "Megapixel target for Kontext renders.",
+            "remix_mode": "When enabled variations remix inputs for greater diversity.",
+            "llm_enhancer_enabled": "Toggle LLM powered prompt enhancement before sending to ComfyUI.",
+            "llm_provider": "Select which LLM provider backs prompt enhancement.",
+            "llm_model": "Specific LLM model used for prompt enhancement with the selected provider.",
+            "display_prompt_preference": "Choose whether to show enhanced or original prompts in the UI."
+        }
+
+        self.status_banner = StatusBanner(self.master, self.color, self.register_theme_subscriber)
+
+        self.master.show_status_message = self.show_status_message
+        self.master.ask_status_yes_no = self.ask_status_yes_no
+        self.master.ask_status_string = self.ask_status_string
+
+        self._digits_validator = self.master.register(lambda P: P.isdigit() or P == "")
+        self._spinbox_validator_cache = {}
+
         self._create_menu_bar()
         self._create_restart_note_label()
 
@@ -143,7 +774,105 @@ class ConfigEditor:
             self.master.after(2000, self._check_settings_file_for_changes)
 
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing_main_window)
-        
+
+    def color(self, key, default=None):
+        if key in self.theme_colors:
+            return self.theme_colors[key]
+        if key in self.base_colors:
+            return self.base_colors[key]
+        return default
+
+    def register_theme_subscriber(self, callback):
+        if callback not in self._theme_subscribers:
+            self._theme_subscribers.append(callback)
+        try:
+            callback()
+        except Exception:
+            pass
+
+    def register_theme_widget(self, widget, mapping):
+        def _apply():
+            if not widget or not widget.winfo_exists():
+                return
+            config = {}
+            for option, color_key in mapping.items():
+                config[option] = self.color(color_key, color_key if isinstance(color_key, str) else color_key)
+            try:
+                widget.configure(**config)
+            except tk.TclError:
+                pass
+        self.register_theme_subscriber(_apply)
+
+    def _notify_theme_change(self):
+        for callback in list(self._theme_subscribers):
+            try:
+                callback()
+            except Exception:
+                continue
+        try:
+            self.master.configure(bg=self.color("BACKGROUND_COLOR"))
+        except tk.TclError:
+            pass
+
+    def set_theme(self, theme_name):
+        if theme_name not in self.theme_presets:
+            return
+        self.current_theme_name = theme_name
+        self.theme_colors = dict(self.base_colors)
+        self.theme_colors.update(self.theme_presets[theme_name])
+        self._configure_main_editor_style()
+        self._notify_theme_change()
+
+    def toggle_theme(self):
+        new_theme = "light" if self.current_theme_name == "dark" else "dark"
+        self.set_theme(new_theme)
+
+    def show_status_message(self, message, level="info", duration=2000):
+        self.status_banner.show(message, level=level, duration=duration)
+
+    def ask_status_yes_no(self, title, message):
+        return self.status_banner.ask_yes_no(title, message)
+
+    def ask_status_string(self, title, prompt, **kwargs):
+        return self.status_banner.ask_string(title, prompt, **kwargs)
+
+    def attach_tooltip(self, widget, text):
+        if not text:
+            return None
+        tooltip = Tooltip(widget, text, self.color)
+        setattr(widget, "_tenos_tooltip", tooltip)
+        return tooltip
+
+    def _validate_spinbox_value(self, var_key, value, minimum, maximum, is_float):
+        tk_var = self.settings_vars.get(var_key)
+        if tk_var is None:
+            return True
+        try:
+            numeric = float(value) if is_float else int(value)
+        except (ValueError, TypeError):
+            numeric = minimum
+        numeric = max(minimum, min(maximum, numeric))
+        try:
+            tk_var.set(numeric)
+        except tk.TclError:
+            return False
+        return True
+
+    def _get_spinbox_validator_command(self, var_key, minimum, maximum, is_float):
+        cache_key = (var_key, minimum, maximum, is_float)
+        if cache_key not in self._spinbox_validator_cache:
+            def _validator(value, key=var_key, min_value=minimum, max_value=maximum, float_flag=is_float):
+                return self._validate_spinbox_value(key, value, min_value, max_value, float_flag)
+
+            self._spinbox_validator_cache[cache_key] = self.master.register(_validator)
+        return self._spinbox_validator_cache[cache_key]
+
+    def _remember_focus(self, scope, key):
+        if scope == "config":
+            self.last_focused_config_key = key
+        elif scope == "settings":
+            self.last_focused_setting_key = key
+
     def refresh_all_ui_tabs(self):
         self.load_available_files()
         self.populate_main_config_sub_tabs()
@@ -203,129 +932,436 @@ class ConfigEditor:
                     except tk.TclError: pass
     
     def _create_menu_bar(self):
-        self.menu_bar = tk.Menu(self.master, bg=BACKGROUND_COLOR, fg=TEXT_COLOR_NORMAL, activebackground=SELECT_BG_COLOR, activeforeground=SELECT_FG_COLOR, relief="flat", borderwidth=0)
+        self.menu_bar = tk.Menu(
+            self.master,
+            bg=self.color("BACKGROUND_COLOR"),
+            fg=self.color("TEXT_COLOR_NORMAL"),
+            activebackground=self.color("SELECT_BG_COLOR"),
+            activeforeground=self.color("SELECT_FG_COLOR"),
+            relief="flat",
+            borderwidth=0
+        )
         self.master.config(menu=self.menu_bar)
-        file_menu = tk.Menu(self.menu_bar, tearoff=0, bg=WIDGET_BG, fg=TEXT_COLOR_NORMAL, relief="flat", activebackground=SELECT_BG_COLOR, activeforeground=SELECT_FG_COLOR)
-        file_menu.add_command(label="Save All Configs", command=self.save_all_configurations_from_menu)
+        file_menu = tk.Menu(
+            self.menu_bar,
+            tearoff=0,
+            bg=self.color("WIDGET_BG"),
+            fg=self.color("TEXT_COLOR_NORMAL"),
+            relief="flat",
+            activebackground=self.color("SELECT_BG_COLOR"),
+            activeforeground=self.color("SELECT_FG_COLOR")
+        )
+        file_menu.add_command(label="Save All Configs\tCtrl+S", command=self.save_all_configurations_from_menu)
         file_menu.add_command(label="Export Config & Settings", command=self.export_config_and_settings)
-        file_menu.add_separator(background=BORDER_COLOR)
+        file_menu.add_separator(background=self.color("BORDER_COLOR"))
         file_menu.add_command(label="Exit", command=self.on_closing_main_window)
         self.menu_bar.add_cascade(label="File", menu=file_menu)
-        tools_menu = tk.Menu(self.menu_bar, tearoff=0, bg=WIDGET_BG, fg=TEXT_COLOR_NORMAL, relief="flat", activebackground=SELECT_BG_COLOR, activeforeground=SELECT_FG_COLOR)
+        tools_menu = tk.Menu(
+            self.menu_bar,
+            tearoff=0,
+            bg=self.color("WIDGET_BG"),
+            fg=self.color("TEXT_COLOR_NORMAL"),
+            relief="flat",
+            activebackground=self.color("SELECT_BG_COLOR"),
+            activeforeground=self.color("SELECT_FG_COLOR")
+        )
         tools_menu.add_command(label="Update Application", command=lambda: self.run_worker_task_on_editor(self._worker_update_application, "Updating Application"))
-        tools_menu.add_separator(background=BORDER_COLOR)
+        tools_menu.add_separator(background=self.color("BORDER_COLOR"))
         tools_menu.add_command(label="Install/Update Custom Nodes", command=lambda: self.run_worker_task_on_editor(self._worker_install_custom_nodes, "Installing Nodes"))
         tools_menu.add_command(label="Scan Models/Clips/Checkpoints", command=lambda: self.run_worker_task_on_editor(self._worker_scan_models_clips_checkpoints, "Scanning Files"))
         tools_menu.add_command(label="Refresh LLM Models List", command=lambda: self.run_worker_task_on_editor(self._worker_update_llm_models_list, "Refreshing LLMs"))
         self.menu_bar.add_cascade(label="Tools", menu=tools_menu)
-        help_menu = tk.Menu(self.menu_bar, tearoff=0, bg=WIDGET_BG, fg=TEXT_COLOR_NORMAL, relief="flat", activebackground=SELECT_BG_COLOR, activeforeground=SELECT_FG_COLOR)
+        view_menu = tk.Menu(
+            self.menu_bar,
+            tearoff=0,
+            bg=self.color("WIDGET_BG"),
+            fg=self.color("TEXT_COLOR_NORMAL"),
+            relief="flat",
+            activebackground=self.color("SELECT_BG_COLOR"),
+            activeforeground=self.color("SELECT_FG_COLOR")
+        )
+        self.theme_toggle_var = tk.BooleanVar(value=self.current_theme_name == "light")
+        view_menu.add_checkbutton(label="Use Light Theme", variable=self.theme_toggle_var, command=self._on_theme_toggle)
+        self.menu_bar.add_cascade(label="View", menu=view_menu)
+
+        help_menu = tk.Menu(
+            self.menu_bar,
+            tearoff=0,
+            bg=self.color("WIDGET_BG"),
+            fg=self.color("TEXT_COLOR_NORMAL"),
+            relief="flat",
+            activebackground=self.color("SELECT_BG_COLOR"),
+            activeforeground=self.color("SELECT_FG_COLOR")
+        )
         help_menu.add_command(label="About", command=self.show_about_dialog)
         self.menu_bar.add_cascade(label="Help", menu=help_menu)
 
+        self.master.bind_all("<Control-s>", lambda event: self.save_all_configurations_from_menu())
+        self.master.bind_all("<Control-Shift-s>", lambda event: self.config_manager.save_main_config_data())
+        self.master.bind_all("<Control-Alt-s>", lambda event: self.config_manager.save_bot_settings_data())
+        self.master.bind_all("<F5>", lambda event: self.refresh_all_ui_tabs())
+
+    def _on_theme_toggle(self):
+        self.set_theme("light" if self.theme_toggle_var.get() else "dark")
+
     def _create_restart_note_label(self):
         restart_note_frame = ttk.Frame(self.master, style="Tenos.TFrame")
-        restart_note_frame.pack(fill=tk.X, padx=10, pady=(5,0))
-        ttk.Label(restart_note_frame, text="Note: Changes to paths (Main Config) or API Keys require a bot restart to take effect.", style="Tenos.TLabel", font=('Arial', 9, 'italic'), foreground=TENOS_LIGHT_BLUE_ACCENT2).pack(side=tk.LEFT)
+        restart_note_frame.pack(fill=tk.X, padx=10, pady=(5, 0))
+        ttk.Label(
+            restart_note_frame,
+            text="Tip: Update paths and credentials here, then restart the bot to apply runtime changes.",
+            style=ACCENT_TLABEL_STYLE,
+        ).pack(side=tk.LEFT)
 
     def _configure_main_editor_style(self):
-        s = self.style; s.theme_use('default')
-        s.configure(".", background=BACKGROUND_COLOR, foreground=TEXT_COLOR_NORMAL, fieldbackground=ENTRY_BG_COLOR, borderwidth=1, font=('Arial', 9))
-        s.map(".", background=[("disabled", "#3a3a3a"), ("active", BUTTON_ACTIVE_BG_COLOR)], foreground=[("disabled", TEXT_COLOR_DISABLED)], fieldbackground=[("disabled", "#303030")])
-        s.configure("TFrame", background=FRAME_BG_COLOR); s.configure("Tenos.TFrame", background=FRAME_BG_COLOR)
-        s.configure("TLabel", background=FRAME_BG_COLOR, foreground=TEXT_COLOR_NORMAL, padding=2)
-        s.configure(BOLD_TLABEL_STYLE, font=('Arial', 10, 'bold'), background=FRAME_BG_COLOR, foreground=TEXT_COLOR_NORMAL)
-        s.configure(ACCENT_TLABEL_STYLE, foreground=TENOS_MEDIUM_BLUE_ACCENT, background=FRAME_BG_COLOR)
-        s.configure("TButton", background=BUTTON_BG_COLOR, foreground=BUTTON_FG_COLOR, bordercolor=BORDER_COLOR, lightcolor=BUTTON_BG_COLOR, darkcolor=BUTTON_BG_COLOR, padding=(8, 4), relief="raised", font=('Arial', 9, 'bold'))
-        s.map("TButton", background=[("active", BUTTON_ACTIVE_BG_COLOR), ("pressed", BUTTON_ACTIVE_BG_COLOR), ("disabled", "#555555")], foreground=[("active", BUTTON_ACTIVE_FG_COLOR), ("pressed", BUTTON_ACTIVE_FG_COLOR), ("disabled", TEXT_COLOR_DISABLED)], relief=[("pressed", "sunken"), ("!pressed", "raised")], bordercolor=[("active", TENOS_LIGHT_BLUE_ACCENT2)])
-        s.configure("TNotebook", background=BACKGROUND_COLOR, tabmargins=[2, 5, 2, 0], borderwidth=0); s.configure("TNotebook.Tab", background=INACTIVE_TAB_BG, foreground=INACTIVE_TAB_FG, padding=[10, 5], font=('Arial', 10), borderwidth=1, relief="raised")
-        s.map("TNotebook.Tab", background=[("selected", ACTIVE_TAB_BG), ("active", TENOS_LIGHT_BLUE_ACCENT2)], foreground=[("selected", ACTIVE_TAB_FG), ("active", BACKGROUND_COLOR)], relief=[("selected", "flat")], focuscolor=[("selected", SELECT_BG_COLOR)])
-        s.configure("Tenos.TNotebook", background=BACKGROUND_COLOR)
-        s.configure("TEntry", fieldbackground=ENTRY_BG_COLOR, foreground=ENTRY_FG_COLOR, insertcolor=ENTRY_INSERT_COLOR, bordercolor=BORDER_COLOR, borderwidth=1, relief="sunken", padding=4, font=('Arial', 9))
-        s.map("TEntry", fieldbackground=[("focus", TENOS_DARK_BLUE_BG), ("disabled", "#303030")], foreground=[("disabled", TEXT_COLOR_DISABLED)], bordercolor=[("focus", TENOS_LIGHT_BLUE_ACCENT2)])
-        s.configure("Tenos.TEntry", fieldbackground=ENTRY_BG_COLOR)
-        s.configure("TCombobox", fieldbackground=ENTRY_BG_COLOR, foreground=ENTRY_FG_COLOR, selectbackground=SELECT_BG_COLOR, selectforeground=SELECT_FG_COLOR, insertcolor=ENTRY_INSERT_COLOR, arrowcolor=TEXT_COLOR_NORMAL, arrowsize=16, borderwidth=1, padding=3, relief="sunken", font=('Arial', 9))
-        s.map("TCombobox", fieldbackground=[("readonly", ENTRY_BG_COLOR), ("focus", TENOS_DARK_BLUE_BG), ("disabled", "#303030")], foreground=[("disabled", TEXT_COLOR_DISABLED)], bordercolor=[("focus", TENOS_LIGHT_BLUE_ACCENT2)], arrowcolor=[("disabled", TEXT_COLOR_DISABLED), ("hover", TENOS_LIGHT_BLUE_ACCENT2)], background=[("active", BUTTON_ACTIVE_BG_COLOR)])
-        s.configure("Tenos.TCombobox", fieldbackground=ENTRY_BG_COLOR)
-        s.configure("TSpinbox", fieldbackground=ENTRY_BG_COLOR, foreground=ENTRY_FG_COLOR, insertcolor=ENTRY_INSERT_COLOR, arrowsize=12, borderwidth=1, buttonbackground=BUTTON_BG_COLOR, relief="sunken", padding=3, font=('Arial', 9))
-        s.map("TSpinbox", fieldbackground=[("focus", TENOS_DARK_BLUE_BG), ("disabled", "#303030")], foreground=[("disabled", TEXT_COLOR_DISABLED)], buttonbackground=[("active", BUTTON_ACTIVE_BG_COLOR), ("disabled", WIDGET_BG)], buttonforeground=[("disabled", TEXT_COLOR_DISABLED)], bordercolor=[("focus", TENOS_LIGHT_BLUE_ACCENT2)])
-        s.configure("Tenos.TSpinbox", fieldbackground=ENTRY_BG_COLOR)
-        s.configure("TCheckbutton", background=FRAME_BG_COLOR, foreground=TEXT_COLOR_NORMAL, indicatorbackground=WIDGET_BG, indicatorforeground=TENOS_WHITE_FG, indicatordiameter=13, indicatormargin=3, indicatorrelief="flat", padding=(5,3))
-        s.map("TCheckbutton", indicatorbackground=[("active", ENTRY_BG_COLOR), ("selected", TENOS_MEDIUM_BLUE_ACCENT)], indicatorforeground=[("selected", TENOS_WHITE_FG), ("!selected", TENOS_WHITE_FG)], background=[("active", FRAME_BG_COLOR)])
-        s.configure("Tenos.TCheckbutton", background=FRAME_BG_COLOR)
-        s.configure("TScrollbar", troughcolor=SCROLLBAR_TROUGH_COLOR, background=SCROLLBAR_SLIDER_COLOR, gripcount=0, borderwidth=0, relief="flat", arrowsize=14, arrowcolor=TEXT_COLOR_NORMAL)
-        s.map("TScrollbar", background=[("active", TENOS_LIGHT_BLUE_ACCENT2), ("disabled", "#444444")], troughcolor=[("disabled", BACKGROUND_COLOR)], arrowcolor=[("disabled", TEXT_COLOR_DISABLED)])
-        s.configure("Tenos.Vertical.TScrollbar", background=SCROLLBAR_SLIDER_COLOR)
-        s.configure("TLabelframe", background=FRAME_BG_COLOR, bordercolor=BORDER_COLOR, borderwidth=1, relief="solid", padding=6); s.configure("TLabelframe.Label", background=FRAME_BG_COLOR, foreground=TEXT_COLOR_NORMAL, font=('Arial', 10, 'bold'), padding=(0,0,0,3))
-        s.configure("Tenos.TLabelframe", background=FRAME_BG_COLOR)
+        s = self.style
+        s.theme_use('clam')
+
+        base_font = ('Segoe UI', 10)
+        header_font = ('Segoe UI Semibold', 11)
+        s.configure(
+            ".",
+            background=self.color("BACKGROUND_COLOR"),
+            foreground=self.color("TEXT_COLOR_NORMAL"),
+            fieldbackground=self.color("ENTRY_BG_COLOR"),
+            borderwidth=1,
+            font=base_font
+        )
+        s.map(
+            ".",
+            background=[("disabled", self.color("FRAME_BG_COLOR"))],
+            foreground=[("disabled", self.color("TEXT_COLOR_DISABLED"))],
+            fieldbackground=[("disabled", self.color("FRAME_BG_COLOR"))]
+        )
+
+        s.configure("TFrame", background=self.color("FRAME_BG_COLOR"))
+        s.configure("Tenos.TFrame", background=self.color("FRAME_BG_COLOR"))
+        s.configure("TLabel", background=self.color("FRAME_BG_COLOR"), foreground=self.color("TEXT_COLOR_NORMAL"), padding=2)
+        s.configure(BOLD_TLABEL_STYLE, font=('Segoe UI Semibold', 11), background=self.color("FRAME_BG_COLOR"), foreground=self.color("TEXT_COLOR_NORMAL"))
+        s.configure(ACCENT_TLABEL_STYLE, foreground=self.color("TENOS_MEDIUM_BLUE_ACCENT"), background=self.color("FRAME_BG_COLOR"))
+
+        s.configure(
+            "TButton",
+            background=self.color("BUTTON_BG_COLOR"),
+            foreground=self.color("BUTTON_FG_COLOR"),
+            bordercolor=self.color("BORDER_COLOR"),
+            padding=(10, 6),
+            relief="raised",
+            font=('Segoe UI Semibold', 10)
+        )
+        s.map(
+            "TButton",
+            background=[("active", self.color("BUTTON_ACTIVE_BG_COLOR")), ("pressed", self.color("BUTTON_ACTIVE_BG_COLOR")), ("disabled", self.color("FRAME_BG_COLOR"))],
+            foreground=[("active", self.color("BUTTON_ACTIVE_FG_COLOR")), ("pressed", self.color("BUTTON_ACTIVE_FG_COLOR")), ("disabled", self.color("TEXT_COLOR_DISABLED"))],
+            relief=[("pressed", "sunken"), ("!pressed", "raised")]
+        )
+
+        s.configure("Toggle.TButton", width=2, padding=2)
+        s.map("Toggle.TButton", background=[("active", self.color("BUTTON_ACTIVE_BG_COLOR"))])
+
+        s.configure(
+            "TNotebook",
+            background=self.color("BACKGROUND_COLOR"),
+            tabmargins=[2, 6, 2, 0],
+            borderwidth=0
+        )
+        s.configure(
+            "TNotebook.Tab",
+            background=self.color("INACTIVE_TAB_BG"),
+            foreground=self.color("INACTIVE_TAB_FG"),
+            padding=[14, 7],
+            font=('Segoe UI Semibold', 10),
+            borderwidth=1,
+            relief="ridge"
+        )
+        s.map(
+            "TNotebook.Tab",
+            background=[("selected", self.color("ACTIVE_TAB_BG")), ("active", self.color("TENOS_LIGHT_BLUE_ACCENT2"))],
+            foreground=[("selected", self.color("ACTIVE_TAB_FG")), ("active", self.color("BACKGROUND_COLOR"))],
+            relief=[("selected", "flat")]
+        )
+        s.configure("Tenos.TNotebook", background=self.color("BACKGROUND_COLOR"))
+
+        s.configure(
+            "TEntry",
+            fieldbackground=self.color("ENTRY_BG_COLOR"),
+            foreground=self.color("ENTRY_FG_COLOR"),
+            insertcolor=self.color("ENTRY_INSERT_COLOR"),
+            bordercolor=self.color("BORDER_COLOR"),
+            borderwidth=1,
+            relief="groove",
+            padding=5,
+            font=base_font
+        )
+        s.map("TEntry", fieldbackground=[("focus", self.color("TENOS_DARK_BLUE_BG"))], bordercolor=[("focus", self.color("TENOS_LIGHT_BLUE_ACCENT2"))])
+
+        s.configure(
+            "TCombobox",
+            fieldbackground=self.color("ENTRY_BG_COLOR"),
+            foreground=self.color("ENTRY_FG_COLOR"),
+            selectbackground=self.color("SELECT_BG_COLOR"),
+            selectforeground=self.color("SELECT_FG_COLOR"),
+            insertcolor=self.color("ENTRY_INSERT_COLOR"),
+            arrowcolor=self.color("TEXT_COLOR_NORMAL"),
+            arrowsize=16,
+            borderwidth=1,
+            padding=4,
+            relief="groove",
+            font=base_font
+        )
+        s.map(
+            "TCombobox",
+            fieldbackground=[("readonly", self.color("ENTRY_BG_COLOR")), ("focus", self.color("TENOS_DARK_BLUE_BG"))],
+            bordercolor=[("focus", self.color("TENOS_LIGHT_BLUE_ACCENT2"))],
+            arrowcolor=[("disabled", self.color("TEXT_COLOR_DISABLED")), ("hover", self.color("TENOS_LIGHT_BLUE_ACCENT2"))]
+        )
+
+        s.configure(
+            "TSpinbox",
+            fieldbackground=self.color("ENTRY_BG_COLOR"),
+            foreground=self.color("ENTRY_FG_COLOR"),
+            insertcolor=self.color("ENTRY_INSERT_COLOR"),
+            arrowsize=12,
+            borderwidth=1,
+            relief="groove",
+            padding=4,
+            font=base_font
+        )
+        s.map("TSpinbox", fieldbackground=[("focus", self.color("TENOS_DARK_BLUE_BG"))], bordercolor=[("focus", self.color("TENOS_LIGHT_BLUE_ACCENT2"))])
+
+        s.configure(
+            "TCheckbutton",
+            background=self.color("FRAME_BG_COLOR"),
+            foreground=self.color("TEXT_COLOR_NORMAL"),
+            padding=(6, 4)
+        )
+
+        s.configure(
+            "TScrollbar",
+            troughcolor=self.color("SCROLLBAR_TROUGH_COLOR"),
+            background=self.color("SCROLLBAR_SLIDER_COLOR"),
+            borderwidth=0,
+            relief="flat",
+            arrowsize=14
+        )
+        s.map("TScrollbar", background=[("active", self.color("TENOS_LIGHT_BLUE_ACCENT2"))])
+        s.configure("Tenos.Vertical.TScrollbar", background=self.color("SCROLLBAR_SLIDER_COLOR"))
+
+        s.configure("SectionHeader.TFrame", background=self.color("FRAME_BG_COLOR"))
+        s.configure("SectionHeader.TLabel", background=self.color("FRAME_BG_COLOR"), foreground=self.color("TEXT_COLOR_NORMAL"), font=header_font)
+        s.configure("SectionBody.TFrame", background=self.color("FRAME_BG_COLOR"), padding=(6, 4, 6, 12))
+        s.configure("Help.TLabel", background=self.color("FRAME_BG_COLOR"), foreground=self.color("ACCENT_FG"), font=('Segoe UI Semibold', 10))
+        s.configure("Tenos.Horizontal.TProgressbar", troughcolor=self.color("SCROLLBAR_TROUGH_COLOR"), background=self.color("TENOS_LIGHT_BLUE_ACCENT2"))
+
+        self.master.option_add("*Font", base_font)
+        self.master.option_add("*TCombobox*Listbox*Background", self.color("LISTBOX_BG"))
+        self.master.option_add("*TCombobox*Listbox*Foreground", self.color("LISTBOX_FG"))
+        self.master.option_add("*TCombobox*Listbox*selectBackground", self.color("LISTBOX_SELECT_BG"))
+        self.master.option_add("*TCombobox*Listbox*selectForeground", self.color("LISTBOX_SELECT_FG"))
+        self.master.option_add("*TCombobox*Listbox.font", ('Segoe UI', 10))
 
     def _create_main_config_tab_structure(self):
         self.main_config_tab_frame = ttk.Frame(self.notebook, padding=0, style="Tenos.TFrame")
         self.notebook.add(self.main_config_tab_frame, text=' Main Config ')
-        
-        self.main_config_notebook = ttk.Notebook(self.main_config_tab_frame, style="Tenos.TNotebook")
-        self.main_config_notebook.pack(expand=True, fill="both", padx=5, pady=5)
-        
-        self.paths_tab_frame = ttk.Frame(self.main_config_notebook, padding="10", style="Tenos.TFrame")
-        self.endpoints_tab_frame = ttk.Frame(self.main_config_notebook, padding="10", style="Tenos.TFrame")
-        self.api_keys_tab_frame = ttk.Frame(self.main_config_notebook, padding="10", style="Tenos.TFrame")
-        self.app_settings_tab_frame = ttk.Frame(self.main_config_notebook, padding="10", style="Tenos.TFrame")
-        
-        self.main_config_notebook.add(self.paths_tab_frame, text=" File Paths ")
-        self.main_config_notebook.add(self.endpoints_tab_frame, text=" Endpoint URLs ")
-        self.main_config_notebook.add(self.api_keys_tab_frame, text=" API Keys ")
-        self.main_config_notebook.add(self.app_settings_tab_frame, text=" App Settings ")
-        
-        ttk.Button(self.main_config_tab_frame, text="Save Main Config", command=self.config_manager.save_main_config_data).pack(side="bottom", pady=10)
+
+        sections = [
+            ("getting_started", "Getting Started"),
+            ("paths", "File Paths"),
+            ("endpoints", "Endpoint URLs"),
+            ("api_keys", "API Keys"),
+            ("app_settings", "App Settings"),
+        ]
+
+        self.main_config_nav = SideNavigationView(self.main_config_tab_frame, sections)
+        self.main_config_nav.pack(expand=True, fill="both", padx=5, pady=5)
+
+        self.getting_started_frame = self.main_config_nav.get_section_frame("getting_started")
+        self.paths_tab_frame = self.main_config_nav.get_section_frame("paths")
+        self.endpoints_tab_frame = self.main_config_nav.get_section_frame("endpoints")
+        self.api_keys_tab_frame = self.main_config_nav.get_section_frame("api_keys")
+        self.app_settings_tab_frame = self.main_config_nav.get_section_frame("app_settings")
+
+        self.main_config_action_bar = ttk.Frame(self.main_config_tab_frame, style="Tenos.TFrame")
+        self.main_config_action_bar.pack(fill=tk.X, padx=5, pady=(0, 10))
+        ttk.Button(self.main_config_action_bar, text="Save Main Config", command=self.config_manager.save_main_config_data).pack(side=tk.LEFT)
+        self.main_config_status_var = tk.StringVar(value="")
+        status_label = ttk.Label(self.main_config_action_bar, textvariable=self.main_config_status_var, style="Tenos.TLabel")
+        status_label.pack(side=tk.RIGHT)
+
+        self.register_theme_widget(
+            self.main_config_nav.listbox,
+            {
+                "bg": "LISTBOX_BG",
+                "fg": "LISTBOX_FG",
+                "selectbackground": "LISTBOX_SELECT_BG",
+                "selectforeground": "LISTBOX_SELECT_FG",
+                "highlightbackground": "BORDER_COLOR",
+                "highlightcolor": "BORDER_COLOR"
+            }
+        )
         
     def populate_main_config_sub_tabs(self):
         self.config_vars.clear()
-        
-        for parent_frame in [self.paths_tab_frame, self.endpoints_tab_frame, self.api_keys_tab_frame, self.app_settings_tab_frame]:
-            for widget in parent_frame.winfo_children():
+        self.config_input_widgets.clear()
+
+        frames = {
+            "paths": self.paths_tab_frame,
+            "endpoints": self.endpoints_tab_frame,
+            "api_keys": self.api_keys_tab_frame,
+            "app_settings": self.app_settings_tab_frame,
+        }
+
+        self._populate_getting_started_panel(self.getting_started_frame)
+
+        for frame in frames.values():
+            for widget in frame.winfo_children():
                 widget.destroy()
+
+        def build_section(parent, title, initially_open=True):
+            section = CollapsibleSection(parent, title, self.color, initially_open=initially_open)
+            section.pack(fill=tk.X, padx=6, pady=(4, 2))
+            return section.body()
 
         def create_config_row(parent_frame, section_name, item_key_name, is_path=False, is_port=False):
             row_frame = ttk.Frame(parent_frame, style="Tenos.TFrame")
-            row_frame.pack(fill=tk.X, pady=2)
-            ttk.Label(row_frame, text=f"{item_key_name.replace('_', ' ').title()}:", style="Tenos.TLabel", width=25).pack(side=tk.LEFT, padx=(5,10))
+            row_frame.pack(fill=tk.X, pady=3)
+            row_frame.columnconfigure(1, weight=1)
+
+            label_text = item_key_name.replace('_', ' ').title()
+            ttk.Label(row_frame, text=f"{label_text}:", style="Tenos.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 10))
+
             current_item_val = self.config_manager.config.get(section_name, {}).get(item_key_name, "")
+            var_key = f"{section_name}.{item_key_name}"
             tk_var = tk.StringVar(value=str(current_item_val) if current_item_val is not None else "")
-            self.config_vars[f"{section_name}.{item_key_name}"] = tk_var
+            self.config_vars[var_key] = tk_var
+
             upper_key_name = item_key_name.upper()
             show_char_val = "*" if ("KEY" in upper_key_name or "TOKEN" in upper_key_name) else ""
-            entry_widget_item = ttk.Entry(row_frame, textvariable=tk_var, width=(10 if is_port else 60), show=show_char_val, style="Tenos.TEntry")
-            entry_widget_item.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+            entry_widget = ttk.Entry(row_frame, textvariable=tk_var, width=(12 if is_port else 50), show=show_char_val, style="Tenos.TEntry")
+            entry_widget.grid(row=0, column=1, sticky="ew")
+            entry_widget.bind("<FocusIn>", lambda _e, key=var_key: self._remember_focus("config", key))
+            self.config_input_widgets[var_key] = entry_widget
+
+            if is_port:
+                entry_widget.configure(validate='key', validatecommand=(self._digits_validator, '%P'))
+
+            next_column = 2
             if is_path:
-                browse_btn = ttk.Button(row_frame, text="Browse...", command=lambda s=section_name, k=item_key_name: self._browse_folder_for_main_config(s, k))
-                browse_btn.pack(side=tk.LEFT, padx=5)
+                browse_btn = ttk.Button(row_frame, text="Browse…", command=lambda s=section_name, k=item_key_name: self._browse_folder_for_main_config(s, k))
+                browse_btn.grid(row=0, column=next_column, padx=(8, 0))
+                next_column += 1
 
-        for section in ["OUTPUTS", "MODELS", "CLIP", "LORAS", "NODES"]:
-            ttk.Label(self.paths_tab_frame, text=section.replace("_", " ").title(), style=BOLD_TLABEL_STYLE).pack(fill=tk.X, pady=(10,5))
-            for key in self.config_manager.config_template_definition.get(section, {}):
-                create_config_row(self.paths_tab_frame, section, key, is_path=True)
-                
-        for section in ["COMFYUI_API", "BOT_INTERNAL_API"]:
-            ttk.Label(self.endpoints_tab_frame, text=section.replace("_", " ").title(), style=BOLD_TLABEL_STYLE).pack(fill=tk.X, pady=(10,5))
-            for key in self.config_manager.config_template_definition.get(section, {}):
-                create_config_row(self.endpoints_tab_frame, section, key, is_port=(key=="PORT"))
+            help_text = self.config_help_text.get(f"{section_name}.{item_key_name}") or f"{label_text} for {section_name.replace('_', ' ').title()}"
+            help_label = ttk.Label(row_frame, text="?", style="Help.TLabel")
+            help_label.grid(row=0, column=next_column, padx=(8, 0))
+            self.attach_tooltip(help_label, help_text)
 
-        for section in ["BOT_API", "LLM_ENHANCER"]:
-            ttk.Label(self.api_keys_tab_frame, text=section.replace("_", " ").title(), style=BOLD_TLABEL_STYLE).pack(fill=tk.X, pady=(10,5))
-            for key in self.config_manager.config_template_definition.get(section, {}):
-                create_config_row(self.api_keys_tab_frame, section, key)
+        outputs_body = build_section(self.paths_tab_frame, "Output Locations")
+        for key in self.config_manager.config_template_definition.get("OUTPUTS", {}):
+            create_config_row(outputs_body, "OUTPUTS", key, is_path=True)
 
+        models_body = build_section(self.paths_tab_frame, "Model Assets")
+        for key in self.config_manager.config_template_definition.get("MODELS", {}):
+            create_config_row(models_body, "MODELS", key, is_path=True)
+
+        clip_body = build_section(self.paths_tab_frame, "CLIP Resources", initially_open=False)
+        for key in self.config_manager.config_template_definition.get("CLIP", {}):
+            create_config_row(clip_body, "CLIP", key, is_path=True)
+
+        lora_body = build_section(self.paths_tab_frame, "LoRA Libraries", initially_open=False)
+        for key in self.config_manager.config_template_definition.get("LORAS", {}):
+            create_config_row(lora_body, "LORAS", key, is_path=True)
+
+        nodes_body = build_section(self.paths_tab_frame, "Custom Nodes", initially_open=False)
+        for key in self.config_manager.config_template_definition.get("NODES", {}):
+            create_config_row(nodes_body, "NODES", key, is_path=True)
+
+        comfy_section = build_section(self.endpoints_tab_frame, "ComfyUI API")
+        for key in self.config_manager.config_template_definition.get("COMFYUI_API", {}):
+            create_config_row(comfy_section, "COMFYUI_API", key, is_port=(key == "PORT"))
+
+        internal_api_section = build_section(self.endpoints_tab_frame, "Bot Internal API", initially_open=False)
+        for key in self.config_manager.config_template_definition.get("BOT_INTERNAL_API", {}):
+            create_config_row(internal_api_section, "BOT_INTERNAL_API", key, is_port=(key == "PORT"))
+
+        bot_api_section = build_section(self.api_keys_tab_frame, "Public Bot API")
+        for key in self.config_manager.config_template_definition.get("BOT_API", {}):
+            create_config_row(bot_api_section, "BOT_API", key)
+
+        llm_section = build_section(self.api_keys_tab_frame, "LLM Enhancer Keys", initially_open=False)
+        for key in self.config_manager.config_template_definition.get("LLM_ENHANCER", {}):
+            create_config_row(llm_section, "LLM_ENHANCER", key)
+
+        admin_section = build_section(self.api_keys_tab_frame, "Admin Defaults", initially_open=False)
+        for key in self.config_manager.config_template_definition.get("ADMIN", {}):
+            create_config_row(admin_section, "ADMIN", key)
+
+        app_settings_body = build_section(self.app_settings_tab_frame, "Application Preferences")
         app_settings = self.config_manager.config.get("APP_SETTINGS", {})
         auto_update_var = tk.BooleanVar(value=app_settings.get("AUTO_UPDATE_ON_STARTUP", False))
         self.config_vars["APP_SETTINGS.AUTO_UPDATE_ON_STARTUP"] = auto_update_var
-        auto_update_check = ttk.Checkbutton(self.app_settings_tab_frame, 
-                                           text="Automatically check for updates on startup", 
+
+        app_settings_row = ttk.Frame(app_settings_body, style="Tenos.TFrame")
+        app_settings_row.pack(fill=tk.X, pady=4)
+        auto_update_check = ttk.Checkbutton(app_settings_row,
+                                           text="Automatically check for updates on startup",
                                            variable=auto_update_var,
                                            style="Tenos.TCheckbutton")
-        auto_update_check.pack(anchor='w', padx=5, pady=5)
-        # Add import/export buttons for config and settings in the App Settings tab
-        ttk.Button(self.app_settings_tab_frame, text="Import Config & Settings", command=self.import_config_and_settings).pack(anchor='w', padx=5, pady=5)
-        ttk.Button(self.app_settings_tab_frame, text="Export Config & Settings", command=self.export_config_and_settings).pack(anchor='w', padx=5, pady=5)
+        auto_update_check.pack(side=tk.LEFT)
+        self.attach_tooltip(auto_update_check, self.config_help_text.get("APP_SETTINGS.AUTO_UPDATE_ON_STARTUP"))
 
+        buttons_row = ttk.Frame(app_settings_body, style="Tenos.TFrame")
+        buttons_row.pack(fill=tk.X, pady=(8, 0))
+        ttk.Button(buttons_row, text="Import Config & Settings", command=self.import_config_and_settings).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(buttons_row, text="Export Config & Settings", command=self.export_config_and_settings).pack(side=tk.LEFT)
+
+        if self.last_focused_config_key and self.last_focused_config_key in self.config_input_widgets:
+            try:
+                self.config_input_widgets[self.last_focused_config_key].focus_set()
+            except tk.TclError:
+                pass
+
+    def _populate_getting_started_panel(self, frame):
+        for child in frame.winfo_children():
+            child.destroy()
+
+        intro = ttk.Label(frame, text="Welcome to the Tenos.ai Configurator", style=BOLD_TLABEL_STYLE)
+        intro.pack(anchor="w", padx=6, pady=(6, 4))
+
+        summary = ttk.Label(
+            frame,
+            text=("Follow the checklist below on first launch. You can revisit this panel any time "
+                  "to confirm the basics are configured."),
+            style="Tenos.TLabel",
+            wraplength=520,
+            justify=tk.LEFT
+        )
+        summary.pack(anchor="w", padx=6, pady=(0, 8))
+
+        steps = [
+            "Map your output, model, and node folders in the File Paths section.",
+            "Confirm ComfyUI and Bot Internal API endpoints respond to requests.",
+            "Paste any required API keys for LLM prompt enhancement or public bot access.",
+            "Adjust update preferences, then Save Main Config before closing."
+        ]
+
+        for step in steps:
+            ttk.Label(frame, text=f"• {step}", style="Tenos.TLabel", wraplength=520, justify=tk.LEFT).pack(anchor="w", padx=12, pady=2)
+
+        button_bar = ttk.Frame(frame, style="Tenos.TFrame")
+        button_bar.pack(anchor="w", padx=6, pady=(12, 4))
+
+        ttk.Button(button_bar, text="Open Setup Guide", command=lambda: webbrowser.open("https://docs.tenos.ai/configurator"))\
+            .pack(side=tk.LEFT)
+
+    def _open_search_dialog(self, title, options, tk_var):
+        if not options:
+            self.show_status_message("No options available for search.", level="warning")
+            return
+        dialog = SearchableListDialog(self.master, f"Select {title}", options, self.color)
+        if dialog.result:
+            tk_var.set(dialog.result)
     def _browse_folder_for_main_config(self, section_name, key_name):
         var_lookup_key = f"{section_name}.{key_name}"
         initial_dir_val = self.config_vars[var_lookup_key].get() if var_lookup_key in self.config_vars else None
@@ -335,40 +1371,49 @@ class ConfigEditor:
     def _create_bot_settings_tab_structure(self):
         self.bot_settings_tab_frame = ttk.Frame(self.notebook, padding="5", style="Tenos.TFrame")
         self.notebook.add(self.bot_settings_tab_frame, text=' Bot Settings ')
-        
-        self.bot_settings_notebook = ttk.Notebook(self.bot_settings_tab_frame, style="Tenos.TNotebook")
-        self.bot_settings_notebook.pack(expand=True, fill="both", padx=0, pady=5)
 
-        self.bot_settings_general_tab = ttk.Frame(self.bot_settings_notebook, padding="5", style="Tenos.TFrame")
-        self.bot_settings_flux_tab = ttk.Frame(self.bot_settings_notebook, padding="5", style="Tenos.TFrame")
-        self.bot_settings_sdxl_tab = ttk.Frame(self.bot_settings_notebook, padding="5", style="Tenos.TFrame")
-        self.bot_settings_kontext_tab = ttk.Frame(self.bot_settings_notebook, padding="5", style="Tenos.TFrame")
-        self.bot_settings_llm_tab = ttk.Frame(self.bot_settings_notebook, padding="5", style="Tenos.TFrame")
-        
-        self.bot_settings_notebook.add(self.bot_settings_general_tab, text=" General ")
-        self.bot_settings_notebook.add(self.bot_settings_flux_tab, text=" Flux ")
-        self.bot_settings_notebook.add(self.bot_settings_sdxl_tab, text=" SDXL ")
-        self.bot_settings_notebook.add(self.bot_settings_kontext_tab, text=" Kontext ")
-        self.bot_settings_notebook.add(self.bot_settings_llm_tab, text=" LLM ")
+        sections = [
+            ("general", "General"),
+            ("flux", "Flux"),
+            ("sdxl", "SDXL"),
+            ("kontext", "Kontext"),
+            ("llm", "LLM"),
+        ]
 
-        # Create the scrollable content frames for each sub-tab once
-        self.general_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_general_tab)
-        self.flux_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_flux_tab)
-        self.sdxl_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_sdxl_tab)
-        self.kontext_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_kontext_tab)
-        self.llm_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_llm_tab)
+        self.bot_settings_nav = SideNavigationView(self.bot_settings_tab_frame, sections)
+        self.bot_settings_nav.pack(expand=True, fill="both", padx=5, pady=5)
+
+        self.general_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_nav.get_section_frame("general"))
+        self.flux_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_nav.get_section_frame("flux"))
+        self.sdxl_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_nav.get_section_frame("sdxl"))
+        self.kontext_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_nav.get_section_frame("kontext"))
+        self.llm_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_nav.get_section_frame("llm"))
 
         buttons_frame = ttk.Frame(self.bot_settings_tab_frame, style="Tenos.TFrame")
-        buttons_frame.pack(side="bottom", fill="x", pady=(10,0), padx=5)
-        ttk.Button(buttons_frame, text="Reset to Defaults", command=self.reset_bot_settings_to_defaults).pack(side="left", padx=(0,5))
-        ttk.Button(buttons_frame, text="Save Bot Settings", command=self.config_manager.save_bot_settings_data).pack(side="left")
+        buttons_frame.pack(fill=tk.X, padx=5, pady=(0, 10))
+        ttk.Button(buttons_frame, text="Reset to Defaults", command=self.reset_bot_settings_to_defaults).pack(side=tk.LEFT)
+        ttk.Button(buttons_frame, text="Save Bot Settings", command=self.config_manager.save_bot_settings_data).pack(side=tk.LEFT, padx=(8, 0))
+        self.bot_settings_status_var = tk.StringVar(value="")
+        ttk.Label(buttons_frame, textvariable=self.bot_settings_status_var, style="Tenos.TLabel").pack(side=tk.RIGHT)
 
+        self.register_theme_widget(
+            self.bot_settings_nav.listbox,
+            {
+                "bg": "LISTBOX_BG",
+                "fg": "LISTBOX_FG",
+                "selectbackground": "LISTBOX_SELECT_BG",
+                "selectforeground": "LISTBOX_SELECT_FG",
+                "highlightbackground": "BORDER_COLOR",
+                "highlightcolor": "BORDER_COLOR"
+            }
+        )
     def _create_scrollable_sub_tab_frame(self, parent_tab_frame):
         for widget_child in parent_tab_frame.winfo_children():
             widget_child.destroy()
         container_frame = ttk.Frame(parent_tab_frame, style="Tenos.TFrame")
         container_frame.pack(fill="both", expand=True)
-        canvas_widget = tk.Canvas(container_frame, bg=CANVAS_BG_COLOR, highlightthickness=0)
+        canvas_widget = tk.Canvas(container_frame, bg=self.color("CANVAS_BG_COLOR"), highlightthickness=0)
+        self.register_theme_widget(canvas_widget, {"bg": "CANVAS_BG_COLOR"})
         scrollbar_widget = ttk.Scrollbar(container_frame, orient="vertical", command=canvas_widget.yview, style="Tenos.Vertical.TScrollbar")
         canvas_widget.associated_scrollbar = scrollbar_widget
         scrollable_content_frame = ttk.Frame(canvas_widget, style="Tenos.TFrame")
@@ -378,140 +1423,273 @@ class ConfigEditor:
         canvas_widget.create_window((0, 0), window=scrollable_content_frame, anchor="nw")
         canvas_widget.configure(yscrollcommand=scrollbar_widget.set)
         canvas_widget.pack(side="left", fill="both", expand=True)
+        scrollbar_widget.pack(side="right", fill="y")
         return scrollable_content_frame
-        
     def populate_bot_settings_tab(self):
         self.settings_vars.clear()
+        self._spinbox_validator_cache.clear()
         self.bot_settings_widgets.clear()
         current_settings_template_dict = self.config_manager.settings_template_factory()
 
-        # Clear existing widgets from all content frames before repopulating
-        for frame in [self.general_settings_content_frame, self.flux_settings_content_frame, self.sdxl_settings_content_frame, self.kontext_settings_content_frame, self.llm_settings_content_frame]:
+        for frame in [
+            self.general_settings_content_frame,
+            self.flux_settings_content_frame,
+            self.sdxl_settings_content_frame,
+            self.kontext_settings_content_frame,
+            self.llm_settings_content_frame,
+        ]:
             for widget in frame.winfo_children():
                 widget.destroy()
 
-        def create_setting_row_ui(parent_frame, label_txt, widget_class, options_data=None, var_key_name=None, is_llm_model_selector_field=False, is_text_area_field=False, **widget_kwargs):
+        def create_setting_row_ui(parent_frame, label_txt, widget_class, options_data=None, var_key_name=None,
+                                   is_llm_model_selector_field=False, is_text_area_field=False,
+                                   quick_actions=None, help_key=None, **widget_kwargs):
             container = ttk.Frame(parent_frame, style="Tenos.TFrame")
-            container.pack(fill='x', padx=5, pady=2)
-            label_ui = ttk.Label(container, text=label_txt + ":", style="Tenos.TLabel", width=25)
-            label_ui.pack(side='left', anchor='w', padx=(0, 10))
-            if is_llm_model_selector_field: self.bot_settings_widgets['llm_model_label'] = label_ui
-            
+            container.pack(fill='x', padx=6, pady=3)
+            container.columnconfigure(1, weight=1)
+
+            label_ui = ttk.Label(container, text=label_txt + ":", style="Tenos.TLabel")
+            label_ui.grid(row=0, column=0, sticky='w', padx=(0, 10))
+            help_text = self.settings_help_text.get(help_key or var_key_name, f"{label_txt} setting.")
+            help_label = ttk.Label(container, text="?", style="Help.TLabel")
+
             tk_var_instance = None
-            if var_key_name in ['default_guidance', 'upscale_factor', 'default_guidance_sdxl', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']: tk_var_instance = tk.DoubleVar()
-            elif var_key_name in ['steps', 'sdxl_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size']: tk_var_instance = tk.IntVar()
-            elif var_key_name in ['remix_mode', 'llm_enhancer_enabled']: tk_var_instance = tk.BooleanVar()
-            else: tk_var_instance = tk.StringVar()
-            
+            if var_key_name in ['default_guidance', 'upscale_factor', 'default_guidance_sdxl', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']:
+                tk_var_instance = tk.DoubleVar()
+            elif var_key_name in ['steps', 'sdxl_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size']:
+                tk_var_instance = tk.IntVar()
+            elif var_key_name in ['remix_mode', 'llm_enhancer_enabled']:
+                tk_var_instance = tk.BooleanVar()
+            else:
+                tk_var_instance = tk.StringVar()
+
             current_setting_val = self.config_manager.settings.get(var_key_name)
             if current_setting_val is not None:
                 try:
-                    if var_key_name == 'llm_provider': tk_var_instance.set(self.provider_display_map.get(current_setting_val, current_setting_val))
-                    elif var_key_name == 'display_prompt_preference': tk_var_instance.set(self.display_prompt_map.get(current_setting_val, current_setting_val))
-                    else: tk_var_instance.set(current_setting_val)
-                except (ValueError, tk.TclError): tk_var_instance.set(current_settings_template_dict.get(var_key_name, ''))
-            
+                    if var_key_name == 'llm_provider':
+                        tk_var_instance.set(self.provider_display_map.get(current_setting_val, current_setting_val))
+                    elif var_key_name == 'display_prompt_preference':
+                        tk_var_instance.set(self.display_prompt_map.get(current_setting_val, current_setting_val))
+                    else:
+                        tk_var_instance.set(current_setting_val)
+                except (ValueError, tk.TclError):
+                    tk_var_instance.set(current_settings_template_dict.get(var_key_name, ''))
+
             ui_element = None
+            actions = list(quick_actions or [])
+
             if is_text_area_field:
-                ui_element = scrolledtext.ScrolledText(container, wrap=tk.WORD, height=3, width=40, font=("Arial",9),bg=ENTRY_BG_COLOR,fg=TEXT_COLOR_NORMAL,insertbackground=ENTRY_INSERT_COLOR,relief="sunken",borderwidth=1)
+                ui_element = scrolledtext.ScrolledText(
+                    container,
+                    wrap=tk.WORD,
+                    height=4,
+                    width=48,
+                    font=("Segoe UI", 10),
+                    relief="groove",
+                    borderwidth=1
+                )
                 ui_element.insert(tk.END, tk_var_instance.get() if tk_var_instance.get() else "")
+                self.register_theme_widget(ui_element, {
+                    "bg": "ENTRY_BG_COLOR",
+                    "fg": "ENTRY_FG_COLOR",
+                    "insertbackground": "ENTRY_INSERT_COLOR"
+                })
             elif widget_class == ttk.Combobox:
                 safe_options_list = options_data if isinstance(options_data, list) else []
-                curr_str_val = str(current_setting_val) if current_setting_val is not None else ''
-                if curr_str_val and curr_str_val not in safe_options_list and var_key_name != 'llm_model':
-                    safe_options_list = [curr_str_val] + [opt for opt in safe_options_list if opt != curr_str_val]
-                
-                ui_element = ttk.Combobox(container, textvariable=tk_var_instance, values=safe_options_list, state="readonly", width=40, style="Tenos.TCombobox")
-                
+                display_options = safe_options_list
                 if var_key_name == 'llm_provider':
-                    disp_opts = [self.provider_display_map.get(k, k) for k in safe_options_list]
-                    ui_element.config(values=disp_opts)
-                    tk_var_instance.trace_add("write", lambda *a, vk=var_key_name: self.on_llm_provider_change_for_editor(vk))
+                    display_options = [self.provider_display_map.get(k, k) for k in safe_options_list]
                 elif var_key_name == 'display_prompt_preference':
-                    disp_opts = [self.display_prompt_map.get(k, k) for k in sorted(self.display_prompt_map.keys())]
-                    ui_element.config(values=disp_opts)
-                
-                if curr_str_val and curr_str_val not in options_data and var_key_name != 'llm_model': tk_var_instance.set(curr_str_val)
-                elif not curr_str_val and safe_options_list: tk_var_instance.set(safe_options_list[0])
-            elif widget_class == ttk.Spinbox: ui_element = ttk.Spinbox(container, textvariable=tk_var_instance, wrap=True, width=12, style="Tenos.TSpinbox", **widget_kwargs)
-            elif widget_class == ttk.Checkbutton: ui_element = ttk.Checkbutton(container, variable=tk_var_instance, style="Tenos.TCheckbutton")
-            else: ui_element = ttk.Entry(container, textvariable=tk_var_instance, width=42, style="Tenos.TEntry")
-            
-            ui_element.pack(side='left', fill='x', expand=True)
+                    display_options = [self.display_prompt_map.get(k, k) for k in sorted(self.display_prompt_map.keys())]
+
+                current_display_value = tk_var_instance.get()
+                if current_display_value and current_display_value not in display_options:
+                    display_options = [current_display_value] + [opt for opt in display_options if opt != current_display_value]
+
+                ui_element = ttk.Combobox(
+                    container,
+                    textvariable=tk_var_instance,
+                    values=display_options,
+                    state="readonly",
+                    width=40,
+                    style="Tenos.TCombobox"
+                )
+
+                if var_key_name == 'llm_provider':
+                    tk_var_instance.trace_add("write", lambda *args, vk=var_key_name: self.on_llm_provider_change_for_editor(vk))
+                if display_options and not tk_var_instance.get():
+                    tk_var_instance.set(display_options[0])
+                if display_options and len(display_options) > 15:
+                    actions.append(("Search", lambda opts=display_options, var=tk_var_instance: self._open_search_dialog(label_txt, opts, var)))
+            elif widget_class == ttk.Spinbox:
+                ui_element = ttk.Spinbox(container, textvariable=tk_var_instance, wrap=True, width=12, style="Tenos.TSpinbox", **widget_kwargs)
+                min_val = widget_kwargs.get('from_', 0)
+                max_val = widget_kwargs.get('to', 999999)
+                validator_cmd = self._get_spinbox_validator_command(
+                    var_key_name,
+                    min_val,
+                    max_val,
+                    isinstance(tk_var_instance, tk.DoubleVar)
+                )
+                ui_element.configure(validate='focusout', validatecommand=(validator_cmd, '%P'))
+            elif widget_class == ttk.Checkbutton:
+                ui_element = ttk.Checkbutton(container, variable=tk_var_instance, style="Tenos.TCheckbutton")
+            else:
+                ui_element = ttk.Entry(container, textvariable=tk_var_instance, width=42, style="Tenos.TEntry")
+
+            ui_element.grid(row=0, column=1, sticky='ew')
+            if hasattr(ui_element, 'bind'):
+                ui_element.bind("<FocusIn>", lambda _e, key=var_key_name: self._remember_focus("settings", key))
+
+            actions_column = 2
+            if actions:
+                action_frame = ttk.Frame(container, style="Tenos.TFrame")
+                action_frame.grid(row=0, column=actions_column, padx=(0, 0))
+                for text_action, callback in actions:
+                    ttk.Button(action_frame, text=text_action, command=callback).pack(side=tk.LEFT, padx=2)
+                actions_column += 1
+
+            help_label.grid(row=0, column=actions_column, padx=(8, 0))
+            self.attach_tooltip(help_label, help_text)
+
+            if is_llm_model_selector_field:
+                self.bot_settings_widgets['llm_model_label'] = label_ui
+                self.bot_settings_widgets['llm_model_label_base'] = label_txt
+
             self.settings_vars[var_key_name] = tk_var_instance
             self.bot_settings_widgets[var_key_name] = ui_element
 
-        # --- General Tab ---
-        create_setting_row_ui(self.general_settings_content_frame, "Selected Model", ttk.Combobox, [f"Flux: {m}" for m in self.available_models] + [f"SDXL: {c}" for c in self.available_checkpoints], 'selected_model')
-        create_setting_row_ui(self.general_settings_content_frame, "Selected T5 Clip", ttk.Combobox, self.available_clips_t5, 'selected_t5_clip')
-        create_setting_row_ui(self.general_settings_content_frame, "Selected Clip-L", ttk.Combobox, self.available_clips_l, 'selected_clip_l')
-        create_setting_row_ui(self.general_settings_content_frame, "Selected Upscale Model", ttk.Combobox, self.available_upscale_models, 'selected_upscale_model')
-        create_setting_row_ui(self.general_settings_content_frame, "Selected VAE", ttk.Combobox, self.available_vaes, 'selected_vae')
-        ttk.Separator(self.general_settings_content_frame, orient='horizontal').pack(fill='x', pady=10)
-        create_setting_row_ui(self.general_settings_content_frame, "Default Variation Mode", ttk.Combobox, ['weak','strong'], 'default_variation_mode')
-        create_setting_row_ui(self.general_settings_content_frame, "Variation Remix Mode", ttk.Checkbutton, var_key_name='remix_mode')
-        create_setting_row_ui(self.general_settings_content_frame, "Default Batch Size (/gen)", ttk.Spinbox, var_key_name='default_batch_size', from_=1, to=4, increment=1)
-        create_setting_row_ui(self.general_settings_content_frame, "Default Batch Size (Vary)", ttk.Spinbox, var_key_name='variation_batch_size', from_=1, to=4, increment=1)
-        create_setting_row_ui(self.general_settings_content_frame, "Default Upscale Factor", ttk.Spinbox, var_key_name='upscale_factor', from_=1.5, to=4.0, increment=0.05, format="%.2f")
-        create_setting_row_ui(self.general_settings_content_frame, "Default MP Size", ttk.Spinbox, var_key_name='default_mp_size', from_=0.1, to=8.0, increment=0.05, format="%.2f")
+            return ui_element
 
-        # --- Flux Tab ---
+        # General Tab Sections
+        general_models_section = CollapsibleSection(self.general_settings_content_frame, "Model Selection", self.color)
+        general_models_section.pack(fill=tk.X, padx=4, pady=(0, 6))
+        create_setting_row_ui(
+            general_models_section.body(),
+            "Selected Model",
+            ttk.Combobox,
+            [f"Flux: {m}" for m in self.available_models] + [f"SDXL: {c}" for c in self.available_checkpoints],
+            'selected_model',
+            quick_actions=[("Docs", lambda url="https://docs.tenos.ai/models": webbrowser.open(url))]
+        )
+        create_setting_row_ui(general_models_section.body(), "Selected T5 Clip", ttk.Combobox, self.available_clips_t5, 'selected_t5_clip')
+        create_setting_row_ui(general_models_section.body(), "Selected Clip-L", ttk.Combobox, self.available_clips_l, 'selected_clip_l')
+        create_setting_row_ui(
+            general_models_section.body(),
+            "Selected Upscale Model",
+            ttk.Combobox,
+            self.available_upscale_models,
+            'selected_upscale_model',
+            quick_actions=[("Docs", lambda url="https://docs.tenos.ai/upscalers": webbrowser.open(url))]
+        )
+        create_setting_row_ui(
+            general_models_section.body(),
+            "Selected VAE",
+            ttk.Combobox,
+            self.available_vaes,
+            'selected_vae',
+            quick_actions=[("Docs", lambda url="https://docs.tenos.ai/vae": webbrowser.open(url))]
+        )
+
+        general_defaults_section = CollapsibleSection(self.general_settings_content_frame, "Generation Defaults", self.color)
+        general_defaults_section.pack(fill=tk.X, padx=4, pady=(0, 6))
+        create_setting_row_ui(general_defaults_section.body(), "Default Variation Mode", ttk.Combobox, ['weak', 'strong'], 'default_variation_mode')
+        create_setting_row_ui(general_defaults_section.body(), "Variation Remix Mode", ttk.Checkbutton, var_key_name='remix_mode')
+        create_setting_row_ui(general_defaults_section.body(), "Default Batch Size (/gen)", ttk.Spinbox, var_key_name='default_batch_size', from_=1, to=6, increment=1)
+        create_setting_row_ui(general_defaults_section.body(), "Default Batch Size (Vary)", ttk.Spinbox, var_key_name='variation_batch_size', from_=1, to=6, increment=1)
+        create_setting_row_ui(general_defaults_section.body(), "Default Upscale Factor", ttk.Spinbox, var_key_name='upscale_factor', from_=1.0, to=4.0, increment=0.05, format="%.2f")
+        create_setting_row_ui(general_defaults_section.body(), "Default MP Size", ttk.Spinbox, var_key_name='default_mp_size', from_=0.1, to=8.0, increment=0.05, format="%.2f")
+
+        # Flux Section
         flux_styles = sorted([name for name, data in self.styles_config.items() if data.get('model_type', 'all') in ['all', 'flux']])
-        create_setting_row_ui(self.flux_settings_content_frame, "Default Style", ttk.Combobox, flux_styles, 'default_style_flux')
-        create_setting_row_ui(self.flux_settings_content_frame, "Default Steps", ttk.Spinbox, var_key_name='steps', from_=4, to=128, increment=4)
-        create_setting_row_ui(self.flux_settings_content_frame, "Default Guidance", ttk.Spinbox, var_key_name='default_guidance', from_=0.0, to=20.0, increment=0.1, format="%.1f")
-        
-        # --- SDXL Tab ---
+        flux_section = CollapsibleSection(self.flux_settings_content_frame, "Flux Defaults", self.color)
+        flux_section.pack(fill=tk.X, padx=4, pady=(0, 6))
+        create_setting_row_ui(flux_section.body(), "Default Style", ttk.Combobox, flux_styles, 'default_style_flux')
+        create_setting_row_ui(flux_section.body(), "Default Steps", ttk.Spinbox, var_key_name='steps', from_=4, to=128, increment=4)
+        create_setting_row_ui(flux_section.body(), "Default Guidance", ttk.Spinbox, var_key_name='default_guidance', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+
+        # SDXL Section
         sdxl_styles = sorted([name for name, data in self.styles_config.items() if data.get('model_type', 'all') in ['all', 'sdxl']])
-        create_setting_row_ui(self.sdxl_settings_content_frame, "Default Style", ttk.Combobox, sdxl_styles, 'default_style_sdxl')
-        create_setting_row_ui(self.sdxl_settings_content_frame, "Default Steps", ttk.Spinbox, var_key_name='sdxl_steps', from_=4, to=128, increment=2)
-        create_setting_row_ui(self.sdxl_settings_content_frame, "Default Guidance", ttk.Spinbox, var_key_name='default_guidance_sdxl', from_=0.0, to=20.0, increment=0.1, format="%.1f")
-        create_setting_row_ui(self.sdxl_settings_content_frame, "Default Negative Prompt", scrolledtext.ScrolledText, var_key_name='default_sdxl_negative_prompt', is_text_area_field=True)
+        sdxl_section = CollapsibleSection(self.sdxl_settings_content_frame, "SDXL Defaults", self.color)
+        sdxl_section.pack(fill=tk.X, padx=4, pady=(0, 6))
+        create_setting_row_ui(sdxl_section.body(), "Default Style", ttk.Combobox, sdxl_styles, 'default_style_sdxl')
+        create_setting_row_ui(sdxl_section.body(), "Default Steps", ttk.Spinbox, var_key_name='sdxl_steps', from_=4, to=128, increment=2)
+        create_setting_row_ui(sdxl_section.body(), "Default Guidance", ttk.Spinbox, var_key_name='default_guidance_sdxl', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+        create_setting_row_ui(sdxl_section.body(), "Default Negative Prompt", scrolledtext.ScrolledText, var_key_name='default_sdxl_negative_prompt', is_text_area_field=True)
 
-        # --- Kontext Tab ---
-        create_setting_row_ui(self.kontext_settings_content_frame, "Selected Kontext Model", ttk.Combobox, self.available_models, 'selected_kontext_model')
-        create_setting_row_ui(self.kontext_settings_content_frame, "Default Steps", ttk.Spinbox, var_key_name='kontext_steps', from_=4, to=128, increment=4)
-        create_setting_row_ui(self.kontext_settings_content_frame, "Default Guidance", ttk.Spinbox, var_key_name='kontext_guidance', from_=0.0, to=20.0, increment=0.1, format="%.1f")
-        create_setting_row_ui(self.kontext_settings_content_frame, "Default MP Size", ttk.Spinbox, var_key_name='kontext_mp_size', from_=0.1, to=8.0, increment=0.05, format="%.2f")
+        # Kontext Section
+        kontext_section = CollapsibleSection(self.kontext_settings_content_frame, "Kontext Defaults", self.color)
+        kontext_section.pack(fill=tk.X, padx=4, pady=(0, 6))
+        create_setting_row_ui(kontext_section.body(), "Selected Kontext Model", ttk.Combobox, self.available_models, 'selected_kontext_model')
+        create_setting_row_ui(kontext_section.body(), "Default Steps", ttk.Spinbox, var_key_name='kontext_steps', from_=4, to=128, increment=4)
+        create_setting_row_ui(kontext_section.body(), "Default Guidance", ttk.Spinbox, var_key_name='kontext_guidance', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+        create_setting_row_ui(kontext_section.body(), "Default MP Size", ttk.Spinbox, var_key_name='kontext_mp_size', from_=0.1, to=8.0, increment=0.05, format="%.2f")
 
-        # --- LLM Tab ---
-        create_setting_row_ui(self.llm_settings_content_frame, "LLM Prompt Enhancer", ttk.Checkbutton, var_key_name='llm_enhancer_enabled')
-        llm_provider_keys = list(self.llm_models_config.get('providers',{}).keys())
-        create_setting_row_ui(self.llm_settings_content_frame, "LLM Provider", ttk.Combobox, llm_provider_keys, 'llm_provider')
+        # LLM Section
+        llm_section_container = CollapsibleSection(self.llm_settings_content_frame, "LLM Enhancer", self.color)
+        llm_section_container.pack(fill=tk.X, padx=4, pady=(0, 6))
+        llm_body = llm_section_container.body()
+        create_setting_row_ui(llm_body, "LLM Prompt Enhancer", ttk.Checkbutton, var_key_name='llm_enhancer_enabled')
+        llm_provider_keys = list(self.llm_models_config.get('providers', {}).keys())
+        create_setting_row_ui(llm_body, "LLM Provider", ttk.Combobox, llm_provider_keys, 'llm_provider')
         initial_llm_provider = self.config_manager.settings.get('llm_provider', llm_provider_keys[0] if llm_provider_keys else 'gemini')
         initial_llm_models_for_provider = self.get_ordered_llm_models_for_provider(initial_llm_provider)
         initial_llm_provider_display_name = self.provider_display_map.get(initial_llm_provider, initial_llm_provider.capitalize())
-        create_setting_row_ui(self.llm_settings_content_frame, f"LLM Model ({initial_llm_provider_display_name})", ttk.Combobox, initial_llm_models_for_provider, 'llm_model', is_llm_model_selector_field=True)
-        if 'llm_model' in self.settings_vars:
-            model_key_for_provider = f"llm_model_{initial_llm_provider}"
-            initial_model_val_for_provider = self.config_manager.settings.get(model_key_for_provider, "")
-            if initial_model_val_for_provider in initial_llm_models_for_provider: self.settings_vars['llm_model'].set(initial_model_val_for_provider)
-            elif initial_llm_models_for_provider: self.settings_vars['llm_model'].set(initial_llm_models_for_provider[0])
-            else: self.settings_vars['llm_model'].set("")
-        create_setting_row_ui(self.llm_settings_content_frame, "Prompt Display Preference", ttk.Combobox, list(self.display_prompt_map.keys()), 'display_prompt_preference')
-        
-        for frame in [self.general_settings_content_frame, self.flux_settings_content_frame, self.sdxl_settings_content_frame, self.kontext_settings_content_frame, self.llm_settings_content_frame]:
-            if frame.winfo_exists():
-                frame.event_generate("<Configure>")
+        create_setting_row_ui(
+            llm_body,
+            f"LLM Model ({initial_llm_provider_display_name})",
+            ttk.Combobox,
+            initial_llm_models_for_provider,
+            'llm_model',
+            is_llm_model_selector_field=True
+        )
+        create_setting_row_ui(llm_body, "Prompt Display Preference", ttk.Combobox, list(self.display_prompt_map.keys()), 'display_prompt_preference')
 
+        if self.last_focused_setting_key and self.last_focused_setting_key in self.bot_settings_widgets:
+            try:
+                widget = self.bot_settings_widgets[self.last_focused_setting_key]
+                widget.focus_set()
+            except tk.TclError:
+                pass
+
+        if 'llm_provider' in self.settings_vars:
+            self.on_llm_provider_change_for_editor('llm_provider')
     def on_llm_provider_change_for_editor(self, var_key_name_that_changed):
-        if var_key_name_that_changed != 'llm_provider': return
-        selected_provider_display_name = self.settings_vars['llm_provider'].get()
-        actual_provider_internal_key = next((k_internal for k_internal, v_display in self.provider_display_map.items() if v_display == selected_provider_display_name), None)
-        if not actual_provider_internal_key: actual_provider_internal_key = selected_provider_display_name.lower()
+        if var_key_name_that_changed != 'llm_provider':
+            return
+        provider_var = self.settings_vars.get('llm_provider')
+        if provider_var is None:
+            return
+        selected_provider_display_name = provider_var.get()
+        actual_provider_internal_key = next(
+            (k_internal for k_internal, v_display in self.provider_display_map.items() if v_display == selected_provider_display_name),
+            None
+        )
+        if not actual_provider_internal_key and selected_provider_display_name:
+            actual_provider_internal_key = selected_provider_display_name.lower()
         llm_model_combobox_widget = self.bot_settings_widgets.get('llm_model')
-        if not llm_model_combobox_widget: return
+        if not llm_model_combobox_widget:
+            return
         new_llm_model_options = self.get_ordered_llm_models_for_provider(actual_provider_internal_key)
         llm_model_combobox_widget['values'] = new_llm_model_options
-        model_setting_key_for_new_provider = f"llm_model_{actual_provider_internal_key}"
+        model_setting_key_for_new_provider = f"llm_model_{actual_provider_internal_key}" if actual_provider_internal_key else "llm_model"
         current_model_for_new_provider = self.config_manager.settings.get(model_setting_key_for_new_provider, "")
-        if current_model_for_new_provider in new_llm_model_options: self.settings_vars['llm_model'].set(current_model_for_new_provider)
-        elif new_llm_model_options: self.settings_vars['llm_model'].set(new_llm_model_options[0])
-        else: self.settings_vars['llm_model'].set("")
+        llm_model_var = self.settings_vars.get('llm_model')
+        if llm_model_var is not None:
+            if current_model_for_new_provider in new_llm_model_options:
+                llm_model_var.set(current_model_for_new_provider)
+            elif new_llm_model_options:
+                llm_model_var.set(new_llm_model_options[0])
+            else:
+                llm_model_var.set("")
         llm_model_label_widget = self.bot_settings_widgets.get('llm_model_label')
         if llm_model_label_widget:
-            new_provider_display = self.provider_display_map.get(actual_provider_internal_key, actual_provider_internal_key.capitalize())
-            llm_model_label_widget.config(text=f"LLM Model ({new_provider_display}):")
+            label_base = self.bot_settings_widgets.get('llm_model_label_base', 'LLM Model')
+            new_provider_display = self.provider_display_map.get(
+                actual_provider_internal_key,
+                (actual_provider_internal_key.capitalize() if actual_provider_internal_key else selected_provider_display_name or 'LLM')
+            )
+            llm_model_label_widget.config(text=f"{label_base} ({new_provider_display}):")
 
     def load_available_files(self):
         self.available_models = []; self.available_checkpoints = []; self.available_clips_t5 = []; self.available_clips_l = []; self.available_loras = ["None"]; self.available_upscale_models = ["None"]; self.available_vaes = ["None"]
@@ -594,11 +1772,12 @@ class ConfigEditor:
                         self.llm_models_config = load_llm_models_config_util()
                         self.config_manager.load_bot_settings_data(self.llm_models_config)
                         self.populate_bot_settings_tab()
-                    silent_showinfo(f"{task_name_done} Complete", message_details, parent=self.master)
+                    self.show_status_message(f"{task_name_done} complete: {message_details}", level="success")
                     if task_name_done == "Scanning Files":
                         self.load_available_files(); self.populate_bot_settings_tab()
                         if hasattr(self, 'favorites_tab_manager'): self.favorites_tab_manager.populate_all_favorites_sub_tabs()
-                else: silent_showerror(f"{task_name_done} Failed", message_details, parent=self.master)
+                else:
+                    self.show_status_message(f"{task_name_done} failed: {message_details}", level="error", duration=2200)
             elif worker_status_update.get("type") == "restart_required":
                 update_info = worker_status_update.get("update_info")
                 self._restart_application(update_info=update_info)
@@ -614,6 +1793,7 @@ class ConfigEditor:
                     self.log_queue.put(("info", "--- Detected external change in settings.json. Reloading automatically. ---\n"))
                     self.config_manager.load_bot_settings_data(self.llm_models_config)
                     self.populate_bot_settings_tab()
+                    self.show_status_message("Settings reloaded from disk.", level="info")
             if self.master.winfo_exists(): self.master.after(2000, self._check_settings_file_for_changes)
         except FileNotFoundError:
              if self.master.winfo_exists(): self.master.after(2000, self._check_settings_file_for_changes)
@@ -621,8 +1801,11 @@ class ConfigEditor:
             if self.master.winfo_exists(): self.master.after(5000, self._check_settings_file_for_changes)
 
     def run_worker_task_on_editor(self, task_function_to_run, task_display_name_str):
-        if self.worker_thread and self.worker_thread.is_alive(): silent_showwarning("Busy","Background task running.",parent=self.master); return
+        if self.worker_thread and self.worker_thread.is_alive():
+            self.show_status_message("Background task already running.", level="warning")
+            return
         self.log_queue.put(("info",f"--- Starting {task_display_name_str} ---\n"))
+        self.status_banner.show_progress(f"{task_display_name_str} in progress…")
         while not self.worker_queue.empty():
             try: self.worker_queue.get_nowait()
             except queue.Empty: break
@@ -889,7 +2072,7 @@ class ConfigEditor:
     def show_about_dialog(self):
         editor_title = self.master.title(); version_str = editor_title.split('v')[-1].strip() if 'v' in editor_title else "Unknown"
         about_message = (f"Tenos.ai Configuration Tool\n\nVersion: {version_str}\n\nConfigure paths, settings, styles, and favorites for the Tenos.ai Discord bot.\nEnsure ComfyUI paths in 'Main Config' are correct.\nRestart the bot via 'Bot Control' tab after making significant changes.")
-        silent_showinfo("About Tenos.ai Configurator", about_message, parent=self.master)
+        self.show_status_message(about_message, level="info", duration=2200)
 
     def save_all_configurations_from_menu(self):
         """Trigger save for all config-related entities."""
@@ -900,7 +2083,11 @@ class ConfigEditor:
         self.favorites_tab_manager.save_all_favorites_data()
         self.config_manager.save_bot_settings_data()
         self.admin_control_tab_manager._save_blocklist()
-        silent_showinfo("Save All Triggered", "All save operations triggered. Check console/messages for status.", parent=self.master)
+        if hasattr(self, 'main_config_status_var'):
+            self.main_config_status_var.set(f"Saved at {datetime.now().strftime('%H:%M:%S')}")
+        if hasattr(self, 'bot_settings_status_var'):
+            self.bot_settings_status_var.set(f"Saved at {datetime.now().strftime('%H:%M:%S')}")
+        self.show_status_message("All save operations triggered. Check logs for details.", level="success")
 
     def reset_bot_settings_to_defaults(self):
         """
@@ -910,17 +2097,15 @@ class ConfigEditor:
         if not silent_askyesno("Confirm Reset", "Are you sure you want to reset all bot settings to their default values?", parent=self.master):
             return
         try:
-            # Obtain a fresh copy of the default settings
             default_settings = self.config_manager.settings_template_factory().copy()
-            # Update the config manager's in-memory settings
             self.config_manager.settings = default_settings
-            # Refresh the UI to reflect the default values
             self.populate_bot_settings_tab()
-            # Persist the default settings to disk
             self.config_manager.save_bot_settings_data()
-            silent_showinfo("Reset Complete", "Bot settings have been reset to defaults.", parent=self.master)
+            if hasattr(self, 'bot_settings_status_var'):
+                self.bot_settings_status_var.set(f"Reset at {datetime.now().strftime('%H:%M:%S')}")
+            self.show_status_message("Bot settings reset to defaults.", level="success")
         except Exception as e_reset:
-            silent_showerror("Reset Error", f"Failed to reset settings to defaults:\n{e_reset}", parent=self.master)
+            self.show_status_message(f"Failed to reset settings: {e_reset}", level="error", duration=2200)
 
     def export_config_and_settings(self):
         """Export the main config and bot settings to a single JSON file."""
@@ -937,9 +2122,11 @@ class ConfigEditor:
             }
             with open(file_path, 'w', encoding='utf-8') as f_out:
                 json.dump(export_data, f_out, indent=2)
-            silent_showinfo("Export Complete", f"Exported configuration to {os.path.basename(file_path)}", parent=self.master)
+            if hasattr(self, 'main_config_status_var'):
+                self.main_config_status_var.set(f"Exported at {datetime.now().strftime('%H:%M:%S')}")
+            self.show_status_message(f"Exported configuration to {os.path.basename(file_path)}", level="success")
         except Exception as e_exp:
-            silent_showerror("Export Error", f"Failed to export configuration:\n{e_exp}", parent=self.master)
+            self.show_status_message(f"Failed to export configuration: {e_exp}", level="error", duration=2200)
 
     def import_config_and_settings(self):
         """Import main config and bot settings from a previously exported JSON file."""
@@ -950,7 +2137,7 @@ class ConfigEditor:
             with open(file_path, 'r', encoding='utf-8') as f_in:
                 imported_data = json.load(f_in)
             if not isinstance(imported_data, dict):
-                silent_showerror("Import Error", "Invalid file format. Expected a JSON object.", parent=self.master)
+                self.show_status_message("Invalid import file: expected a JSON object.", level="error", duration=2200)
                 return
             # Update config and settings
             if 'config' in imported_data and isinstance(imported_data['config'], dict):
@@ -968,9 +2155,11 @@ class ConfigEditor:
                 self.llm_prompts_config = imported_data['llm_prompts']
             # Refresh UI
             self.refresh_all_ui_tabs()
-            silent_showinfo("Import Complete", f"Imported configuration from {os.path.basename(file_path)}", parent=self.master)
+            if hasattr(self, 'main_config_status_var'):
+                self.main_config_status_var.set(f"Imported at {datetime.now().strftime('%H:%M:%S')}")
+            self.show_status_message(f"Imported configuration from {os.path.basename(file_path)}", level="success")
         except Exception as e_imp:
-            silent_showerror("Import Error", f"Failed to import configuration:\n{e_imp}", parent=self.master)
+            self.show_status_message(f"Failed to import configuration: {e_imp}", level="error", duration=2200)
     
     def _restart_application(self, update_info=None):
         """Gracefully stops the bot and restarts the configurator application."""
@@ -1018,7 +2207,7 @@ class ConfigEditor:
             self.log_queue.put(("stderr", f"FATAL: Failed to execute restart: {e}\n"))
             self.update_state.pending_tag = None
             self.update_state.save(base_dir=self.app_base_dir)
-            silent_showerror("Restart Failed", f"Could not restart the application.\nPlease close and start it manually.\n\nError: {e}", parent=self.master)
+            self.show_status_message(f"Could not restart the application: {e}", level="error", duration=2200)
 
 
     def on_closing_main_window(self):
@@ -1068,13 +2257,13 @@ class ConfigEditor:
                 "   - 'Scan Models/Clips/Checkpoints'\n\n"
                 "Once these steps are done, you can start the bot from the 'Bot Control' tab."
             )
-            silent_showinfo("First-Time Setup", welcome_message, parent=self.master)
-            
+            self.show_status_message(welcome_message, level="info", duration=2200)
+
             try:
                 with open(flag_file, 'w') as f:
                     f.write(f"First run setup prompt shown on: {datetime.now().isoformat()}")
             except OSError as e:
-                silent_showerror("First Run Warning", f"Could not create the first run flag file. You may see this message again.\n\nError: {e}", parent=self.master)
+                self.show_status_message(f"Could not create first-run flag: {e}", level="warning", duration=2200)
 
 class ProgressPrinter:
     def __init__(self, repo_name_str_param, log_queue_ref_param):
@@ -1090,9 +2279,8 @@ if __name__ == "__main__":
         root_tk_window.mainloop()
     except Exception as main_app_execution_error:
         traceback.print_exc()
-        try:
-            error_dialog_fallback_root = tk.Tk(); error_dialog_fallback_root.withdraw()
-            messagebox.showerror("Fatal Error - Config Editor Application", f"Could not start Config Editor application:\n{main_app_execution_error}\n\nCheck console output for detailed traceback.", parent=None)
-            error_dialog_fallback_root.destroy()
-        except Exception: pass
+        print(
+            "[ERROR] Fatal Error - Config Editor Application: "
+            f"Could not start Config Editor application: {main_app_execution_error}."
+        )
 # --- END OF FILE config_editor_main.py ---
