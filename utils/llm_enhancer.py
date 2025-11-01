@@ -4,6 +4,7 @@ import traceback
 import os
 import asyncio
 import base64
+from urllib.parse import urlencode
 from io import BytesIO
 
 try:
@@ -87,7 +88,10 @@ async def _enhance_with_gemini(original_prompt: str, model_name: str, system_ins
 
     API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
     headers = {'Content-Type': 'application/json'}
-    params = {'key': GEMINI_API_KEY}
+    # The lightweight ``requests`` shim bundled with Tenos Bot does not support the ``params``
+    # keyword argument that the official ``requests`` package provides. Construct the query
+    # string manually so the API key still gets included with the request.
+    request_url = f"{API_URL}?{urlencode({'key': GEMINI_API_KEY})}"
     
     payload_parts = [{"text": original_prompt}]
     if image_urls:
@@ -101,7 +105,7 @@ async def _enhance_with_gemini(original_prompt: str, model_name: str, system_ins
     payload = { "contents": [{"parts": payload_parts}], "systemInstruction": {"parts": [{"text": system_instruction_text}]}, "generationConfig": {"temperature": 1, "maxOutputTokens": 2048}, "safetySettings": [{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"}, {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"}, {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"}, {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}]}
 
     try:
-        response = await asyncio.to_thread(requests.post, API_URL, headers=headers, params=params, json=payload, timeout=90)
+        response = await asyncio.to_thread(requests.post, request_url, headers=headers, json=payload, timeout=90)
         response.raise_for_status()
         response_json = response.json()
         
