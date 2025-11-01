@@ -63,7 +63,9 @@ class EditorConfigManager:
              "llm_model_gemini": self._get_default_llm_model_for_provider("gemini", "gemini-1.5-flash"),
              "llm_model_groq": self._get_default_llm_model_for_provider("groq", "llama3-8b-8192"),
              "llm_model_openai": self._get_default_llm_model_for_provider("openai", "gpt-3.5-turbo"),
-             "display_prompt_preference": "enhanced"
+             "display_prompt_preference": "enhanced",
+             "status_notification_style": "timed",
+             "status_notification_duration_ms": 2000
         }
 
     def _get_default_llm_model_for_provider(self, provider_key, fallback_model_name):
@@ -177,6 +179,20 @@ class EditorConfigManager:
                         allowed_display = ['enhanced', 'original']
                         merged_settings_result[key_template] = str_val if str_val in allowed_display else template_default_val
                         if merged_settings_result[key_template] != str_val: was_settings_updated_during_load = True
+                    elif key_template == 'status_notification_style':
+                        style_val = str(value_from_loaded_file).lower()
+                        allowed_styles = ['timed', 'sticky']
+                        merged_settings_result[key_template] = style_val if style_val in allowed_styles else template_default_val
+                        if merged_settings_result[key_template] != style_val: was_settings_updated_during_load = True
+                    elif key_template == 'status_notification_duration_ms':
+                        try:
+                            duration_val = int(value_from_loaded_file)
+                        except (ValueError, TypeError):
+                            duration_val = template_default_val
+                        duration_clamped = max(500, min(60000, duration_val))
+                        merged_settings_result[key_template] = duration_clamped
+                        if duration_clamped != duration_val:
+                            was_settings_updated_during_load = True
                     elif key_template == 'default_sdxl_negative_prompt':
                         merged_settings_result[key_template] = str(value_from_loaded_file) if value_from_loaded_file is not None else ""
                     elif isinstance(template_default_val, float): merged_settings_result[key_template] = float(value_from_loaded_file)
@@ -231,6 +247,20 @@ class EditorConfigManager:
                     elif key_to_save == 'display_prompt_preference':
                         internal_pref_value = next((k_pref for k_pref, v_pref_disp in self.editor_app.display_prompt_map.items() if v_pref_disp == value_from_ui), 'enhanced')
                         settings_to_write[key_to_save] = internal_pref_value
+                    elif key_to_save == 'status_notification_style':
+                        internal_style = next(
+                            (k_style for k_style, v_style in self.editor_app.notification_style_display_map.items() if v_style == value_from_ui),
+                            str(value_from_ui).lower()
+                        )
+                        if internal_style not in ['timed', 'sticky']:
+                            internal_style = current_settings_template_for_save.get(key_to_save, 'timed')
+                        settings_to_write[key_to_save] = internal_style
+                    elif key_to_save == 'status_notification_duration_ms':
+                        try:
+                            duration_val = int(value_from_ui)
+                        except (ValueError, TypeError):
+                            duration_val = current_settings_template_for_save.get(key_to_save, 2000)
+                        settings_to_write[key_to_save] = max(500, min(60000, duration_val))
                     elif isinstance(current_settings_template_for_save.get(key_to_save), float): settings_to_write[key_to_save] = float(value_from_ui)
                     elif isinstance(current_settings_template_for_save.get(key_to_save), int): settings_to_write[key_to_save] = int(value_from_ui)
                     elif isinstance(current_settings_template_for_save.get(key_to_save), bool):

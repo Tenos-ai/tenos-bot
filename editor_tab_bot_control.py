@@ -6,10 +6,9 @@ import psutil
 import subprocess
 import platform
 import threading
-import queue
 import traceback
 
-from editor_utils import silent_showinfo, silent_showerror
+from editor_utils import silent_showinfo, silent_showerror, silent_showwarning
 from editor_constants import (
     BOT_SCRIPT_NAME, FRAME_BG_COLOR, TEXT_COLOR_NORMAL, ENTRY_BG_COLOR,
     ENTRY_INSERT_COLOR, SELECT_BG_COLOR, SELECT_FG_COLOR,
