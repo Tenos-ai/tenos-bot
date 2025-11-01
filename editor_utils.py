@@ -140,9 +140,21 @@ def load_json_config(file_name, default_config_factory, description="configurati
 def default_llm_models_config_factory():
     return {
         "providers": {
-            "gemini": {"display_name": "Google Gemini API", "models": ["gemini-1.5-flash"]},
-            "groq": {"display_name": "Groq API", "models": ["llama3-8b-8192"]},
-            "openai": {"display_name": "OpenAI API", "models": ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"]}
+            "gemini": {
+                "display_name": "Google Gemini API",
+                "models": ["gemini-1.5-flash"],
+                "favorites": []
+            },
+            "groq": {
+                "display_name": "Groq API",
+                "models": ["llama3-8b-8192"],
+                "favorites": []
+            },
+            "openai": {
+                "display_name": "OpenAI API",
+                "models": ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"],
+                "favorites": []
+            }
         }
     }
 
@@ -165,13 +177,39 @@ def default_styles_config_factory():
 def load_llm_models_config_util():
     config = load_json_config(LLM_MODELS_FILE_NAME, default_llm_models_config_factory, "LLM models")
     
-    if "openai" not in config.get("providers", {}):
+    providers = config.get("providers", {})
+    if "openai" not in providers:
         print(f"ConfigEditor: Adding default OpenAI provider to {LLM_MODELS_FILE_NAME}")
         if "providers" not in config: config["providers"] = {}
         config["providers"]["openai"] = default_llm_models_config_factory()["providers"]["openai"]
         try:
             with open(LLM_MODELS_FILE_NAME, 'w') as f_write: json.dump(config, f_write, indent=2)
         except Exception as e_write: print(f"ConfigEditor Error: Could not save updated {LLM_MODELS_FILE_NAME}: {e_write}")
+    else:
+        config["providers"] = providers
+
+    for provider_key, provider_data in list(config.get("providers", {}).items()):
+        if not isinstance(provider_data, dict):
+            config["providers"][provider_key] = default_llm_models_config_factory()["providers"].get(
+                provider_key,
+                {"display_name": provider_key.capitalize(), "models": [], "favorites": []}
+            )
+            continue
+        if "favorites" not in provider_data or not isinstance(provider_data.get("favorites"), list):
+            provider_data["favorites"] = []
+        else:
+            provider_data["favorites"] = [
+                str(model_name).strip()
+                for model_name in provider_data["favorites"]
+                if isinstance(model_name, str)
+            ]
+        if "models" in provider_data and isinstance(provider_data["models"], list):
+            provider_data["models"] = [
+                str(model_name).strip()
+                for model_name in provider_data["models"]
+                if isinstance(model_name, str)
+            ]
+        config["providers"][provider_key] = provider_data
     return config
 
 def load_llm_prompts_config_util():

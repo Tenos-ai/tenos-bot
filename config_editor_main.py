@@ -153,6 +153,26 @@ class ConfigEditor:
         self.favorites_tab_manager.populate_all_favorites_sub_tabs()
         self.llm_prompts_tab_manager.load_and_populate_llm_prompts()
 
+    def get_ordered_llm_models_for_provider(self, provider_key):
+        provider_data = self.llm_models_config.get('providers', {}).get(provider_key, {})
+        models = [m.strip() for m in provider_data.get('models', []) if isinstance(m, str)]
+        favorites = [m.strip() for m in provider_data.get('favorites', []) if isinstance(m, str)]
+
+        seen = set()
+        ordered_models = []
+
+        for fav_model in favorites:
+            if fav_model in models and fav_model not in seen:
+                ordered_models.append(fav_model)
+                seen.add(fav_model)
+
+        for model in sorted(models, key=str.lower):
+            if model not in seen:
+                ordered_models.append(model)
+                seen.add(model)
+
+        return ordered_models
+
     def _reconcile_update_state(self):
         try:
             pending_tag = self.update_state.pending_tag
@@ -459,7 +479,7 @@ class ConfigEditor:
         llm_provider_keys = list(self.llm_models_config.get('providers',{}).keys())
         create_setting_row_ui(self.llm_settings_content_frame, "LLM Provider", ttk.Combobox, llm_provider_keys, 'llm_provider')
         initial_llm_provider = self.config_manager.settings.get('llm_provider', llm_provider_keys[0] if llm_provider_keys else 'gemini')
-        initial_llm_models_for_provider = self.llm_models_config.get('providers',{}).get(initial_llm_provider,{}).get('models',[])
+        initial_llm_models_for_provider = self.get_ordered_llm_models_for_provider(initial_llm_provider)
         initial_llm_provider_display_name = self.provider_display_map.get(initial_llm_provider, initial_llm_provider.capitalize())
         create_setting_row_ui(self.llm_settings_content_frame, f"LLM Model ({initial_llm_provider_display_name})", ttk.Combobox, initial_llm_models_for_provider, 'llm_model', is_llm_model_selector_field=True)
         if 'llm_model' in self.settings_vars:
@@ -481,7 +501,7 @@ class ConfigEditor:
         if not actual_provider_internal_key: actual_provider_internal_key = selected_provider_display_name.lower()
         llm_model_combobox_widget = self.bot_settings_widgets.get('llm_model')
         if not llm_model_combobox_widget: return
-        new_llm_model_options = self.llm_models_config.get('providers', {}).get(actual_provider_internal_key, {}).get('models', [])
+        new_llm_model_options = self.get_ordered_llm_models_for_provider(actual_provider_internal_key)
         llm_model_combobox_widget['values'] = new_llm_model_options
         model_setting_key_for_new_provider = f"llm_model_{actual_provider_internal_key}"
         current_model_for_new_provider = self.config_manager.settings.get(model_setting_key_for_new_provider, "")
@@ -790,15 +810,23 @@ class ConfigEditor:
                 response = requests.get("https://api.openai.com/v1/models", headers=headers, timeout=10)
                 response.raise_for_status()
                 models = response.json().get('data', [])
-                
+
                 chat_model_prefixes = ['gpt-4', 'gpt-3.5', 'o1', 'o3', 'o4']
-                
+
                 openai_model_ids = sorted([
-                    m['id'] for m in models 
+                    m['id'] for m in models
                     if any(m['id'].startswith(p) for p in chat_model_prefixes)
                 ])
-                
-                updated_models_data['providers']['openai']['models'] = openai_model_ids
+
+                openai_entry = updated_models_data['providers'].setdefault('openai', {
+                    'display_name': 'OpenAI API', 'models': [], 'favorites': []
+                })
+                if not isinstance(openai_entry, dict):
+                    openai_entry = {'display_name': 'OpenAI API', 'models': [], 'favorites': []}
+                    updated_models_data['providers']['openai'] = openai_entry
+                existing_favorites = [f for f in openai_entry.get('favorites', []) if isinstance(f, str)]
+                openai_entry['models'] = openai_model_ids
+                openai_entry['favorites'] = [fav for fav in existing_favorites if fav in openai_model_ids]
                 results_log.append(f"OpenAI: Found {len(openai_model_ids)} chat models.")
             except Exception as e:
                 msg = f"Failed to fetch OpenAI models: {e}"
@@ -811,9 +839,17 @@ class ConfigEditor:
                 response = requests.get("https://api.groq.com/openai/v1/models", headers=headers, timeout=10)
                 response.raise_for_status()
                 models = response.json().get('data', [])
-                
+
                 groq_model_ids = sorted([m['id'] for m in models])
-                updated_models_data['providers']['groq']['models'] = groq_model_ids
+                groq_entry = updated_models_data['providers'].setdefault('groq', {
+                    'display_name': 'Groq API', 'models': [], 'favorites': []
+                })
+                if not isinstance(groq_entry, dict):
+                    groq_entry = {'display_name': 'Groq API', 'models': [], 'favorites': []}
+                    updated_models_data['providers']['groq'] = groq_entry
+                existing_favorites = [f for f in groq_entry.get('favorites', []) if isinstance(f, str)]
+                groq_entry['models'] = groq_model_ids
+                groq_entry['favorites'] = [fav for fav in existing_favorites if fav in groq_model_ids]
                 results_log.append(f"Groq: Found {len(groq_model_ids)} chat models.")
             except Exception as e:
                 msg = f"Failed to fetch Groq models: {e}"
@@ -825,12 +861,20 @@ class ConfigEditor:
                 response = requests.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_key}", timeout=10)
                 response.raise_for_status()
                 models = response.json().get('models', [])
-                
+
                 gemini_model_ids = sorted([
-                    m['name'].replace('models/', '') for m in models 
+                    m['name'].replace('models/', '') for m in models
                     if any('generateContent' in method for method in m.get('supportedGenerationMethods', []))
                 ])
-                updated_models_data['providers']['gemini']['models'] = gemini_model_ids
+                gemini_entry = updated_models_data['providers'].setdefault('gemini', {
+                    'display_name': 'Google Gemini API', 'models': [], 'favorites': []
+                })
+                if not isinstance(gemini_entry, dict):
+                    gemini_entry = {'display_name': 'Google Gemini API', 'models': [], 'favorites': []}
+                    updated_models_data['providers']['gemini'] = gemini_entry
+                existing_favorites = [f for f in gemini_entry.get('favorites', []) if isinstance(f, str)]
+                gemini_entry['models'] = gemini_model_ids
+                gemini_entry['favorites'] = [fav for fav in existing_favorites if fav in gemini_model_ids]
                 results_log.append(f"Gemini: Found {len(gemini_model_ids)} chat models.")
             except Exception as e:
                 msg = f"Failed to fetch Gemini models: {e}"
