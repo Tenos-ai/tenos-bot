@@ -44,7 +44,8 @@
         "gemma-3n-e2b-it",
         "gemma-3n-e4b-it",
         "learnlm-2.0-flash-experimental"
-      ]
+      ],
+      "favorites": []
     },
     "groq": {
       "display_name": "Groq API",
@@ -72,7 +73,8 @@
         "qwen/qwen3-32b",
         "whisper-large-v3",
         "whisper-large-v3-turbo"
-      ]
+      ],
+      "favorites": []
     },
     "openai": {
       "display_name": "OpenAI API",
@@ -142,7 +144,8 @@
         "gpt-5-2025-08-07",
         "gpt-5-mini-2025-08-07",
         "gpt-5-nano-2025-08-07"
-      ]
+      ],
+      "favorites": []
     }
   }
 }

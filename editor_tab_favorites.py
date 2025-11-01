@@ -3,9 +3,9 @@ from tkinter import ttk
 import json
 import os
 import traceback
-from editor_utils import silent_showinfo, silent_showerror, save_json_config
+from editor_utils import silent_showinfo, silent_showerror, save_json_config, load_llm_models_config_util
 from editor_constants import (
-    MODELS_LIST_FILE_NAME, CHECKPOINTS_LIST_FILE_NAME, CLIP_LIST_FILE_NAME,
+    MODELS_LIST_FILE_NAME, CHECKPOINTS_LIST_FILE_NAME, CLIP_LIST_FILE_NAME, LLM_MODELS_FILE_NAME,
     STYLES_CONFIG_FILE_NAME, CANVAS_BG_COLOR, FRAME_BG_COLOR, TEXT_COLOR_NORMAL,
     ENTRY_BG_COLOR, LISTBOX_BG, LISTBOX_FG, LISTBOX_SELECT_BG, LISTBOX_SELECT_FG, BOLD_TLABEL_STYLE
 )
@@ -23,12 +23,14 @@ class FavoritesTab:
 
         self.fav_flux_models_sub_tab = ttk.Frame(self.fav_sub_notebook, padding="5", style="Tenos.TFrame")
         self.fav_sdxl_checkpoints_sub_tab = ttk.Frame(self.fav_sub_notebook, padding="5", style="Tenos.TFrame")
+        self.fav_llm_models_sub_tab = ttk.Frame(self.fav_sub_notebook, padding="5", style="Tenos.TFrame")
         self.fav_clip_t5_sub_tab = ttk.Frame(self.fav_sub_notebook, padding="5", style="Tenos.TFrame")
         self.fav_clip_l_sub_tab = ttk.Frame(self.fav_sub_notebook, padding="5", style="Tenos.TFrame")
         self.fav_styles_sub_tab = ttk.Frame(self.fav_sub_notebook, padding="5", style="Tenos.TFrame")
 
         self.fav_sub_notebook.add(self.fav_flux_models_sub_tab, text=" Flux Models ")
         self.fav_sub_notebook.add(self.fav_sdxl_checkpoints_sub_tab, text=" SDXL Checkpoints ")
+        self.fav_sub_notebook.add(self.fav_llm_models_sub_tab, text=" LLM Models ")
         self.fav_sub_notebook.add(self.fav_clip_t5_sub_tab, text=" T5 Clips ")
         self.fav_sub_notebook.add(self.fav_clip_l_sub_tab, text=" Clip-L ")
         self.fav_sub_notebook.add(self.fav_styles_sub_tab, text=" Styles ")
@@ -37,6 +39,7 @@ class FavoritesTab:
 
         self.flux_model_favorite_vars = {}
         self.sdxl_checkpoint_favorite_vars = {}
+        self.llm_model_favorite_vars = {}
         self.clip_favorite_vars = {'t5': {}, 'clip_L': {}}
         self.style_favorite_vars = {}
 
@@ -112,7 +115,54 @@ class FavoritesTab:
         if sdxl_frame.winfo_exists(): sdxl_frame.event_generate("<Configure>")
 
 
-        
+        llm_frame = self._create_scrollable_sub_tab_frame(self.fav_llm_models_sub_tab)
+        self.llm_model_favorite_vars = {}
+        llm_models_data = {}
+        try:
+            if os.path.exists(LLM_MODELS_FILE_NAME):
+                with open(LLM_MODELS_FILE_NAME, 'r') as f: llm_models_data = json.load(f)
+            if not isinstance(llm_models_data, dict): llm_models_data = {}
+        except Exception as e:
+            print(f"EditorFavorites: Error loading {LLM_MODELS_FILE_NAME}: {e}")
+            llm_models_data = {}
+
+        providers_data = llm_models_data.get('providers', {}) if isinstance(llm_models_data.get('providers'), dict) else {}
+        row = 0
+        if not providers_data:
+            ttk.Label(llm_frame, text="No LLM providers configured.", style=BOLD_TLABEL_STYLE).grid(row=row, column=0, sticky='w', padx=5, pady=(5, 2))
+            row += 1
+        for provider_key in sorted(providers_data.keys(), key=str.lower):
+            provider_entry = providers_data.get(provider_key, {}) if isinstance(providers_data.get(provider_key), dict) else {}
+            display_name = provider_entry.get('display_name', provider_key.capitalize())
+            models_list = [m.strip() for m in provider_entry.get('models', []) if isinstance(m, str)]
+            favorites_list = [m.strip() for m in provider_entry.get('favorites', []) if isinstance(m, str)]
+            ttk.Label(llm_frame, text=f"{display_name} ({provider_key})", style=BOLD_TLABEL_STYLE).grid(row=row, column=0, sticky='w', padx=5, pady=(10 if row else 5, 2))
+            row += 1
+            self.llm_model_favorite_vars[provider_key] = {}
+            if not models_list:
+                ttk.Label(llm_frame, text="No models available.", style="Tenos.TLabel").grid(row=row, column=0, sticky='w', padx=15)
+                row += 1
+                continue
+            for model_name in sorted(set(models_list), key=str.lower):
+                var = tk.BooleanVar(value=(model_name in favorites_list))
+                chk = tk.Checkbutton(
+                    llm_frame,
+                    text=model_name,
+                    variable=var,
+                    bg=FRAME_BG_COLOR,
+                    fg=TEXT_COLOR_NORMAL,
+                    selectcolor=ENTRY_BG_COLOR,
+                    activebackground=FRAME_BG_COLOR,
+                    activeforeground=TEXT_COLOR_NORMAL,
+                    highlightthickness=0,
+                    borderwidth=0
+                )
+                chk.grid(row=row, column=0, sticky="w", padx=15)
+                self.llm_model_favorite_vars[provider_key][model_name] = var
+                row += 1
+        if llm_frame.winfo_exists(): llm_frame.event_generate("<Configure>")
+
+
         clips_data = {}; clip_t5_fav = []; clip_l_fav = []
         self.clip_favorite_vars = {'t5': {}, 'clip_L': {}}
         try:
@@ -186,6 +236,24 @@ class FavoritesTab:
             if save_json_config(CHECKPOINTS_LIST_FILE_NAME, checkpoints_data, "SDXL checkpoint favorites"): saved_files_count +=1
         except Exception as e: errors_list.append(f"{CHECKPOINTS_LIST_FILE_NAME}: {e}"); traceback.print_exc()
         try:
+            llm_models_data = {}
+            if os.path.exists(LLM_MODELS_FILE_NAME):
+                with open(LLM_MODELS_FILE_NAME, 'r') as f: llm_models_data = json.load(f)
+            if not isinstance(llm_models_data, dict): llm_models_data = {}
+            providers_data = llm_models_data.setdefault('providers', {})
+            if not isinstance(providers_data, dict):
+                providers_data = {}
+                llm_models_data['providers'] = providers_data
+            for provider_key, model_vars in self.llm_model_favorite_vars.items():
+                provider_entry = providers_data.get(provider_key)
+                if not isinstance(provider_entry, dict):
+                    provider_entry = {"display_name": provider_key.capitalize(), "models": [], "favorites": []}
+                favorites_list = [model_name for model_name, var in model_vars.items() if isinstance(var, tk.BooleanVar) and var.get()]
+                provider_entry['favorites'] = favorites_list
+                providers_data[provider_key] = provider_entry
+            if save_json_config(LLM_MODELS_FILE_NAME, llm_models_data, "LLM model favorites"): saved_files_count +=1
+        except Exception as e: errors_list.append(f"{LLM_MODELS_FILE_NAME}: {e}"); traceback.print_exc()
+        try:
             clips_data = {}
             if os.path.exists(CLIP_LIST_FILE_NAME):
                 with open(CLIP_LIST_FILE_NAME, 'r') as f: clips_data = json.load(f)
@@ -213,8 +281,13 @@ class FavoritesTab:
         else:
             silent_showerror("Error Saving Favorites", f"Failed to save some favorites settings:\n\n" + "\n".join(errors_list), parent=self.editor_app.master)
 
-        
+
         self.editor_app.load_available_files()
+        self.editor_app.llm_models_config = load_llm_models_config_util()
+        self.editor_app.provider_display_map = {
+            k: v.get("display_name", k.capitalize())
+            for k, v in self.editor_app.llm_models_config.get("providers", {}).items()
+        }
         self.editor_app.config_manager.load_bot_settings_data(self.editor_app.llm_models_config)
         self.editor_app.populate_bot_settings_tab()
         if hasattr(self.editor_app, 'lora_styles_tab_manager'):

@@ -10,9 +10,21 @@ import traceback
 def load_llm_models_config():
     default_config = {
         "providers": {
-            "gemini": {"display_name": "Google Gemini API", "models": ["gemini-1.5-flash"]},
-            "groq": {"display_name": "Groq API", "models": ["llama3-8b-8192"]},
-            "openai": {"display_name": "OpenAI API", "models": ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"]}
+            "gemini": {
+                "display_name": "Google Gemini API",
+                "models": ["gemini-1.5-flash"],
+                "favorites": []
+            },
+            "groq": {
+                "display_name": "Groq API",
+                "models": ["llama3-8b-8192"],
+                "favorites": []
+            },
+            "openai": {
+                "display_name": "OpenAI API",
+                "models": ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"],
+                "favorites": []
+            }
         }
     }
     try:
@@ -36,11 +48,29 @@ def load_llm_models_config():
             # except Exception as e_write:
             #     print(f"SettingsManager Error: Could not save updated llm_models.json: {e_write}")
 
-        for key, data in config["providers"].items():
+        for key, data in list(config["providers"].items()):
             if not isinstance(data, dict) or "display_name" not in data or "models" not in data or not isinstance(data["models"], list):
                 print(f"SettingsManager Warning: Invalid structure for provider '{key}'. Reverting to default for this provider.")
                 # Use .get for safer access to default_config in case a new provider was added manually but is malformed
-                config["providers"][key] = default_config["providers"].get(key, {"display_name": key, "models": []})
+                config["providers"][key] = default_config["providers"].get(
+                    key,
+                    {"display_name": key, "models": [], "favorites": []}
+                )
+                data = config["providers"][key]
+            if "favorites" not in data or not isinstance(data.get("favorites"), list):
+                data["favorites"] = []
+            else:
+                data["favorites"] = [
+                    str(model_name).strip()
+                    for model_name in data["favorites"]
+                    if isinstance(model_name, str)
+                ]
+            data["models"] = [
+                str(model_name).strip()
+                for model_name in data.get("models", [])
+                if isinstance(model_name, str)
+            ]
+            config["providers"][key] = data
         return config
     except (OSError, json.JSONDecodeError) as e:
         print(f"SettingsManager Error loading llm_models.json: {e}. Using default.")
@@ -839,16 +869,23 @@ def get_llm_model_choices(settings, provider=None):
     provider_data = llm_models_config.get('providers', {}).get(provider, {})
     models_raw = provider_data.get('models', [])
     models = [m.strip() for m in models_raw if isinstance(m, str)]
+    favorites_raw = provider_data.get('favorites', [])
+    favorites = [m.strip() for m in favorites_raw if isinstance(m, str)]
     if not models:
          provider_display = provider_data.get("display_name", provider.capitalize())
          return [discord.SelectOption(label=f"No models for {provider_display}", value="none", default=True)]
     current_model_key = f"llm_model_{provider}"; current_model_setting = settings.get(current_model_key)
     current_model = current_model_setting.strip() if isinstance(current_model_setting, str) else None
-    
+
     canonical_options = []
     seen_values = set()
-    
-    for model in sorted(models):
+
+    for model in sorted({m for m in favorites if m in models}, key=str.lower):
+        if model not in seen_values:
+            canonical_options.append({'label': f"⭐ {model}", 'value': model})
+            seen_values.add(model)
+
+    for model in sorted(models, key=str.lower):
         if model not in seen_values:
             canonical_options.append({'label': model, 'value': model})
             seen_values.add(model)
