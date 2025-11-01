@@ -3,7 +3,14 @@ from tkinter import ttk, scrolledtext, simpledialog
 import json
 import os
 import traceback
-from editor_utils import silent_showinfo, silent_showerror, silent_askyesno, silent_askstring, save_json_config
+from editor_utils import (
+    silent_showinfo,
+    silent_showerror,
+    silent_showwarning,
+    silent_askyesno,
+    silent_askstring,
+    save_json_config,
+)
 from editor_constants import (
     STYLES_CONFIG_FILE_NAME, CANVAS_BG_COLOR, FRAME_BG_COLOR, TEXT_COLOR_NORMAL,
     LISTBOX_BG, LISTBOX_FG, LISTBOX_SELECT_BG, LISTBOX_SELECT_FG,

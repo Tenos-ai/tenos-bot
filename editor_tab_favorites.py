@@ -61,6 +61,7 @@ class FavoritesTab:
         canvas_widget.create_window((0, 0), window=scrollable_content_frame, anchor="nw")
         canvas_widget.configure(yscrollcommand=scrollbar_widget.set)
         canvas_widget.pack(side="left", fill="both", expand=True)
+        scrollbar_widget.pack(side="right", fill="y")
         return scrollable_content_frame
 
     def populate_all_favorites_sub_tabs(self):

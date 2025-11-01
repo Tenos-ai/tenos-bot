@@ -255,7 +255,7 @@ def modify_variation_prompt(
 
     template_to_use = None
     if base_model_type_for_variation_workflow == "sdxl": template_to_use = sdxl_variation_prompt
-    else: template_to_use = flux_weakvary_template if variation_type == 'weak' else flux_strongvary_prompt
+    else: template_to_use = flux_weakvary_template if variation_type == 'weak' else flux_strongvary_template
     
     batch_size = settings.get('variation_batch_size', 1)
     if not isinstance(batch_size, int) or not (1 <= batch_size <= 4):

@@ -17,6 +17,10 @@ import zipfile
 import tempfile
 import webbrowser
 import difflib
+import shutil
+
+
+DEFAULT_STATUS_DURATION = object()
 
 
 class Tooltip:
@@ -152,9 +156,15 @@ class StatusBanner(ttk.Frame):
             pass
         self.pack_forget()
 
-    def show(self, message, level="info", duration=2000, icon=None):
+    def show(self, message, level="info", duration=2000, icon=None, allow_dismiss=False):
         self._cancel_hide()
         self._ensure_visible()
+        self._install_actions([])
+        try:
+            self.progress.stop()
+            self.progress.pack_forget()
+        except tk.TclError:
+            pass
         symbol_map = {
             "info": "ℹ", "warning": "⚠", "error": "✖", "success": "✔", "question": "?"
         }
@@ -178,13 +188,17 @@ class StatusBanner(ttk.Frame):
 
         if duration:
             self._hide_after_id = self.after(duration, self.clear)
+        elif allow_dismiss:
+            dismiss_btn = ttk.Button(self.action_frame, text="Dismiss", command=self.clear, style="Tenos.Command.TButton")
+            dismiss_btn.pack(side=tk.LEFT, padx=4)
+            self._install_actions([dismiss_btn])
 
     def _ensure_visible(self):
         if not self.winfo_ismapped():
             self.pack(fill=tk.X, pady=(0, 4))
 
     def show_progress(self, message, level="info"):
-        self.show(message, level=level, duration=None, icon="…")
+        self.show(message, level=level, duration=None, icon="…", allow_dismiss=False)
         try:
             if not self.progress.winfo_ismapped():
                 self.progress.pack(side=tk.RIGHT, padx=4)
@@ -659,7 +673,6 @@ class ConfigEditor:
         self.settings_search_entry = None
         self.config_clear_search_btn = None
         self.settings_clear_search_btn = None
-        self._header_icon_image = None
         self.last_focused_config_key = None
         self.last_focused_setting_key = None
         self.log_display = None
@@ -700,6 +713,10 @@ class ConfigEditor:
 
         self.provider_display_map = { k: v.get("display_name", k.capitalize()) for k, v in self.llm_models_config.get("providers", {}).items() }
         self.display_prompt_map = { "enhanced": "Show Enhanced Prompt ✨", "original": "Show Original Prompt ✍️" }
+        self.notification_style_display_map = {
+            "timed": "Auto-dismiss (Timed)",
+            "sticky": "Stay Until Dismissed"
+        }
 
         self.config_help_text = {
             "OUTPUTS.UPSCALES": "Directory where upscaled images are saved after processing.",
@@ -752,7 +769,9 @@ class ConfigEditor:
             "llm_enhancer_enabled": "Toggle LLM powered prompt enhancement before sending to ComfyUI.",
             "llm_provider": "Select which LLM provider backs prompt enhancement.",
             "llm_model": "Specific LLM model used for prompt enhancement with the selected provider.",
-            "display_prompt_preference": "Choose whether to show enhanced or original prompts in the UI."
+            "display_prompt_preference": "Choose whether to show enhanced or original prompts in the UI.",
+            "status_notification_style": "Choose whether status messages auto-dismiss or stay until you dismiss them.",
+            "status_notification_duration_ms": "How long timed status messages remain visible before disappearing."
         }
 
         self.status_banner = StatusBanner(self.master, self.color, self.register_theme_subscriber)
@@ -840,8 +859,28 @@ class ConfigEditor:
         new_theme = "light" if self.current_theme_name == "dark" else "dark"
         self.set_theme(new_theme)
 
-    def show_status_message(self, message, level="info", duration=2000):
-        self.status_banner.show(message, level=level, duration=duration)
+    def show_status_message(self, message, level="info", duration=DEFAULT_STATUS_DURATION):
+        resolved_duration = duration
+        allow_dismiss = False
+        settings = getattr(self.config_manager, "settings", {}) if hasattr(self, "config_manager") else {}
+
+        if duration is DEFAULT_STATUS_DURATION:
+            style = str(settings.get("status_notification_style", "timed")).lower()
+            if style == "sticky":
+                resolved_duration = None
+                allow_dismiss = True
+            else:
+                try:
+                    preferred = int(settings.get("status_notification_duration_ms", 2000))
+                except (TypeError, ValueError):
+                    preferred = 2000
+                resolved_duration = max(500, min(60000, preferred))
+        else:
+            resolved_duration = duration
+            if resolved_duration is None:
+                allow_dismiss = True
+
+        self.status_banner.show(message, level=level, duration=resolved_duration, allow_dismiss=allow_dismiss)
 
     def ask_status_yes_no(self, title, message):
         return self.status_banner.ask_yes_no(title, message)
@@ -1020,25 +1059,14 @@ class ConfigEditor:
     def _create_restart_note_label(self):
         header_frame = ttk.Frame(self.master, style="Tenos.Header.TFrame", padding=(16, 14, 16, 12))
         header_frame.pack(fill=tk.X, padx=10, pady=(6, 4))
-        header_frame.columnconfigure(1, weight=1)
-        header_frame.columnconfigure(2, weight=0)
+        header_frame.columnconfigure(0, weight=1)
+        header_frame.columnconfigure(1, weight=0)
         self.header_frame = header_frame
-
-        if self._header_icon_image is None and os.path.exists(ICON_PATH_PNG):
-            try:
-                self._header_icon_image = tk.PhotoImage(file=ICON_PATH_PNG)
-            except tk.TclError:
-                self._header_icon_image = None
-
-        if self._header_icon_image:
-            ttk.Label(header_frame, image=self._header_icon_image, style="Tenos.Header.TLabel")\
-                .grid(row=0, column=0, rowspan=2, sticky="nw", padx=(0, 12))
-
         ttk.Label(
             header_frame,
             text="Tenos.ai Configurator",
             style="Tenos.Header.TLabel"
-        ).grid(row=0, column=1, sticky="w")
+        ).grid(row=0, column=0, sticky="w")
 
         ttk.Label(
             header_frame,
@@ -1047,10 +1075,10 @@ class ConfigEditor:
             style="Tenos.Subtle.TLabel",
             wraplength=560,
             justify=tk.LEFT
-        ).grid(row=1, column=1, sticky="w", pady=(6, 0))
+        ).grid(row=1, column=0, sticky="w", pady=(6, 0))
 
         actions_frame = ttk.Frame(header_frame, style="Tenos.Header.TFrame")
-        actions_frame.grid(row=0, column=2, rowspan=2, sticky="e")
+        actions_frame.grid(row=0, column=1, rowspan=2, sticky="e")
 
         theme_toggle = ttk.Checkbutton(
             actions_frame,
@@ -1915,7 +1943,7 @@ class ConfigEditor:
             tk_var_instance = None
             if var_key_name in ['default_guidance', 'upscale_factor', 'default_guidance_sdxl', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']:
                 tk_var_instance = tk.DoubleVar()
-            elif var_key_name in ['steps', 'sdxl_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size']:
+            elif var_key_name in ['steps', 'sdxl_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size', 'status_notification_duration_ms']:
                 tk_var_instance = tk.IntVar()
             elif var_key_name in ['remix_mode', 'llm_enhancer_enabled']:
                 tk_var_instance = tk.BooleanVar()
@@ -1929,6 +1957,8 @@ class ConfigEditor:
                         tk_var_instance.set(self.provider_display_map.get(current_setting_val, current_setting_val))
                     elif var_key_name == 'display_prompt_preference':
                         tk_var_instance.set(self.display_prompt_map.get(current_setting_val, current_setting_val))
+                    elif var_key_name == 'status_notification_style':
+                        tk_var_instance.set(self.notification_style_display_map.get(current_setting_val, current_setting_val))
                     else:
                         tk_var_instance.set(current_setting_val)
                 except (ValueError, tk.TclError):
@@ -1960,6 +1990,8 @@ class ConfigEditor:
                     display_options = [self.provider_display_map.get(k, k) for k in safe_options_list]
                 elif var_key_name == 'display_prompt_preference':
                     display_options = [self.display_prompt_map.get(k, k) for k in sorted(self.display_prompt_map.keys())]
+                elif var_key_name == 'status_notification_style':
+                    display_options = [self.notification_style_display_map.get(k, k) for k in safe_options_list]
 
                 current_display_value = tk_var_instance.get()
                 if current_display_value and current_display_value not in display_options:
@@ -2074,6 +2106,46 @@ class ConfigEditor:
         create_setting_row_ui(general_defaults_section.body(), "Default Batch Size (Vary)", ttk.Spinbox, var_key_name='variation_batch_size', section_key='general', from_=1, to=6, increment=1)
         create_setting_row_ui(general_defaults_section.body(), "Default Upscale Factor", ttk.Spinbox, var_key_name='upscale_factor', section_key='general', from_=1.0, to=4.0, increment=0.05, format="%.2f")
         create_setting_row_ui(general_defaults_section.body(), "Default MP Size", ttk.Spinbox, var_key_name='default_mp_size', section_key='general', from_=0.1, to=8.0, increment=0.05, format="%.2f")
+
+        notifications_section = CollapsibleSection(self.general_settings_content_frame, "Status Notifications", self.color)
+        notifications_section.pack(fill=tk.X, padx=4, pady=(0, 6))
+        create_setting_row_ui(
+            notifications_section.body(),
+            "Default Notification Style",
+            ttk.Combobox,
+            list(self.notification_style_display_map.keys()),
+            'status_notification_style',
+            section_key='general'
+        )
+        duration_widget = create_setting_row_ui(
+            notifications_section.body(),
+            "Timed Notification Duration (ms)",
+            ttk.Spinbox,
+            var_key_name='status_notification_duration_ms',
+            section_key='general',
+            from_=500,
+            to=60000,
+            increment=100
+        )
+
+        style_var = self.settings_vars.get('status_notification_style')
+
+        def _sync_duration_state(*_args):
+            if not style_var or not duration_widget:
+                return
+            try:
+                style_display = style_var.get()
+                style_internal = next(
+                    (key for key, label in self.notification_style_display_map.items() if label == style_display),
+                    str(style_display).lower()
+                )
+                duration_widget.configure(state='normal' if style_internal == 'timed' else 'disabled')
+            except tk.TclError:
+                pass
+
+        if style_var and duration_widget:
+            style_var.trace_add('write', lambda *args: _sync_duration_state())
+            self.master.after(10, _sync_duration_state)
 
         # Flux Section
         flux_styles = sorted([name for name, data in self.styles_config.items() if data.get('model_type', 'all') in ['all', 'flux']])
