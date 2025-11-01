@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, scrolledtext, simpledialog, messagebox
+from tkinter import ttk, scrolledtext, simpledialog
 import json
 import os
 import traceback

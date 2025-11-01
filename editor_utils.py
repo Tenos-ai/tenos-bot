@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import messagebox, simpledialog, filedialog
+from tkinter import filedialog
 import json
 import os
 import traceback
@@ -9,78 +9,65 @@ from editor_constants import (
     CONFIG_FILE_NAME, SETTINGS_FILE_NAME
 )
 
+def _dispatch_status(parent, title, message, level="info", duration=2000):
+    """Route status notifications through the parent window when available."""
 
-def create_silent_dialog(master=None, **kwargs):
-    """Creates a messagebox.Message object with the bell method overridden."""
-    
-    temp_root = None
-    if master is None:
-        
-        if not tk._default_root:
-            temp_root = tk.Tk()
-            temp_root.withdraw()
-        actual_master = tk._default_root if tk._default_root else temp_root
-    else:
-        actual_master = master
+    target_parent = parent
+    if target_parent is None and tk._default_root is not None:
+        target_parent = tk._default_root
 
-    dialog = messagebox.Message(master=actual_master, **kwargs)
-    dialog.bell = lambda: None
+    if target_parent is not None:
+        callback = getattr(target_parent, "show_status_message", None)
+        if callable(callback):
+            callback(f"{title}: {message}" if title else message, level=level, duration=duration)
+            return True
 
-    
-    return dialog
+    # Fallback to console output if no UI hook exists
+    print(f"[{level.upper()}] {title}: {message}")
+    return False
+
 
 def silent_showinfo(title, message, parent=None, **kwargs):
-    """Shows an info dialog without a bell sound."""
-    
-    dialog = create_silent_dialog(master=parent, title=title, message=message,
-                                icon=messagebox.INFO, type=messagebox.OK, **kwargs)
-    return dialog.show()
+    """Display an informational status message without using message boxes."""
+
+    return _dispatch_status(parent, title, message, level="info")
+
 
 def silent_showerror(title, message, parent=None, **kwargs):
-    """Shows an error dialog without a bell sound."""
-    dialog = create_silent_dialog(master=parent, title=title, message=message,
-                                icon=messagebox.ERROR, type=messagebox.OK, **kwargs)
-    return dialog.show()
+    """Display an error status message without using message boxes."""
+
+    return _dispatch_status(parent, title, message, level="error", duration=2200)
+
 
 def silent_showwarning(title, message, parent=None, **kwargs):
-    """Shows a warning dialog without a bell sound."""
-    dialog = create_silent_dialog(master=parent, title=title, message=message,
-                                icon=messagebox.WARNING, type=messagebox.OK, **kwargs)
-    return dialog.show()
+    """Display a warning status message without using message boxes."""
+
+    return _dispatch_status(parent, title, message, level="warning", duration=2200)
+
 
 def silent_askyesno(title, message, parent=None, **kwargs):
-    """Asks a yes/no question without a bell sound if a parent is provided."""
-    if parent:
-        original_bell = None
-        has_bell_attr = hasattr(parent, 'bell')
-        if has_bell_attr:
-            original_bell = parent.bell
-            parent.bell = lambda: None
+    """Ask a yes/no question via the parent status banner when available."""
 
-        result = messagebox.askyesno(title, message, parent=parent, **kwargs)
+    target_parent = parent if parent is not None else tk._default_root
+    if target_parent is not None:
+        ask_callback = getattr(target_parent, "ask_status_yes_no", None)
+        if callable(ask_callback):
+            return ask_callback(title, message)
+    # Fallback to a sensible default (Yes) when no UI hook is present
+    print(f"[QUESTION] {title}: {message} -> defaulting to 'Yes'")
+    return True
 
-        if has_bell_attr and original_bell is not None :
-            parent.bell = original_bell
-        return result
-    
-    return messagebox.askyesno(title, message, **kwargs)
 
 def silent_askstring(title, prompt, parent=None, **kwargs):
-    """Asks for a string input without a bell sound if a parent is provided."""
-    if parent:
-        original_bell = None
-        has_bell_attr = hasattr(parent, 'bell')
-        if has_bell_attr:
-            original_bell = parent.bell
-            parent.bell = lambda: None
-        
-        
-        result = simpledialog.askstring(title, prompt, parent=parent, **kwargs)
+    """Ask for a string input via the parent status banner when available."""
 
-        if has_bell_attr and original_bell is not None:
-            parent.bell = original_bell
-        return result
-    return simpledialog.askstring(title, prompt, **kwargs)
+    target_parent = parent if parent is not None else tk._default_root
+    if target_parent is not None:
+        ask_callback = getattr(target_parent, "ask_status_string", None)
+        if callable(ask_callback):
+            return ask_callback(title, prompt, **kwargs)
+    print(f"[PROMPT] {title}: {prompt} -> no UI hook; returning None")
+    return None
 
 def browse_folder_dialog(parent=None, initialdir=None, title="Select Folder"):
     """Opens a folder selection dialog."""
