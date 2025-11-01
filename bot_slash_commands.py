@@ -352,20 +352,27 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
             if pending_ids:
                 cancel_payload = {"delete": [str(pid) for pid in pending_ids]};
                 c_resp = await asyncio.to_thread(requests.post, f"{api_url}/queue", json=cancel_payload, timeout=15)
-                if c_resp.status_code == 200: cancelled_count = len(pending_ids)
-                else: failed_cancel_ids.extend(pending_ids)
-                for pid_str in pending_ids: bot_job_id_c = queue_manager.get_job_id_by_comfy_id(str(pid_str)); queue_manager.mark_job_cancelled(bot_job_id_c) if bot_job_id_c else None
+                if c_resp.status_code == 200:
+                    cancelled_count = len(pending_ids)
+                    for pid_str in pending_ids:
+                        bot_job_id_c = queue_manager.get_job_id_by_comfy_id(str(pid_str))
+                        queue_manager.mark_job_cancelled(bot_job_id_c) if bot_job_id_c else None
+                else:
+                    failed_cancel_ids.extend(pending_ids)
             running_job_info = q_data.get('queue_running', []); run_id_str = None
             if running_job_info and isinstance(running_job_info[0], list) and running_job_info[0]: run_id_str = str(running_job_info[0][0])
             if run_id_str:
                 i_resp = await asyncio.to_thread(requests.post, f"{api_url}/interrupt", timeout=10)
-                if i_resp.status_code == 200: interrupted_count = 1
-                else: failed_interrupt_id = run_id_str
-                bot_job_id_r = queue_manager.get_job_id_by_comfy_id(run_id_str); queue_manager.mark_job_cancelled(bot_job_id_r) if bot_job_id_r else None
+                if i_resp.status_code == 200:
+                    interrupted_count = 1
+                    bot_job_id_r = queue_manager.get_job_id_by_comfy_id(run_id_str)
+                    queue_manager.mark_job_cancelled(bot_job_id_r) if bot_job_id_r else None
+                else:
+                    failed_interrupt_id = run_id_str
             fb_parts = ["**ComfyUI Queue Clear Results:**", f"- Interrupted Running (API): {interrupted_count}"]
-            if failed_interrupt_id: fb_parts.append(f"  *(Failed API interrupt for: `{failed_interrupt_id}`, marked cancelled locally)*")
+            if failed_interrupt_id: fb_parts.append(f"  *(Failed API interrupt for: `{failed_interrupt_id}`, job status unchanged)*")
             fb_parts.append(f"- Cancelled Pending (API): {cancelled_count}")
-            if failed_cancel_ids: fb_parts.append(f"  *(Failed API cancel for `{len(failed_cancel_ids)}` IDs, marked cancelled locally)*")
+            if failed_cancel_ids: fb_parts.append(f"  *(Failed API cancel for `{len(failed_cancel_ids)}` IDs; job status unchanged)*")
             await interaction.followup.send("\n".join(fb_parts), ephemeral=True)
         except Exception as e_clear: await interaction.followup.send(f"Error clearing queue: {e_clear}", ephemeral=True); traceback.print_exc()
 

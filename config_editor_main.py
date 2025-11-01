@@ -271,7 +271,8 @@ class ConfigEditor:
             current_item_val = self.config_manager.config.get(section_name, {}).get(item_key_name, "")
             tk_var = tk.StringVar(value=str(current_item_val) if current_item_val is not None else "")
             self.config_vars[f"{section_name}.{item_key_name}"] = tk_var
-            show_char_val = "*" if "KEY" in item_key_name.upper() else ""
+            upper_key_name = item_key_name.upper()
+            show_char_val = "*" if ("KEY" in upper_key_name or "TOKEN" in upper_key_name) else ""
             entry_widget_item = ttk.Entry(row_frame, textvariable=tk_var, width=(10 if is_port else 60), show=show_char_val, style="Tenos.TEntry")
             entry_widget_item.pack(side=tk.LEFT, fill=tk.X, expand=True)
             if is_path:

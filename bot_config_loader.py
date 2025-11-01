@@ -8,7 +8,7 @@ def load_main_config():
         "ADMIN": {"USERNAME": "", "ID": ""}, 
         "OUTPUTS": {}, 
         "COMFYUI_API": {"HOST": "127.0.0.1", "PORT": 8188},
-        "BOT_INTERNAL_API": {"HOST": "127.0.0.1", "PORT": 8189},
+        "BOT_INTERNAL_API": {"HOST": "127.0.0.1", "PORT": 8189, "AUTH_TOKEN": ""},
         "BOT_API": {}, "LLM_ENHANCER": {"GEMINI_API_KEY": "", "GROQ_API_KEY": "", "OPENAI_API_KEY": ""}, 
         "ALLOWED_USERS": {}
     }
@@ -31,6 +31,14 @@ def load_main_config():
                 config_data["ADMIN"]["USERNAME"] = ""; updated = True
             if "ID" not in config_data["ADMIN"]:
                 config_data["ADMIN"]["ID"] = ""; updated = True
+
+        if "BOT_INTERNAL_API" in config_data and isinstance(config_data["BOT_INTERNAL_API"], dict):
+            if "AUTH_TOKEN" not in config_data["BOT_INTERNAL_API"]:
+                config_data["BOT_INTERNAL_API"]["AUTH_TOKEN"] = ""
+                updated = True
+        else:
+            config_data["BOT_INTERNAL_API"] = default_structure["BOT_INTERNAL_API"]
+            updated = True
 
         if "LLM_ENHANCER" in config_data and isinstance(config_data["LLM_ENHANCER"], dict):
             if "GEMMA_API_KEY" in config_data["LLM_ENHANCER"]:
@@ -55,6 +63,7 @@ COMFYUI_HOST = config.get('COMFYUI_API', {}).get('HOST', '127.0.0.1')
 COMFYUI_PORT = config.get('COMFYUI_API', {}).get('PORT', 8188)
 BOT_INTERNAL_API_HOST = config.get('BOT_INTERNAL_API', {}).get('HOST', '127.0.0.1')
 BOT_INTERNAL_API_PORT = config.get('BOT_INTERNAL_API', {}).get('PORT', 8189)
+BOT_INTERNAL_API_TOKEN = config.get('BOT_INTERNAL_API', {}).get('AUTH_TOKEN', '')
 
 for port_var_name in ["COMFYUI_PORT", "BOT_INTERNAL_API_PORT"]:
     globals()[port_var_name] = int(globals()[port_var_name])
@@ -64,6 +73,7 @@ def print_startup_info():
     print(f"Admin User ID: {ADMIN_ID or 'Not Set! WARNING!'}")
     print(f"ComfyUI API: http://{COMFYUI_HOST}:{COMFYUI_PORT}")
     print(f"Bot Internal API: http://{BOT_INTERNAL_API_HOST}:{BOT_INTERNAL_API_PORT}")
+    print(f"Bot Internal API Token Configured: {'Yes' if BOT_INTERNAL_API_TOKEN else 'No'}")
     print(f"Allowed Users Loaded: {len(ALLOWED_USERS)}")
 
 def normalize_path_for_comfyui(path):

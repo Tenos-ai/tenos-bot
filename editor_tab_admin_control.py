@@ -33,6 +33,7 @@ class AdminControlTab:
         self.blocked_user_ids = set()
         self.user_cache = {}
         self.api_base_url = ""
+        self._cached_api_headers = None
         self.last_api_check_time = 0
         self.is_bot_api_online = False
         self.dm_data = {}
@@ -227,8 +228,13 @@ class AdminControlTab:
 
     def _fetch_user_and_add(self, user_id, add_type):
         user_name = "Unknown User"
+        headers = self._cached_api_headers or self._get_auth_headers()
         try:
-            response = requests.get(f"{self.api_base_url}/user/{user_id}", timeout=3)
+            response = requests.get(
+                f"{self.api_base_url}/user/{user_id}",
+                timeout=3,
+                headers=headers,
+            )
             if response.status_code == 200: user_name = response.json().get("name", "Unknown User")
         except Exception: pass
         if add_type == "allow": self.editor_app.master.after(0, self._add_user_to_config, user_id, user_name)
@@ -326,16 +332,38 @@ class AdminControlTab:
         port = cfg.get("BOT_INTERNAL_API", {}).get("PORT", 8189)
         return f"http://{host}:{port}/api"
 
+    def _get_auth_headers(self):
+        token = (
+            self.editor_app.config_manager.config
+            .get("BOT_INTERNAL_API", {})
+            .get("AUTH_TOKEN", "")
+        )
+        token_str = str(token).strip() if token else ""
+        if token_str:
+            return {"X-Internal-Token": token_str}
+        return None
+
     def refresh_all_live_data(self):
-        self.api_base_url = self._get_api_url(); self.last_api_check_time = time.time()
+        self.api_base_url = self._get_api_url()
+        self._cached_api_headers = self._get_auth_headers()
+        self.last_api_check_time = time.time()
         threading.Thread(target=self._fetch_all_data_thread, daemon=True).start()
 
     def _fetch_all_data_thread(self):
+        headers = self._cached_api_headers or self._get_auth_headers()
         try:
-            guilds_response = requests.get(f"{self.api_base_url}/guilds", timeout=2)
+            guilds_response = requests.get(
+                f"{self.api_base_url}/guilds",
+                timeout=2,
+                headers=headers,
+            )
             if guilds_response.status_code != 200: self.editor_app.master.after(0, self.set_api_status, False); return
             guilds_data = guilds_response.json()
-            dms_response = requests.get(f"{self.api_base_url}/dms", timeout=2)
+            dms_response = requests.get(
+                f"{self.api_base_url}/dms",
+                timeout=2,
+                headers=headers,
+            )
             dms_data = dms_response.json() if dms_response.status_code == 200 else []
             self.editor_app.master.after(0, self._update_gui_with_fetched_data, guilds_data, dms_data)
         except (requests.ConnectionError, requests.Timeout): self.editor_app.master.after(0, self.set_api_status, False)
@@ -377,8 +405,13 @@ class AdminControlTab:
         threading.Thread(target=self._fetch_members_thread, args=(guild_id,), daemon=True).start()
 
     def _fetch_members_thread(self, guild_id):
+        headers = self._cached_api_headers or self._get_auth_headers()
         try:
-            response = requests.get(f"{self.api_base_url}/guilds/{guild_id}/members", timeout=5)
+            response = requests.get(
+                f"{self.api_base_url}/guilds/{guild_id}/members",
+                timeout=5,
+                headers=headers,
+            )
             if response.status_code == 200: self.editor_app.master.after(0, self._update_members_list, response.json())
         except Exception: pass
 
@@ -412,8 +445,13 @@ class AdminControlTab:
              threading.Thread(target=self._leave_guild_thread, args=(guild_id,), daemon=True).start()
 
     def _leave_guild_thread(self, guild_id):
+        headers = self._cached_api_headers or self._get_auth_headers()
         try:
-            response = requests.post(f"{self.api_base_url}/guilds/{guild_id}/leave", timeout=5)
+            response = requests.post(
+                f"{self.api_base_url}/guilds/{guild_id}/leave",
+                timeout=5,
+                headers=headers,
+            )
             if response.status_code == 200: self.editor_app.master.after(0, self.refresh_all_live_data)
             else: self.editor_app.master.after(0, silent_showerror, "API Error", f"Failed to leave guild: {response.text}", self.editor_app.master)
         except Exception as e: self.editor_app.master.after(0, silent_showerror, "Connection Error", f"Could not contact bot API: {e}", self.editor_app.master)

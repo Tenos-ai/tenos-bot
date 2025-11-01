@@ -241,14 +241,20 @@ class QueuedJobView(View):
             try:
                 if interaction.message: await interaction.message.delete()
                 final_feedback = "Job successfully cancelled."
-            except Exception: final_feedback = "Job cancelled (Error deleting original status message)."
+            except Exception:
+                final_feedback = "Job cancelled (Error deleting original status message)."
         else:
             for item_fail in self.children:
-                if isinstance(item_fail, Button) and item_fail.custom_id == custom_id: item_fail.disabled = True; item_fail.label = "Cancelled (State Uncertain)"; break
+                if isinstance(item_fail, Button) and item_fail.custom_id == custom_id:
+                    item_fail.disabled = False
+                    item_fail.label = "Cancel ⏸️"
+                    break
             try:
-                 if interaction.message: await interaction.edit_original_response(view=self)
-            except Exception: pass
-            final_feedback = f"Job cancelled locally. ComfyUI status: {message_text_from_cancel}"
+                if interaction.message:
+                    await interaction.edit_original_response(view=self)
+            except Exception:
+                pass
+            final_feedback = f"Failed to cancel job: {message_text_from_cancel}"
         try: await interaction.followup.send(final_feedback, ephemeral=True)
         except Exception as e_final_follow: print(f"Error sending final cancel followup: {e_final_follow}")
 
