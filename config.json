@@ -25,7 +25,8 @@
   },
   "BOT_INTERNAL_API": {
     "HOST": "127.0.0.1",
-    "PORT": 8189
+    "PORT": 8189,
+    "AUTH_TOKEN": ""
   },
   "BOT_API": {
     "KEY": "YOUR DISCORD API KEY"

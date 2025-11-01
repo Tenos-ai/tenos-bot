@@ -27,7 +27,7 @@ class EditorConfigManager:
             "LORAS": {"LORA_FILES": ""},
             "NODES": {"CUSTOM_NODES": ""},
             "COMFYUI_API": {"HOST": "127.0.0.1", "PORT": 8188},
-            "BOT_INTERNAL_API": {"HOST": "127.0.0.1", "PORT": 8189},
+            "BOT_INTERNAL_API": {"HOST": "127.0.0.1", "PORT": 8189, "AUTH_TOKEN": ""},
             "BOT_API": {"KEY": ""},
             "ADMIN": {"USERNAME": "", "ID": ""},
             "ALLOWED_USERS": {},

@@ -355,52 +355,75 @@ async def check_output_folders(bot):
 
 async def process_cancel_request(comfy_prompt_id: str) -> tuple[bool, str]:
     ws_client = WebsocketClient()
-    ws_client.unregister_prompt(comfy_prompt_id)
 
     bot_job_data = queue_manager.get_job_by_comfy_id(comfy_prompt_id)
     bot_job_id = bot_job_data.get('job_id') if bot_job_data else None
     print(f"Attempting to cancel Comfy Prompt ID: {comfy_prompt_id} (Bot Job ID: {bot_job_id or 'Unknown'})")
-    
+
     if bot_job_id:
-         if queue_manager.is_job_completed_or_cancelled(bot_job_id): 
-             print(f"Local job {bot_job_id} already completed/cancelled. No API call needed.")
-             return False, "Job already completed or cancelled."
-         else: 
-             print(f"Marking local job {bot_job_id} as cancelled.")
-             queue_manager.mark_job_cancelled(bot_job_id)
-    else: 
+        if queue_manager.is_job_completed_or_cancelled(bot_job_id):
+            print(f"Local job {bot_job_id} already completed/cancelled. No API call needed.")
+            return False, "Job already completed or cancelled."
+    else:
         print(f"Warning: No local bot job found for ComfyID {comfy_prompt_id} during cancel request.")
+
+    cancellation_succeeded = False
+    final_status_msg = ""
 
     try:
         api_url_base = f"http://{COMFYUI_HOST}:{COMFYUI_PORT}"
         delete_payload = {"delete": [comfy_prompt_id]}
-        
+
         print(f"Sending DELETE to ComfyUI queue for prompt {comfy_prompt_id}...")
         delete_response = await asyncio.to_thread(requests.post, f"{api_url_base}/queue", json=delete_payload, timeout=10)
-        
+
         if delete_response.status_code == 200:
             final_status_msg = "Job successfully deleted from queue."
             print(f"ComfyUI API Success for {comfy_prompt_id}: {final_status_msg}")
-            return True, final_status_msg
+            cancellation_succeeded = True
         else:
-            error_msg = f"Failed to delete from queue (Status: {delete_response.status_code}). Job may have already started or completed."
-            print(f"ComfyUI API Info for {comfy_prompt_id}: {error_msg}")
-            return True, "Job cancelled locally (not found in ComfyUI pending queue)."
+            response_details = delete_response.text.strip() if delete_response.text else ""
+            error_msg = (
+                f"ComfyUI returned status {delete_response.status_code} when attempting to cancel."
+                " Job may have already started or completed."
+            )
+            if response_details:
+                error_msg += f" Response: {response_details}"
+            final_status_msg = error_msg
+            print(f"ComfyUI API Error for {comfy_prompt_id}: {error_msg}")
 
-    except requests.Timeout: 
+    except requests.Timeout:
+        final_status_msg = "Timeout contacting ComfyUI API."
         print(f"Timeout connecting to ComfyUI for API cancel/interrupt {comfy_prompt_id}.")
-        return True, "Job cancelled locally (Timeout contacting ComfyUI API)."
     except requests.RequestException as e_req_cancel:
         error_details_cancel = f"Error connecting to ComfyUI API: {e_req_cancel}"
         print(f"API Error cancelling/interrupting {comfy_prompt_id}: {e_req_cancel}")
         if e_req_cancel.response is not None:
-            try: error_details_cancel += f"\nResponse: {e_req_cancel.response.text}"
-            except Exception: pass
-        return True, f"Job cancelled locally ({error_details_cancel})."
-    except Exception as e_unexp_cancel: 
+            try:
+                response_text = e_req_cancel.response.text
+                error_details_cancel += f"\nResponse: {response_text}"
+            except Exception:
+                pass
+        final_status_msg = error_details_cancel
+    except Exception as e_unexp_cancel:
         print(f"Unexpected error during API cancel/interrupt for {comfy_prompt_id}: {e_unexp_cancel}")
         traceback.print_exc()
-        return True, "Job cancelled locally (Unexpected error during API cancel/interrupt)."
+        final_status_msg = "Unexpected error during API cancel/interrupt."
+
+    if cancellation_succeeded:
+        if bot_job_id:
+            print(f"Marking local job {bot_job_id} as cancelled after successful API response.")
+            queue_manager.mark_job_cancelled(bot_job_id)
+        else:
+            print(f"No local job id found for {comfy_prompt_id}, but API cancel succeeded.")
+        ws_client.unregister_prompt(comfy_prompt_id)
+        return True, final_status_msg or "Job successfully cancelled."
+
+    if bot_job_id:
+        print(
+            f"Cancel request for job {bot_job_id} failed or timed out; keeping job marked as pending."
+        )
+    return False, final_status_msg or "Failed to cancel job."
 
 
 async def execute_generation_logic(

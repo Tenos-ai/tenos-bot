@@ -5,11 +5,12 @@ import asyncio
 import os
 import traceback
 from aiohttp import web
+from ipaddress import ip_address
 
 
 from bot_config_loader import (
     BOT_TOKEN, ADMIN_USERNAME, print_startup_info,
-    BOT_INTERNAL_API_HOST, BOT_INTERNAL_API_PORT
+    BOT_INTERNAL_API_HOST, BOT_INTERNAL_API_PORT, BOT_INTERNAL_API_TOKEN
 )
 
 
@@ -47,6 +48,17 @@ class TenosBot(commands.Bot):
         
     async def setup_hook(self):
         self.loop.create_task(setup_internal_api(self))
+
+    async def close(self):
+        if self.api_runner:
+            try:
+                await self.api_runner.cleanup()
+                print("Internal API server shut down.")
+            except Exception as e_cleanup:
+                print(f"Warning: Error while cleaning up internal API server: {e_cleanup}")
+            finally:
+                self.api_runner = None
+        await super().close()
 
 bot = TenosBot(command_prefix='/', intents=intents)
 
@@ -127,8 +139,42 @@ async def handle_get_user(request):
     except Exception as e:
         return web.json_response({"error": f"An error occurred: {e}"}, status=500)
 
+
+def _is_loopback_host(host: str) -> bool:
+    if not host:
+        return False
+    lowered = host.lower()
+    if lowered == "localhost":
+        return True
+    try:
+        return ip_address(lowered).is_loopback
+    except ValueError:
+        return False
+
+
+@web.middleware
+async def internal_api_auth_middleware(request, handler):
+    if BOT_INTERNAL_API_TOKEN:
+        provided_token = request.headers.get("X-Internal-Token")
+        if provided_token != BOT_INTERNAL_API_TOKEN:
+            return web.json_response({"error": "Unauthorized"}, status=401)
+    else:
+        peer_info = request.transport.get_extra_info("peername") if request.transport else None
+        if peer_info:
+            client_host = peer_info[0]
+            if not _is_loopback_host(client_host):
+                return web.json_response({"error": "Unauthorized"}, status=401)
+    return await handler(request)
+
+
 async def setup_internal_api(bot_instance):
-    app_api = web.Application()
+    if not BOT_INTERNAL_API_TOKEN and not _is_loopback_host(BOT_INTERNAL_API_HOST):
+        print(
+            "CRITICAL ERROR: Refusing to start internal API on a non-loopback host without an AUTH_TOKEN."
+        )
+        return
+
+    app_api = web.Application(middlewares=[internal_api_auth_middleware])
     app_api['bot'] = bot_instance
     app_api.add_routes([
         web.get('/api/guilds', handle_get_guilds),
@@ -147,6 +193,10 @@ async def setup_internal_api(bot_instance):
     except Exception as e:
         print(f"CRITICAL ERROR: Failed to start internal API server: {e}")
         traceback.print_exc()
+        try:
+            await runner.cleanup()
+        except Exception as cleanup_err:
+            print(f"Warning: Failed to clean up internal API runner after startup error: {cleanup_err}")
 
 
 @bot.event

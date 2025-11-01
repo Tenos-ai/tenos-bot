@@ -3,7 +3,8 @@
 
 import json
 import os
-from datetime import datetime, timedelta
+import re
+from datetime import datetime
 import traceback
 
 class QueueManager:
@@ -34,12 +35,33 @@ class QueueManager:
 
     def load_logs_on_startup(self):
         print("QueueManager: Loading previous logs...")
-        pending_path, completed_path, cancelled_path = self._get_log_paths()
-        self._load_log_file(pending_path, self.pending_jobs)
-        print(f"Loaded {len(self.pending_jobs)} pending jobs from today.")
-        self._load_log_file(completed_path, self.completed_jobs)
-        self._load_log_file(cancelled_path, self.cancelled_jobs)
-        print(f"Loaded {len(self.completed_jobs)} completed, {len(self.cancelled_jobs)} cancelled jobs from today.")
+
+        available_dates = []
+        try:
+            for entry in os.listdir(self.log_directory):
+                match = re.match(r"(\d{4}-\d{2}-\d{2})-(pending|completed|cancelled)\.json$", entry)
+                if match:
+                    available_dates.append(match.group(1))
+        except OSError as e:
+            print(f"Warning: Could not inspect log directory '{self.log_directory}': {e}")
+
+        unique_dates = sorted(set(available_dates))
+        if not unique_dates:
+            unique_dates = [datetime.now().strftime("%Y-%m-%d")]
+
+        recent_dates = unique_dates[-7:]
+
+        for date_str in recent_dates:
+            pending_path, completed_path, cancelled_path = self._get_log_paths(date_str)
+            self._load_log_file(pending_path, self.pending_jobs)
+            self._load_log_file(completed_path, self.completed_jobs)
+            self._load_log_file(cancelled_path, self.cancelled_jobs)
+
+        print(
+            "Loaded pending/completed/cancelled jobs from dates: "
+            + ", ".join(recent_dates)
+        )
+        print(f"Current queue contains {len(self.pending_jobs)} pending jobs after startup load.")
         self.job_first_file_seen = {}
         self.startup_completed = True
 
