@@ -51,13 +51,20 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
         await handle_gen_command(interaction, prompt)
 
 
-    @tree.command(name="edit", description="Edit image(s) with an instruction using FLUX Kontext. Add --ar, --steps, --g, --mp.")
+    @tree.command(name="edit", description="Edit image(s) with Flux Kontext or Qwen Image Edit. Add --ar, --steps, --g, --mp.")
     @app_commands.describe(
         instruction="The command for editing the image (e.g., 'make the sky blue').",
         image1="The primary image to edit.",
         image2="(Optional) A second image for stitching/editing.",
         image3="(Optional) A third image for stitching/editing.",
-        image4="(Optional) A fourth image for stitching/editing."
+        image4="(Optional) A fourth image for stitching/editing.",
+        mode="Select 'qwen' to use Qwen Image Edit instead of Flux Kontext."
+    )
+    @app_commands.choices(
+        mode=[
+            app_commands.Choice(name="Flux Kontext", value="kontext"),
+            app_commands.Choice(name="Qwen Image Edit", value="qwen"),
+        ]
     )
     async def edit(
         interaction: discord.Interaction,
@@ -65,7 +72,8 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
         image1: discord.Attachment,
         image2: discord.Attachment = None,
         image3: discord.Attachment = None,
-        image4: discord.Attachment = None
+        image4: discord.Attachment = None,
+        mode: app_commands.Choice[str] | None = None,
     ):
         if not has_permission(interaction.user, "can_gen"):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
@@ -80,12 +88,15 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
                 await interaction.followup.send(f"Error: File '{att.filename}' is not a valid image. Please only upload images.", ephemeral=True)
                 return
 
+        selected_mode = mode.value if mode else None
+
         await process_kontext_edit_request(
             context_user=interaction.user,
             context_channel=interaction.channel,
             instruction=instruction,
             image_urls=image_urls,
-            initial_interaction_obj=interaction
+            initial_interaction_obj=interaction,
+            mode=selected_mode,
         )
 
 

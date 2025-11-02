@@ -1,4 +1,4 @@
-# Tenosai-Bot: ComfyUI API Discord Bot for Flux & SDXL Image Generation
+# Tenosai-Bot: ComfyUI API Discord Bot for Flux, SDXL, Qwen Image & WAN 2.2 Workflows
 
 ## Updates
 
@@ -77,6 +77,22 @@ Download the portable zip from this repository via the "Code" button at the top 
       6. `https://github.com/BobsBlazed/Bobs_Latent_Optimizer.git`
       7. `https://github.com/Tenos-ai/Tenos-Resize-to-1-M-Pixels.git`
 
+### Qwen Image & WAN 2.2 Assets
+
+- **Qwen Image**: Download the latest `qwen_image` checkpoint bundle from the official Qwen Image release on Hugging Face and
+  place the `.safetensors` file inside your configured `ComfyUI/models/checkpoints` directory. Qwen workflows rely on the
+  built-in `ModelSamplingAuraFlow` node, which ships with current ComfyUI builds—update ComfyUI if the node is missing.
+- **WAN 2.2**: Install the WAN 2.2 text-to-image and image-to-video checkpoints (WAN reports them as `wan2.2.safetensors` and
+  `wan2.2-video.ckpt` respectively) into the same checkpoints folder so the bot can resolve them via `/settings`. WAN workflows
+  require the upstream `ModelSamplingSD3` node that is bundled with the official WAN ComfyUI release; pull the latest WAN custom
+  node package or sync from their GitHub repository to ensure the sampler is available.
+- **Shared Tenos nodes**: Every Qwen and WAN workflow still injects Bob's Latent Optimizer Advanced and the Tenos Resize node to
+  keep prompt handling consistent with Flux/SDXL. Confirm that both custom nodes listed above load without errors before running
+  generations.
+- **WAN animation flow**: Any WAN generation queued through the bot surfaces an `Animate with WAN` follow-up button in Discord.
+  This lets you pass the freshly generated image into WAN's image-to-video/text-to-video workflow without leaving the bot,
+  ensuring a one-click path from still image to animation.
+
 Before using Tenosai-Bot, you **MUST** run the configurator (`TENOSAI-BOT.bat` or by executing `python config-editor-script.py`) to:
 
 - **Map all necessary file paths** (Outputs, Models, CLIPs, LoRAs, Custom Nodes) under the "Main Config" tab.
@@ -119,11 +135,11 @@ Example (SDXL with custom negative): `/gen cyberpunk city --no "trees, nature, d
 - Generated messages will have a ✨ icon if the enhancer was used successfully.
 - Edit the system prompts used by the enhancer via the Configurator's "LLM Prompts" tab.
 
-### 2. Image Editing with Kontext
+### 2. Image Editing (Flux Kontext & Qwen Image Edit)
 Command: `/edit`
 Usage: `/edit [instruction] [image1] [image2] [image3] [image4] [options]`
 
-This powerful feature uses FLUX Kontext to edit up to 4 images based on your text instructions. You can blend images, change objects, alter styles, and much more.
+The edit modal now lets you switch between the original **Flux Kontext** workflow and the official **Qwen Image Edit** graph. Kontext continues to support up to 4 images with multi-image blending, while Qwen Image Edit focuses on single-image edits that lean on AuraFlow guidance for sharper, instruction-following results. Pick the mode that best suits your task before submitting the job.
 
 Options:
 - `--g [number]`: Set guidance scale for the edit (e.g., `3.0`).

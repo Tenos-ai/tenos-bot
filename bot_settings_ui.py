@@ -1,24 +1,80 @@
 # --- START OF FILE bot_settings_ui.py ---
 import discord
 import json
+from typing import Callable, Optional
 
 from settings_manager import (
     load_settings, save_settings,
-    get_model_choices, get_steps_choices, get_sdxl_steps_choices, get_guidance_choices, get_sdxl_guidance_choices,
-    get_t5_clip_choices, get_clip_l_choices, get_style_choices_flux, get_style_choices_sdxl,
+    get_model_choices,
+    get_steps_choices, get_sdxl_steps_choices, get_qwen_steps_choices, get_wan_steps_choices,
+    get_guidance_choices, get_sdxl_guidance_choices, get_qwen_guidance_choices, get_wan_guidance_choices,
+    get_t5_clip_choices, get_clip_l_choices, get_qwen_clip_choices, get_wan_clip_choices, get_wan_vision_clip_choices,
+    get_style_choices_flux, get_style_choices_sdxl, get_style_choices_qwen, get_style_choices_wan,
     get_variation_mode_choices, get_batch_size_choices, get_variation_batch_size_choices,
     get_remix_mode_choices, get_upscale_factor_choices,
     get_llm_enhancer_choices, get_llm_provider_choices, get_llm_model_choices,
-    get_mp_size_choices, get_display_prompt_preference_choices
+    get_mp_size_choices, get_display_prompt_preference_choices,
+    get_qwen_vae_choices, get_wan_vae_choices, get_wan_low_noise_unet_choices
 )
 
 # --- UI Select Components for /settings ---
+
+
+class _ModelSettingSelect(discord.ui.Select):
+    def __init__(
+        self,
+        settings,
+        *,
+        placeholder: str,
+        setting_key: str,
+        choices_func,
+        view_factory: Callable[[dict], discord.ui.View],
+        convert_func=lambda value: value,
+        error_message: Optional[str] = None,
+        content_message: str = "Settings updated.",
+    ):
+        self.settings = settings
+        self._setting_key = setting_key
+        self._view_factory = view_factory
+        self._convert_func = convert_func
+        self._error_message = error_message
+        self._content_message = content_message
+        options = choices_func(self.settings)
+        super().__init__(options=options, placeholder=placeholder)
+
+    async def _handle_error(self, interaction: discord.Interaction):
+        if self._error_message:
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(self._error_message, ephemeral=True)
+                else:
+                    await interaction.followup.send(self._error_message, ephemeral=True)
+            except discord.HTTPException:
+                pass
+
+    async def callback(self, interaction: discord.Interaction):
+        if not self.values:
+            return
+
+        raw_value = self.values[0]
+        try:
+            converted_value = self._convert_func(raw_value)
+        except (ValueError, TypeError):
+            await self._handle_error(interaction)
+            return
+
+        self.settings[self._setting_key] = converted_value
+        save_settings(self.settings)
+
+        view = self._view_factory(self.settings)
+        await interaction.response.edit_message(content=self._content_message, view=view)
+
 
 class ModelSelect(discord.ui.Select):
     def __init__(self, settings):
         self.settings = settings
         choices = get_model_choices(self.settings)
-        super().__init__(options=choices, placeholder="Select Default Model (Flux or SDXL)")
+        super().__init__(options=choices, placeholder="Select Default Model")
 
     async def callback(self, interaction: discord.Interaction):
         if not self.values: return
@@ -27,61 +83,129 @@ class ModelSelect(discord.ui.Select):
         view = ModelClipSettingsView(self.settings)
         await interaction.response.edit_message(content="Configure Model & CLIP Settings:", view=view)
 
-class StepsSelect(discord.ui.Select):
+class StepsSelect(_ModelSettingSelect):
     def __init__(self, settings):
-        self.settings = settings
-        choices = get_steps_choices(self.settings)
-        super().__init__(options=choices, placeholder="Select Default Steps (Flux)")
-    async def callback(self, interaction: discord.Interaction):
-        if not self.values: return
-        try:
-            self.settings['steps'] = int(self.values[0])
-            save_settings(self.settings)
-            view = FluxSettingsView(self.settings)
-            await interaction.response.edit_message(content="Configure Flux Model Settings:", view=view)
-        except ValueError: await interaction.followup.send("Invalid step value selected.", ephemeral=True)
+        super().__init__(
+            settings,
+            placeholder="Select Default Steps (Flux)",
+            setting_key='steps',
+            choices_func=get_steps_choices,
+            view_factory=lambda data: FluxSettingsView(data),
+            convert_func=int,
+            error_message="Invalid step value selected.",
+            content_message="Configure Flux Model Settings:",
+        )
 
-class SDXLStepsSelect(discord.ui.Select):
-    def __init__(self, settings):
-        self.settings = settings
-        choices = get_sdxl_steps_choices(self.settings)
-        super().__init__(options=choices, placeholder="Select Default Steps (SDXL)")
-    async def callback(self, interaction: discord.Interaction):
-        if not self.values: return
-        try:
-            self.settings['sdxl_steps'] = int(self.values[0])
-            save_settings(self.settings)
-            view = SDXLSettingsView(self.settings)
-            await interaction.response.edit_message(content="Configure SDXL Model Settings:", view=view)
-        except ValueError: await interaction.followup.send("Invalid SDXL step value selected.", ephemeral=True)
 
-class GuidanceSelect(discord.ui.Select): # For Flux Guidance
+class SDXLStepsSelect(_ModelSettingSelect):
     def __init__(self, settings):
-        self.settings = settings
-        choices = get_guidance_choices(self.settings)
-        super().__init__(options=choices, placeholder="Select Default Guidance (Flux)")
-    async def callback(self, interaction: discord.Interaction):
-        if not self.values: return
-        try:
-            self.settings['default_guidance'] = float(self.values[0])
-            save_settings(self.settings)
-            view = FluxSettingsView(self.settings)
-            await interaction.response.edit_message(content="Configure Flux Model Settings:", view=view)
-        except ValueError: await interaction.followup.send("Invalid Flux guidance value selected.", ephemeral=True)
+        super().__init__(
+            settings,
+            placeholder="Select Default Steps (SDXL)",
+            setting_key='sdxl_steps',
+            choices_func=get_sdxl_steps_choices,
+            view_factory=lambda data: SDXLSettingsView(data),
+            convert_func=int,
+            error_message="Invalid SDXL step value selected.",
+            content_message="Configure SDXL Model Settings:",
+        )
 
-class SDXLGuidanceSelect(discord.ui.Select): # New for SDXL Guidance
+
+class QwenStepsSelect(_ModelSettingSelect):
     def __init__(self, settings):
-        self.settings = settings
-        choices = get_sdxl_guidance_choices(self.settings)
-        super().__init__(options=choices, placeholder="Select Default Guidance (SDXL)")
-    async def callback(self, interaction: discord.Interaction):
-        if not self.values: return
-        try:
-            self.settings['default_guidance_sdxl'] = float(self.values[0])
-            save_settings(self.settings)
-            view = SDXLSettingsView(self.settings)
-            await interaction.response.edit_message(content="Configure SDXL Model Settings:", view=view)
-        except ValueError: await interaction.followup.send("Invalid SDXL guidance value selected.", ephemeral=True)
+        super().__init__(
+            settings,
+            placeholder="Select Default Steps (Qwen)",
+            setting_key='qwen_steps',
+            choices_func=get_qwen_steps_choices,
+            view_factory=lambda data: QwenSettingsView(data),
+            convert_func=int,
+            error_message="Invalid Qwen step value selected.",
+            content_message="Configure Qwen Model Settings:",
+        )
+
+
+class WANStepsSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Default Steps (WAN)",
+            setting_key='wan_steps',
+            choices_func=get_wan_steps_choices,
+            view_factory=lambda data: WANSettingsView(data),
+            convert_func=int,
+            error_message="Invalid WAN step value selected.",
+            content_message="Configure WAN Model Settings:",
+        )
+
+
+class GuidanceSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Default Guidance (Flux)",
+            setting_key='default_guidance',
+            choices_func=get_guidance_choices,
+            view_factory=lambda data: FluxSettingsView(data),
+            convert_func=float,
+            error_message="Invalid Flux guidance value selected.",
+            content_message="Configure Flux Model Settings:",
+        )
+
+
+class SDXLGuidanceSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Default Guidance (SDXL)",
+            setting_key='default_guidance_sdxl',
+            choices_func=get_sdxl_guidance_choices,
+            view_factory=lambda data: SDXLSettingsView(data),
+            convert_func=float,
+            error_message="Invalid SDXL guidance value selected.",
+            content_message="Configure SDXL Model Settings:",
+        )
+
+
+class QwenGuidanceSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Default Guidance (Qwen)",
+            setting_key='default_guidance_qwen',
+            choices_func=get_qwen_guidance_choices,
+            view_factory=lambda data: QwenSettingsView(data),
+            convert_func=float,
+            error_message="Invalid Qwen guidance value selected.",
+            content_message="Configure Qwen Model Settings:",
+        )
+
+
+class WANGuidanceSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Default Guidance (WAN)",
+            setting_key='default_guidance_wan',
+            choices_func=get_wan_guidance_choices,
+            view_factory=lambda data: WANSettingsView(data),
+            convert_func=float,
+            error_message="Invalid WAN guidance value selected.",
+            content_message="Configure WAN Model Settings:",
+        )
+
+
+class WANLowNoiseUnetSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select WAN Low-Noise UNet",
+            setting_key='default_wan_low_noise_unet',
+            choices_func=get_wan_low_noise_unet_choices,
+            view_factory=lambda data: WANSettingsView(data),
+            content_message="Configure WAN Model Settings:",
+        )
+
 
 class BatchSizeSelect(discord.ui.Select):
     def __init__(self, settings):
@@ -163,29 +287,113 @@ class ClipLSelect(discord.ui.Select):
         view = ModelClipSettingsView(self.settings)
         await interaction.response.edit_message(content="Configure Model & CLIP Settings:", view=view)
 
-class DefaultStyleSelectFlux(discord.ui.Select):
-    def __init__(self, settings):
-        self.settings = settings
-        choices = get_style_choices_flux(self.settings)
-        super().__init__(options=choices, placeholder="Select Default Style (Flux)")
-    async def callback(self, interaction: discord.Interaction):
-        if not self.values: return
-        self.settings['default_style_flux'] = self.values[0]
-        save_settings(self.settings)
-        view = FluxSettingsView(self.settings)
-        await interaction.response.edit_message(content="Configure Flux Model Settings:", view=view)
 
-class DefaultStyleSelectSDXL(discord.ui.Select):
+class QwenClipSelect(_ModelSettingSelect):
     def __init__(self, settings):
-        self.settings = settings
-        choices = get_style_choices_sdxl(self.settings)
-        super().__init__(options=choices, placeholder="Select Default Style (SDXL)")
-    async def callback(self, interaction: discord.Interaction):
-        if not self.values: return
-        self.settings['default_style_sdxl'] = self.values[0]
-        save_settings(self.settings)
-        view = SDXLSettingsView(self.settings)
-        await interaction.response.edit_message(content="Configure SDXL Model Settings:", view=view)
+        super().__init__(
+            settings,
+            placeholder="Select Default Qwen CLIP",
+            setting_key='default_qwen_clip',
+            choices_func=get_qwen_clip_choices,
+            view_factory=lambda data: QwenSettingsView(data),
+            content_message="Configure Qwen Model Settings:",
+        )
+
+
+class QwenVAESelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Default Qwen VAE",
+            setting_key='default_qwen_vae',
+            choices_func=get_qwen_vae_choices,
+            view_factory=lambda data: QwenSettingsView(data),
+            content_message="Configure Qwen Model Settings:",
+        )
+
+
+class WANClipSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Default WAN CLIP",
+            setting_key='default_wan_clip',
+            choices_func=get_wan_clip_choices,
+            view_factory=lambda data: WANSettingsView(data),
+            content_message="Configure WAN Model Settings:",
+        )
+
+
+class WANVisionClipSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select WAN Vision CLIP",
+            setting_key='default_wan_vision_clip',
+            choices_func=get_wan_vision_clip_choices,
+            view_factory=lambda data: WANSettingsView(data),
+            content_message="Configure WAN Model Settings:",
+        )
+
+
+class WANVAESelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Default WAN VAE",
+            setting_key='default_wan_vae',
+            choices_func=get_wan_vae_choices,
+            view_factory=lambda data: WANSettingsView(data),
+            content_message="Configure WAN Model Settings:",
+        )
+
+
+class DefaultStyleSelectFlux(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Default Style (Flux)",
+            setting_key='default_style_flux',
+            choices_func=get_style_choices_flux,
+            view_factory=lambda data: FluxSettingsView(data),
+            content_message="Configure Flux Model Settings:",
+        )
+
+
+class DefaultStyleSelectSDXL(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Default Style (SDXL)",
+            setting_key='default_style_sdxl',
+            choices_func=get_style_choices_sdxl,
+            view_factory=lambda data: SDXLSettingsView(data),
+            content_message="Configure SDXL Model Settings:",
+        )
+
+
+class DefaultStyleSelectQwen(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Default Style (Qwen)",
+            setting_key='default_style_qwen',
+            choices_func=get_style_choices_qwen,
+            view_factory=lambda data: QwenSettingsView(data),
+            content_message="Configure Qwen Model Settings:",
+        )
+
+
+class DefaultStyleSelectWAN(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Default Style (WAN)",
+            setting_key='default_style_wan',
+            choices_func=get_style_choices_wan,
+            view_factory=lambda data: WANSettingsView(data),
+            content_message="Configure WAN Model Settings:",
+        )
 
 class VariationModeSelect(discord.ui.Select):
     def __init__(self, settings):
@@ -324,6 +532,16 @@ class MainSettingsButtonView(discord.ui.View):
     async def sdxl_settings_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = SDXLSettingsView(self.settings)
         await interaction.response.edit_message(content="Configure SDXL Model Settings:", view=view)
+
+    @discord.ui.button(label="Qwen Specifics", style=discord.ButtonStyle.secondary, row=1)
+    async def qwen_settings_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = QwenSettingsView(self.settings)
+        await interaction.response.edit_message(content="Configure Qwen Model Settings:", view=view)
+
+    @discord.ui.button(label="WAN Specifics", style=discord.ButtonStyle.secondary, row=1)
+    async def wan_settings_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = WANSettingsView(self.settings)
+        await interaction.response.edit_message(content="Configure WAN Model Settings:", view=view)
         
     @discord.ui.button(label="Variation & Remix", style=discord.ButtonStyle.primary, row=2)
     async def variation_remix_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -367,6 +585,28 @@ class SDXLSettingsView(BaseSettingsView):
         self.add_item(DefaultStyleSelectSDXL(self.settings))
         self.add_item(SDXLStepsSelect(self.settings))
         self.add_item(SDXLGuidanceSelect(self.settings))
+
+
+class QwenSettingsView(BaseSettingsView):
+    def __init__(self, settings_ref):
+        super().__init__(settings_ref)
+        self.add_item(DefaultStyleSelectQwen(self.settings))
+        self.add_item(QwenStepsSelect(self.settings))
+        self.add_item(QwenGuidanceSelect(self.settings))
+        self.add_item(QwenClipSelect(self.settings))
+        self.add_item(QwenVAESelect(self.settings))
+
+
+class WANSettingsView(BaseSettingsView):
+    def __init__(self, settings_ref):
+        super().__init__(settings_ref)
+        self.add_item(DefaultStyleSelectWAN(self.settings))
+        self.add_item(WANStepsSelect(self.settings))
+        self.add_item(WANGuidanceSelect(self.settings))
+        self.add_item(WANLowNoiseUnetSelect(self.settings))
+        self.add_item(WANClipSelect(self.settings))
+        self.add_item(WANVisionClipSelect(self.settings))
+        self.add_item(WANVAESelect(self.settings))
 
 class VariationRemixSettingsView(BaseSettingsView):
     def __init__(self, settings_ref):

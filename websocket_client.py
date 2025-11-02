@@ -3,6 +3,7 @@ import aiohttp
 import json
 import weakref
 import traceback
+import uuid
 
 from bot_config_loader import COMFYUI_HOST, COMFYUI_PORT
 from queue_manager import queue_manager
@@ -28,8 +29,10 @@ class WebsocketClient:
         if bot_ref:
             self.bot = weakref.ref(bot_ref)
 
-        self.ws_url = f"ws://{COMFYUI_HOST}:{COMFYUI_PORT}/ws"
-        self.client_id = None
+        self.ws_base_url = f"ws://{COMFYUI_HOST}:{COMFYUI_PORT}/ws"
+        if not hasattr(self, "client_id") or self.client_id is None:
+            self.client_id = uuid.uuid4().hex
+        self.ws_url = f"{self.ws_base_url}?clientId={self.client_id}"
         self.session = None
         self.ws = None
         self.is_connected = False
@@ -53,10 +56,12 @@ class WebsocketClient:
         print("WebSocket: Attempting to connect...")
         try:
             if self.session is None or self.session.closed:
-                connector = aiohttp.TCPConnector(limit_per_host=1) 
+                connector = aiohttp.TCPConnector(limit_per_host=1)
                 self.session = aiohttp.ClientSession(connector=connector)
 
-            self.ws = await self.session.ws_connect(self.ws_url, timeout=10) 
+            # Ensure the websocket URL always includes the latest client ID.
+            self.ws_url = f"{self.ws_base_url}?clientId={self.client_id}"
+            self.ws = await self.session.ws_connect(self.ws_url, timeout=10)
             self.is_connected = True
             self.is_connecting = False
             print(f"WebSocket: Successfully connected to {self.ws_url}")
@@ -129,12 +134,14 @@ class WebsocketClient:
         if msg_type == 'status':
             sid_from_msg = msg_data_content.get('sid') if 'sid' in msg_data_content else data.get('sid')
             if sid_from_msg:
-                if not self.client_id: 
+                if not self.client_id:
                     self.client_id = sid_from_msg
                     print(f"WebSocket: Received client ID: {self.client_id}")
-                elif self.client_id != sid_from_msg: 
+                    self.ws_url = f"{self.ws_base_url}?clientId={self.client_id}"
+                elif self.client_id != sid_from_msg:
                     print(f"WebSocket Warning: Client ID changed from {self.client_id} to {sid_from_msg}")
                     self.client_id = sid_from_msg
+                    self.ws_url = f"{self.ws_base_url}?clientId={self.client_id}"
 
         elif msg_type == 'execution_start': 
             prompt_id = msg_data_content.get('prompt_id')

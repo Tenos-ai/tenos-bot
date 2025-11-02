@@ -119,13 +119,16 @@ async def on_bot_message(bot, message: discord.Message):
                 msg_details = result["message_content_details"]
                 content = (f"{msg_details['user_mention']}: `{textwrap.shorten(msg_details['prompt_to_display'], 1000, placeholder='...')}`")
                 if msg_details['enhancer_used'] and msg_details['display_preference'] == 'enhanced': content += " ✨"
-                if msg_details['total_runs'] > 1: content += f" (Job {msg_details['run_number']}/{msg_details['total_runs']} - {msg_details['model_type'].upper()})"
-                else: content += f" ({msg_details['model_type'].upper()})"
+                model_display = msg_details.get('model_type_display') or msg_details.get('model_type', 'UNKNOWN').upper()
+                if msg_details['total_runs'] > 1: content += f" (Job {msg_details['run_number']}/{msg_details['total_runs']} - {model_display})"
+                else: content += f" ({model_display})"
                 content += f"\n> **Seed:** `{msg_details['seed']}`"
                 if msg_details['aspect_ratio']: content += f", **AR:** `{msg_details['aspect_ratio']}`"
                 if msg_details['steps']: content += f", **Steps:** `{msg_details['steps']}`"
-                if msg_details['model_type'] == "sdxl": content += f", **Guidance:** `{msg_details['guidance_sdxl']}`"
-                else: content += f", **Guidance:** `{msg_details['guidance_flux']}`"
+                guidance_label = msg_details.get('guidance_display_label')
+                guidance_value = msg_details.get('guidance_display_value')
+                if guidance_label and guidance_value is not None:
+                    content += f", **{guidance_label}:** `{guidance_value}`"
                 if msg_details['mp_size'] is not None: content += f", **MP:** `{msg_details['mp_size']}`"
                 content += f"\n> **Style:** `{msg_details['style']}`"
                 if msg_details['is_img2img']: content += f", **Strength:** `{msg_details['img_strength_percent']}%`"
