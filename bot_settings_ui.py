@@ -681,38 +681,30 @@ class FluxSettingsView(BaseSettingsView):
     def __init__(self, settings_ref):
         super().__init__(settings_ref)
         default_select = DefaultFluxModelSelect(self.settings)
-        default_select.row = 0
         self.add_item(default_select)
 
         style_select = DefaultStyleSelectFlux(self.settings)
-        style_select.row = 0
         self.add_item(style_select)
 
         steps_select = StepsSelect(self.settings)
-        steps_select.row = 1
         self.add_item(steps_select)
 
         guidance_select = GuidanceSelect(self.settings)
-        guidance_select.row = 1
         self.add_item(guidance_select)
 
 class SDXLSettingsView(BaseSettingsView):
     def __init__(self, settings_ref):
         super().__init__(settings_ref)
         default_select = DefaultSDXLModelSelect(self.settings)
-        default_select.row = 0
         self.add_item(default_select)
 
         style_select = DefaultStyleSelectSDXL(self.settings)
-        style_select.row = 0
         self.add_item(style_select)
 
         steps_select = SDXLStepsSelect(self.settings)
-        steps_select.row = 1
         self.add_item(steps_select)
 
         guidance_select = SDXLGuidanceSelect(self.settings)
-        guidance_select.row = 1
         self.add_item(guidance_select)
 
 
@@ -720,27 +712,21 @@ class QwenSettingsView(BaseSettingsView):
     def __init__(self, settings_ref):
         super().__init__(settings_ref)
         default_select = DefaultQwenModelSelect(self.settings)
-        default_select.row = 0
         self.add_item(default_select)
 
         style_select = DefaultStyleSelectQwen(self.settings)
-        style_select.row = 0
         self.add_item(style_select)
 
         steps_select = QwenStepsSelect(self.settings)
-        steps_select.row = 1
         self.add_item(steps_select)
 
         guidance_select = QwenGuidanceSelect(self.settings)
-        guidance_select.row = 1
         self.add_item(guidance_select)
 
         clip_select = QwenClipSelect(self.settings)
-        clip_select.row = 2
         self.add_item(clip_select)
 
         vae_select = QwenVAESelect(self.settings)
-        vae_select.row = 2
         self.add_item(vae_select)
 
 
@@ -748,47 +734,36 @@ class WANSettingsView(BaseSettingsView):
     def __init__(self, settings_ref):
         super().__init__(settings_ref)
         default_select = DefaultWANModelSelect(self.settings)
-        default_select.row = 0
         self.add_item(default_select)
 
         style_select = DefaultStyleSelectWAN(self.settings)
-        style_select.row = 0
         self.add_item(style_select)
 
         steps_select = WANStepsSelect(self.settings)
-        steps_select.row = 1
         self.add_item(steps_select)
 
         guidance_select = WANGuidanceSelect(self.settings)
-        guidance_select.row = 1
         self.add_item(guidance_select)
 
         low_noise_select = WANLowNoiseUnetSelect(self.settings)
-        low_noise_select.row = 2
         self.add_item(low_noise_select)
 
         clip_select = WANClipSelect(self.settings)
-        clip_select.row = 2
         self.add_item(clip_select)
 
         vision_clip_select = WANVisionClipSelect(self.settings)
-        vision_clip_select.row = 3
         self.add_item(vision_clip_select)
 
         wan_vae_select = WANVAESelect(self.settings)
-        wan_vae_select.row = 3
         self.add_item(wan_vae_select)
 
         anim_res_select = WANAnimationResolutionSelect(self.settings)
-        anim_res_select.row = 4
         self.add_item(anim_res_select)
 
         anim_duration_select = WANAnimationDurationSelect(self.settings)
-        anim_duration_select.row = 4
         self.add_item(anim_duration_select)
 
         motion_profile_select = WANAnimationMotionProfileSelect(self.settings)
-        motion_profile_select.row = 4
         self.add_item(motion_profile_select)
 
 class VariationRemixSettingsView(BaseSettingsView):
