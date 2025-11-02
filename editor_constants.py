@@ -49,6 +49,8 @@ LLM_PROMPTS_FILE_NAME = "llm_prompts.json"
 MODELS_LIST_FILE_NAME = "modelslist.json"
 CHECKPOINTS_LIST_FILE_NAME = "checkpointslist.json"
 CLIP_LIST_FILE_NAME = "cliplist.json"
+QWEN_MODELS_FILE_NAME = "qwenmodels.json"
+WAN_MODELS_FILE_NAME = "wanmodels.json"
 
 ICON_PATH_ICO = r"tenos-ai_icon.ico"
 ICON_PATH_PNG = r"tenos-ai_icon.png"
