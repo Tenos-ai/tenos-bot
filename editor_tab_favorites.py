@@ -41,7 +41,7 @@ class FavoritesTab:
         self.fav_sub_notebook.add(self.fav_wan_assets_sub_tab, text=" WAN Assets ")
         self.fav_sub_notebook.add(self.fav_llm_models_sub_tab, text=" LLM Models ")
         self.fav_sub_notebook.add(self.fav_clip_t5_sub_tab, text=" T5 Clips ")
-        self.fav_sub_notebook.add(self.fav_clip_l_sub_tab, text=" Clip-L ")
+        self.fav_sub_notebook.add(self.fav_clip_l_sub_tab, text=" Other Encoders ")
         self.fav_sub_notebook.add(self.fav_styles_sub_tab, text=" Styles ")
 
         ttk.Button(self.favorites_tab_frame, text="Save All Favorites", command=self.save_all_favorites_data).pack(side="bottom", pady=10)
