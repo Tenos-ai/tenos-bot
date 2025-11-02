@@ -10,11 +10,13 @@ import re
 import requests
 from io import BytesIO
 import math
+from typing import Optional
 
 from bot_config_loader import config, COMFYUI_HOST, COMFYUI_PORT, ADMIN_USERNAME
 from queue_manager import queue_manager
 from file_management import extract_job_id
 from settings_manager import load_settings, load_styles_config
+from model_registry import get_model_spec, get_guidance_field_name
 from comfyui_api import queue_prompt as comfy_queue_prompt, ConnectionRefusedError as ComfyConnectionRefusedError
 from websocket_client import WebsocketClient
 
@@ -22,15 +24,47 @@ from image_generation import modify_prompt as ig_modify_prompt
 from upscaling import modify_upscale_prompt as up_modify_upscale_prompt, get_image_dimensions
 from variation import modify_variation_prompt
 from kontext_editing import modify_kontext_prompt
+from qwen_editing import modify_qwen_edit_prompt
 from utils.seed_utils import generate_seed
 from utils.show_prompt import reconstruct_full_prompt_string
 from utils.message_utils import send_long_message, safe_interaction_response
-from utils.llm_enhancer import enhance_prompt as util_enhance_prompt, FLUX_ENHANCER_SYSTEM_PROMPT, SDXL_ENHANCER_SYSTEM_PROMPT, KONTEXT_ENHANCER_SYSTEM_PROMPT
+from utils.llm_enhancer import (
+    enhance_prompt as util_enhance_prompt,
+    FLUX_ENHANCER_SYSTEM_PROMPT,
+    SDXL_ENHANCER_SYSTEM_PROMPT,
+    KONTEXT_ENHANCER_SYSTEM_PROMPT,
+    QWEN_ENHANCER_SYSTEM_PROMPT,
+)
 
 _bot_instance_core = None
 def register_bot_instance_for_core(bot_instance):
     global _bot_instance_core
     _bot_instance_core = bot_instance
+
+
+def _resolve_model_spec(model_type: str):
+    key = (model_type or "flux").lower()
+    try:
+        spec = get_model_spec(key)
+    except KeyError:
+        key = "flux"
+        spec = get_model_spec(key)
+    return key, spec
+
+
+def _get_guidance_display(job_details: dict, model_key: str, spec) -> tuple[Optional[str], Optional[str]]:
+    field_name = get_guidance_field_name(model_key)
+    value = job_details.get(field_name)
+    if value is None:
+        value = job_details.get('guidance')
+    if value is None:
+        return None, None
+    try:
+        value_str = f"{float(value):.1f}"
+    except (TypeError, ValueError):
+        value_str = str(value)
+    return value_str, f"Guidance ({spec.label})"
+
 
 async def _ensure_ws_client_id():
     """Waits up to 5 seconds for the websocket client to get its session ID."""
@@ -206,39 +240,56 @@ async def process_completed_job(bot, job_id, job_data, file_paths: list):
         enhancer_was_used = job_data.get('enhancer_used', False); enhancer_had_error = job_data.get('enhancer_error'); llm_provider_used = job_data.get('llm_provider')
         aspect_ratio_display = job_data.get("aspect_ratio_str", "?:?"); seed_display = job_data.get('seed', 'N/A'); style_display = job_data.get('style', 'off'); job_type_display_str = job_data.get('type', 'generate').capitalize()
         
-        if job_type_display_str.lower() == 'upscale': 
-            steps_display = 'N/A (Upscale)'; guidance_display = 'N/A (Upscale)'; sdxl_guidance_display = 'N/A (Upscale)'; mp_size_display = 'N/A (Upscale)'
+        resolved_job_model_type, job_model_spec = _resolve_model_spec(job_model_type)
+        guidance_label_complete = f"Guidance ({job_model_spec.label})"
+
+        if job_type_display_str.lower() == 'upscale':
+            steps_display = 'N/A (Upscale)'
+            guidance_display = 'N/A (Upscale)'
+            mp_size_display = 'N/A (Upscale)'
         elif job_type_display_str.lower() == 'kontext_edit':
-            steps_display = str(job_data.get('steps', '?')); guidance_display = f"{float(job_data.get('guidance', 0.0)):.1f}"; sdxl_guidance_display = 'N/A (Kontext)'; mp_size_display = job_data.get("mp_size", "N/A")
-        else:
-            steps_display = str(job_data.get('steps', '?')); guidance_val_flux = job_data.get('guidance'); guidance_val_sdxl = job_data.get('guidance_sdxl')
-            try: guidance_display = f"{float(guidance_val_flux):.1f}" if guidance_val_flux is not None else 'N/A'
-            except (ValueError, TypeError): guidance_display = '?'
-            try: sdxl_guidance_display = f"{float(guidance_val_sdxl):.1f}" if guidance_val_sdxl is not None else 'N/A'
-            except (ValueError, TypeError): sdxl_guidance_display = '?'
+            steps_display = str(job_data.get('steps', '?'))
+            guidance_display = f"{float(job_data.get('guidance', 0.0)):.1f}"
             mp_size_display = job_data.get("mp_size", "N/A")
+        elif job_type_display_str.lower() == 'qwen_image_edit':
+            steps_display = str(job_data.get('steps', '?'))
+            guidance_display, guidance_label_complete = _get_guidance_display(
+                job_data, resolved_job_model_type, job_model_spec
+            )
+            if guidance_display is None:
+                guidance_display = 'N/A'
+                guidance_label_complete = f"Guidance ({job_model_spec.label})"
+            mp_size_display = job_data.get('mp_size', 'N/A (Qwen Edit)')
+        else:
+            steps_display = str(job_data.get('steps', '?'))
+            mp_size_display = job_data.get("mp_size", "N/A")
+            guidance_display, guidance_label_complete = _get_guidance_display(job_data, resolved_job_model_type, job_model_spec)
+            if guidance_display is None:
+                guidance_display = 'N/A'
+                guidance_label_complete = f"Guidance ({job_model_spec.label})"
 
         final_content = f"{user_mention}: `{textwrap.shorten(prompt_to_use_for_display, 1000, placeholder='...')}`"
         if enhancer_was_used and display_preference == 'enhanced': final_content += " ✨"
         final_content += f"\n> **Seed:** `{seed_display}`"
-        
+
         if job_type_display_str.lower() != 'upscale': final_content += f", **AR:** `{aspect_ratio_display}`, **MP:** `{mp_size_display}`"
-        
+
         final_content += f", **Steps:** `{steps_display}`"
-        
-        if job_model_type == "sdxl": final_content += f", **Guidance:** `{sdxl_guidance_display}`"
-        else: final_content += f", **Guidance:** `{guidance_display}`"
-        
+
+        final_content += f", **{guidance_label_complete}:** `{guidance_display}`"
+
         final_content += f"\n> **Style:** `{style_display}`"
-        
-        job_type_info_str = f" ({job_model_type.upper()})" if job_model_type else ""
+
+        job_type_info_str = f" ({job_model_spec.label})" if job_model_spec else ""
         if job_type_display_str.lower() == 'upscale': job_type_info_str = f" (Upscaled {job_data.get('upscale_factor', '?x')}{job_type_info_str})"
         elif job_type_display_str.lower() == 'variation': job_type_info_str = f" ({job_data.get('variation_type', '?').capitalize()} Variation{job_type_info_str})"
         elif job_type_display_str.lower() == 'kontext_edit': job_type_info_str = f" (Kontext Edit)"
+        elif job_type_display_str.lower() == 'qwen_image_edit': job_type_info_str = " (Qwen Image Edit)"
         elif batch_size > 1: job_type_info_str += f", **Batch:** `{batch_size}`"
         final_content += job_type_info_str
 
-        if job_model_type == "sdxl" and job_data.get('negative_prompt'): final_content += f"\n> **No:** `{textwrap.shorten(job_data['negative_prompt'], 100, placeholder='...')}`"
+        if job_model_spec.generation.supports_negative_prompt and job_data.get('negative_prompt'):
+            final_content += f"\n> **No:** `{textwrap.shorten(job_data['negative_prompt'], 100, placeholder='...')}`"
         if enhancer_was_used and display_preference == 'original': final_content += f"\n> `(Prompt enhanced via {llm_provider_used.capitalize() if llm_provider_used else 'LLM'})`"
         elif enhancer_had_error: final_content += f"\n> `(Enhancer Error ({llm_provider_used.capitalize() if llm_provider_used else 'LLM'}): {enhancer_had_error})`"
         if job_data.get('style_warning_message'): final_content += f"\n> `(Style Warning: {job_data['style_warning_message']})`"
@@ -561,22 +612,35 @@ async def execute_generation_logic(
             if style_warning:
                 final_additional_info_msg += f"\n> ⚠️ *Style Warning: {style_warning}*"
                 
+            resolved_model_key, model_spec = _resolve_model_spec(current_model_type_for_job)
+            job_details_current_gen['model_type_for_enhancer'] = resolved_model_key
+            guidance_value, guidance_label = _get_guidance_display(job_details_current_gen, resolved_model_key, model_spec)
+
             job_result["message_content_details"] = {
-                "user_mention": context_user.mention, "prompt_to_display": prompt_text_status_gen,
-                "enhancer_used": enhancer_info_gen.get('used', False), "display_preference": display_pref_gen,
+                "user_mention": context_user.mention,
+                "prompt_to_display": prompt_text_status_gen,
+                "enhancer_used": enhancer_info_gen.get('used', False),
+                "display_preference": display_pref_gen,
                 "original_prompt_available": bool(job_details_current_gen.get('original_prompt')),
-                "llm_provider": enhancer_info_gen.get('provider'), "enhancer_error": enhancer_info_gen.get('error'),
+                "llm_provider": enhancer_info_gen.get('provider'),
+                "enhancer_error": enhancer_info_gen.get('error'),
                 "enhancer_applied_message_for_first_run": final_additional_info_msg if run_idx_gen == 0 else "",
-                "run_number": run_idx_gen + 1, "total_runs": run_times_gen, 
-                "model_type": current_model_type_for_job, 
-                "seed": job_details_current_gen.get('seed', 'N/A'), "aspect_ratio": job_details_current_gen.get("aspect_ratio_str", "?:?"),
+                "run_number": run_idx_gen + 1,
+                "total_runs": run_times_gen,
+                "model_type": resolved_model_key,
+                "model_type_display": model_spec.label,
+                "seed": job_details_current_gen.get('seed', 'N/A'),
+                "aspect_ratio": job_details_current_gen.get("aspect_ratio_str", "?:?"),
                 "steps": str(job_details_current_gen.get('steps', '?')),
-                "guidance_flux": f"{float(job_details_current_gen.get('guidance')):.1f}" if job_details_current_gen.get('guidance') is not None else 'N/A',
-                "guidance_sdxl": f"{float(job_details_current_gen.get('guidance_sdxl')):.1f}" if job_details_current_gen.get('guidance_sdxl') is not None else 'N/A',
+                "guidance_display_value": guidance_value,
+                "guidance_display_label": guidance_label,
                 "mp_size": job_details_current_gen.get("mp_size", "N/A"),
-                "style": job_details_current_gen.get('style', 'off'), "is_img2img": is_img2img_gen,
+                "style": job_details_current_gen.get('style', 'off'),
+                "is_img2img": is_img2img_gen,
                 "img_strength_percent": job_details_current_gen.get('img_strength_percent') if is_img2img_gen else None,
-                "negative_prompt": job_details_current_gen.get('negative_prompt') if current_model_type_for_job == "sdxl" else None,
+                "negative_prompt": job_details_current_gen.get('negative_prompt') if model_spec.generation.supports_negative_prompt else None,
+                "supports_animation": job_details_current_gen.get('supports_animation'),
+                "followup_animation_workflow": job_details_current_gen.get('followup_animation_workflow'),
             }
             job_result["job_data_for_qm"] = {"comfy_prompt_id": comfy_id_current_gen, "channel_id": context_channel.id, "user_id": context_user.id, "user_name": context_user.name, "user_mention": context_user.mention, **job_details_current_gen}
             results_list.append(job_result)
@@ -608,13 +672,15 @@ async def process_upscale_request(context_user, context_channel, referenced_mess
 
     job_data_for_qm_ups = {"job_id":job_id_ups, "comfy_prompt_id":comfy_id_ups, "type":"upscale", "original_prompt_id":original_job_id_str, "channel_id":context_channel.id,"user_id":context_user.id, "user_name":context_user.name, "user_mention":context_user.mention, **job_details_ups}
     prompt_disp_ups = job_details_ups.get("prompt", "[Original Prompt]"); seed_disp_ups = job_details_ups.get('seed','N/A'); style_disp_ups = job_details_ups.get('style','N/A'); ar_disp_ups = job_details_ups.get("aspect_ratio_str", "?:?"); factor_disp_ups = f"{job_details_ups.get('upscale_factor', '?'):.2f}x"; denoise_disp_ups = job_details_ups.get('denoise', '?')
-    model_type_disp_ups = job_details_ups.get('model_type_for_enhancer', 'Unknown').upper() 
-    
+    model_key_ups, model_spec_ups = _resolve_model_spec(job_details_ups.get('model_type_for_enhancer'))
+
     msg_details = {
         "user_mention": context_user.mention, "image_index": image_idx, "original_job_id": original_job_id_str or 'N/A',
-        "model_type": model_type_disp_ups, "prompt_to_display": prompt_disp_ups, "seed": seed_disp_ups,
+        "model_type": model_key_ups, "model_type_display": model_spec_ups.label, "prompt_to_display": prompt_disp_ups, "seed": seed_disp_ups,
         "style": style_disp_ups, "aspect_ratio": ar_disp_ups, "upscale_factor": factor_disp_ups, "denoise": denoise_disp_ups,
-        "job_type": "upscale", "style_warning_message": job_details_ups.get("style_warning_message")
+        "job_type": "upscale", "style_warning_message": job_details_ups.get("style_warning_message"),
+        "supports_animation": job_details_ups.get('supports_animation'),
+        "followup_animation_workflow": job_details_ups.get('followup_animation_workflow'),
     }
     return [{
         "status": "success", "job_id": job_id_ups, "comfy_prompt_id": comfy_id_ups,
@@ -656,7 +722,7 @@ async def process_variation_request(context_user, context_channel, referenced_me
     job_data_for_qm_var = {"job_id":job_id_var, "comfy_prompt_id":comfy_id_var, "type":"variation", "variation_type":variation_type_str, "original_prompt_id":original_job_id_var, "channel_id":context_channel.id,"user_id":context_user.id, "user_name":context_user.name, "user_mention":context_user.mention, **job_details_var}
     prompt_disp_var = job_details_var.get("prompt", "[Original Prompt]"); seed_disp_var = job_details_var.get('seed','N/A'); style_disp_var = job_details_var.get('style','N/A'); ar_disp_var = job_details_var.get("aspect_ratio_str", "?:?"); steps_disp_var = str(job_details_var.get('steps','?'))
     desc_var = "Weak Variation 🤏" if variation_type_str == 'weak' else "Strong Variation 💪"
-    model_type_disp_var = job_details_var.get('model_type_for_enhancer', 'Unknown').upper() 
+    model_key_var, model_spec_var = _resolve_model_spec(job_details_var.get('model_type_for_enhancer'))
     
     source_job_id_enh_check = job_details_var.get('parameters_used',{}).get('source_job_id')
     enhancer_ref_text = ""
@@ -669,10 +735,12 @@ async def process_variation_request(context_user, context_channel, referenced_me
     msg_details_var = {
         "user_mention": context_user.mention, "prompt_to_display": prompt_disp_var,
         "description": desc_var, "image_index": image_idx, "original_job_id": original_job_id_var or 'N/A',
-        "model_type": model_type_disp_var, "seed": seed_disp_var, "aspect_ratio": ar_disp_var,
+        "model_type": model_key_var, "model_type_display": model_spec_var.label, "seed": seed_disp_var, "aspect_ratio": ar_disp_var,
         "steps": steps_disp_var, "style": style_disp_var, "is_remixed": edited_prompt_str is not None,
         "enhancer_reference_text": enhancer_ref_text, "job_type": "variation",
-        "style_warning_message": job_details_var.get("style_warning_message")
+        "style_warning_message": job_details_var.get("style_warning_message"),
+        "supports_animation": job_details_var.get('supports_animation'),
+        "followup_animation_workflow": job_details_var.get('followup_animation_workflow'),
     }
     return [{
         "status": "success", "job_id": job_id_var, "comfy_prompt_id": comfy_id_var,
@@ -719,9 +787,11 @@ async def process_kontext_edit_request(
     context_channel: discord.abc.Messageable,
     instruction: str,
     image_urls: list,
-    initial_interaction_obj: discord.Interaction | None = None
+    initial_interaction_obj: discord.Interaction | None = None,
+    *,
+    mode: str | None = None
 ):
-    """Handles a Kontext edit request from start to finish."""
+    """Handle an edit request using Kontext or Qwen Image Edit workflows."""
     await _ensure_ws_client_id()
     settings = load_settings()
     
@@ -738,15 +808,45 @@ async def process_kontext_edit_request(
             value = quoted_val if quoted_val else (unquoted_compound if unquoted_compound else unquoted_single)
             params_dict[key.lower()] = value.strip() if value else True
 
+    def _normalize_mode_value(value) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            norm = value.strip().lower()
+            return norm or None
+        return str(value).strip().lower() or None
+
+    mode_candidates = (
+        _normalize_mode_value(mode),
+        _normalize_mode_value(params_dict.get('mode')),
+        _normalize_mode_value(params_dict.get('workflow')),
+        _normalize_mode_value(params_dict.get('model')),
+    )
+    resolved_mode = next((candidate for candidate in mode_candidates if candidate), None)
+
+    if 'qwen' in params_dict and resolved_mode is None:
+        resolved_mode = 'qwen'
+    if 'kontext' in params_dict and resolved_mode is None:
+        resolved_mode = 'kontext'
+
+    edit_mode = 'qwen' if resolved_mode in {
+        'qwen', 'qwen_edit', 'qwen-image-edit', 'qwen_image_edit', 'qwenedit'
+    } else 'kontext'
+
     enhancer_info = {'used': False, 'provider': None, 'enhanced_text': None, 'error': None}
     enhanced_instruction = clean_instruction
-    
+
     if settings.get('llm_enhancer_enabled', False):
+        enhancer_target = 'qwen' if edit_mode == 'qwen' else 'kontext'
         enhancer_info['provider'] = settings.get('llm_provider', 'gemini')
+        system_prompt_override = (
+            QWEN_ENHANCER_SYSTEM_PROMPT if enhancer_target == 'qwen'
+            else KONTEXT_ENHANCER_SYSTEM_PROMPT
+        )
         enhanced_res, err_msg = await util_enhance_prompt(
-            clean_instruction, 
-            system_prompt_text_override=KONTEXT_ENHANCER_SYSTEM_PROMPT, 
-            target_model_type="kontext",
+            clean_instruction,
+            system_prompt_text_override=system_prompt_override,
+            target_model_type=enhancer_target,
             image_urls=image_urls
         )
         if enhanced_res:
@@ -767,38 +867,113 @@ async def process_kontext_edit_request(
     if params_dict.get('ar') and re.match(r'^\d+:\d+$', str(params_dict['ar'])):
         final_aspect_ratio = str(params_dict['ar'])
 
-    final_steps = settings.get('kontext_steps', 32)
-    if params_dict.get('steps') and str(params_dict.get('steps')).isdigit():
-        final_steps = int(params_dict['steps'])
+    final_steps = None
+    final_guidance = None
+    final_mp_size = None
+    final_denoise = None
 
-    final_guidance = settings.get('kontext_guidance', 3.0)
-    if params_dict.get('g'):
+    if edit_mode == 'qwen':
+        final_steps = settings.get('qwen_steps', 28)
         try:
-            final_guidance = float(params_dict['g'])
-        except (ValueError, TypeError): pass
-    
-    final_mp_size = settings.get('kontext_mp_size', 1.15)
-    if params_dict.get('mp'):
+            final_steps = int(float(final_steps))
+        except (ValueError, TypeError):
+            final_steps = 28
+        if params_dict.get('steps'):
+            try:
+                final_steps = int(float(params_dict['steps']))
+            except (ValueError, TypeError):
+                pass
+
+        final_guidance = settings.get('default_guidance_qwen', 5.5)
         try:
-            final_mp_size = float(params_dict['mp'])
-        except (ValueError, TypeError): pass
+            final_guidance = float(final_guidance)
+        except (ValueError, TypeError):
+            final_guidance = 5.5
+        if params_dict.get('g'):
+            try:
+                final_guidance = float(params_dict['g'])
+            except (ValueError, TypeError):
+                pass
+
+        final_denoise = settings.get('qwen_edit_denoise', 0.6)
+        try:
+            final_denoise = float(final_denoise)
+        except (ValueError, TypeError):
+            final_denoise = 0.6
+        if params_dict.get('denoise'):
+            try:
+                final_denoise = float(params_dict['denoise'])
+            except (ValueError, TypeError):
+                pass
+
+        final_mp_size = 'N/A (Qwen Edit)'
+    else:
+        final_steps = settings.get('kontext_steps', 32)
+        try:
+            final_steps = int(float(final_steps))
+        except (ValueError, TypeError):
+            final_steps = 32
+        if params_dict.get('steps') and str(params_dict.get('steps')).isdigit():
+            final_steps = int(params_dict['steps'])
+
+        final_guidance = settings.get('kontext_guidance', 3.0)
+        try:
+            final_guidance = float(final_guidance)
+        except (ValueError, TypeError):
+            final_guidance = 3.0
+        if params_dict.get('g'):
+            try:
+                final_guidance = float(params_dict['g'])
+            except (ValueError, TypeError):
+                pass
+
+        final_mp_size = settings.get('kontext_mp_size', 1.15)
+        try:
+            final_mp_size = float(final_mp_size)
+        except (ValueError, TypeError):
+            final_mp_size = 1.15
+        if params_dict.get('mp'):
+            try:
+                final_mp_size = float(params_dict['mp'])
+            except (ValueError, TypeError):
+                pass
 
     seed = generate_seed()
     source_job_id = "slash_command"
     if initial_interaction_obj and initial_interaction_obj.message and initial_interaction_obj.message.attachments:
         source_job_id = extract_job_id(initial_interaction_obj.message.attachments[0].filename) or "unknown"
 
-    job_id, workflow_payload, status_msg, job_details = modify_kontext_prompt(
-        image_urls=image_urls,
-        instruction=enhanced_instruction,
-        user_settings=settings,
-        base_seed=seed,
-        aspect_ratio=final_aspect_ratio,
-        steps_override=final_steps,
-        guidance_override=final_guidance,
-        mp_size_override=final_mp_size,
-        source_job_id=source_job_id
-    )
+    if edit_mode == 'qwen':
+        job_id, workflow_payload, status_msg, job_details = modify_qwen_edit_prompt(
+            image_urls=image_urls,
+            instruction=enhanced_instruction,
+            user_settings=settings,
+            base_seed=seed,
+            steps_override=final_steps,
+            guidance_override=final_guidance,
+            denoise_override=final_denoise if final_denoise is not None else 0.6,
+            source_job_id=source_job_id,
+        )
+        if job_details is not None:
+            job_details.setdefault('aspect_ratio_str', final_aspect_ratio)
+            job_details.setdefault('mp_size', final_mp_size)
+            job_details.setdefault('guidance_qwen', final_guidance)
+            job_details.setdefault('guidance', final_guidance)
+            job_details.setdefault('denoise', final_denoise)
+            if 'model_used' not in job_details and job_details.get('qwen_model_used'):
+                job_details['model_used'] = job_details['qwen_model_used']
+    else:
+        job_id, workflow_payload, status_msg, job_details = modify_kontext_prompt(
+            image_urls=image_urls,
+            instruction=enhanced_instruction,
+            user_settings=settings,
+            base_seed=seed,
+            aspect_ratio=final_aspect_ratio,
+            steps_override=final_steps,
+            guidance_override=final_guidance,
+            mp_size_override=final_mp_size,
+            source_job_id=source_job_id
+        )
     
     if not workflow_payload:
         await safe_interaction_response(initial_interaction_obj, f"Error: {status_msg}", ephemeral=True)
@@ -817,10 +992,33 @@ async def process_kontext_edit_request(
 
     from bot_ui_components import QueuedJobView
     
-    content = (f"{context_user.mention}: Editing with Kontext...\n"
-               f"> **Instruction:** `{textwrap.shorten(instruction, 100, placeholder='...')}`\n"
-               f"> **Images:** {len(image_urls)}, **AR:** `{final_aspect_ratio}`, **MP:** `{final_mp_size}`, **Seed:** `{seed}`\n"
-               f"> **Status:** Queued...")
+    def _fmt_float(value, decimals=1):
+        try:
+            return f"{float(value):.{decimals}f}"
+        except (TypeError, ValueError):
+            return str(value)
+
+    shortened_instruction = textwrap.shorten(instruction, 100, placeholder='...')
+    if edit_mode == 'qwen':
+        guidance_display = _fmt_float(final_guidance, 1)
+        denoise_display = _fmt_float(final_denoise, 2) if final_denoise is not None else '0.60'
+        content = (
+            f"{context_user.mention}: Editing with Qwen Image Edit...\n"
+            f"> **Instruction:** `{shortened_instruction}`\n"
+            f"> **Images:** {len(image_urls)}, **AR:** `{final_aspect_ratio}`, **Seed:** `{seed}`, "
+            f"**Steps:** `{final_steps}`, **Guidance:** `{guidance_display}`, **Denoise:** `{denoise_display}`\n"
+            f"> **Status:** Queued..."
+        )
+    else:
+        guidance_display = _fmt_float(final_guidance, 1)
+        mp_display = _fmt_float(final_mp_size, 2)
+        content = (
+            f"{context_user.mention}: Editing with Flux Kontext...\n"
+            f"> **Instruction:** `{shortened_instruction}`\n"
+            f"> **Images:** {len(image_urls)}, **AR:** `{final_aspect_ratio}`, **MP:** `{mp_display}`, "
+            f"**Seed:** `{seed}`, **Steps:** `{final_steps}`, **Guidance:** `{guidance_display}`\n"
+            f"> **Status:** Queued..."
+        )
     
     if enhancer_info['used']:
         content += " ✨"

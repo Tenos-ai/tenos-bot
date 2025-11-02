@@ -2,6 +2,21 @@ import json
 import os
 import traceback
 
+from model_registry import resolve_model_type_from_prefix
+
+
+MODEL_TYPE_TO_TEMPLATE = {
+    "sdxl": ("MODELNODES", "SDXL_CHECKPOINT_GENERATION", "ckpt_name"),
+    "qwen": ("MODELNODES", "SAFETENSORS_GENERATION", "unet_name"),
+    "wan": ("MODELNODES", "SAFETENSORS_GENERATION", "unet_name"),
+}
+
+FLUX_SUFFIX_TO_TEMPLATE = {
+    ".gguf": ("MODELNODES", "GGUF_GENERATION", "unet_name"),
+    ".sft": ("MODELNODES", "SAFETENSORS_GENERATION", "unet_name"),
+    ".safetensors": ("MODELNODES", "SAFETENSORS_GENERATION", "unet_name"),
+}
+
 def load_model_node_templates():
     default_templates = {
         "MODELNODES": {
@@ -62,62 +77,54 @@ model_node_templates = load_model_node_templates()
 
 def get_model_node(model_name_with_prefix: str, node_number_str: str):
     try:
-        templates = model_node_templates
-        model_type_lc = None 
-        actual_model_name = model_name_with_prefix 
+        if not isinstance(model_name_with_prefix, str) or not model_name_with_prefix.strip():
+            raise ValueError("Model name with prefix must be a non-empty string")
 
         norm_model_name_with_prefix = model_name_with_prefix.strip()
+        model_type_lc, inferred_name = resolve_model_type_from_prefix(norm_model_name_with_prefix)
 
-        if norm_model_name_with_prefix.upper().startswith("FLUX:"):
-            model_type_lc = "flux"
-            actual_model_name = norm_model_name_with_prefix[len("FLUX:"):].strip()
-        elif norm_model_name_with_prefix.upper().startswith("SDXL:"):
-            model_type_lc = "sdxl"
-            actual_model_name = norm_model_name_with_prefix[len("SDXL:"):].strip()
-        else:
-            actual_model_name = norm_model_name_with_prefix 
-            print(f"Warning: Model '{norm_model_name_with_prefix}' has no recognized type prefix. Inferring from extension.")
-            if actual_model_name.lower().endswith((".gguf", ".sft")):
-                model_type_lc = "flux"
-            elif actual_model_name.lower().endswith((".safetensors", ".ckpt", ".pth")):
-                print(f"Assuming SDXL for extension on '{actual_model_name}' due to missing prefix.")
-                model_type_lc = "sdxl"
-            else:
-                raise ValueError(f"Unsupported model type or missing prefix and cannot infer from extension: {actual_model_name}")
+        actual_model_name = inferred_name or (
+            norm_model_name_with_prefix.split(":", 1)[-1].strip()
+            if ":" in norm_model_name_with_prefix
+            else norm_model_name_with_prefix
+        )
 
-        template_key = None
-        input_key_for_model_name = "unet_name"
+        if not actual_model_name:
+            raise ValueError(f"Could not determine model filename from '{model_name_with_prefix}'")
+
+        templates = model_node_templates
 
         if model_type_lc == "flux":
-            if actual_model_name.lower().endswith('.gguf'):
-                template_key = 'GGUF_GENERATION'
-            elif actual_model_name.lower().endswith('.safetensors') or actual_model_name.lower().endswith('.sft'):
-                template_key = 'SAFETENSORS_GENERATION'
-            else:
+            lowered = actual_model_name.lower()
+            template_info = None
+            for suffix, mapping in FLUX_SUFFIX_TO_TEMPLATE.items():
+                if lowered.endswith(suffix):
+                    template_info = mapping
+                    break
+            if template_info is None:
                 raise ValueError(f"Unsupported Flux model extension for '{actual_model_name}'")
-            input_key_for_model_name = "unet_name"
-        elif model_type_lc == "sdxl":
-            template_key = 'SDXL_CHECKPOINT_GENERATION'
-            input_key_for_model_name = "ckpt_name"
         else:
-             raise ValueError(f"Internal error: model_type_lc '{model_type_lc}' not recognized.")
+            template_info = MODEL_TYPE_TO_TEMPLATE.get(model_type_lc)
+            if template_info is None:
+                raise ValueError(f"Unsupported model type '{model_type_lc}'")
 
+        section_key, template_key, input_key_for_model_name = template_info
 
-        if 'MODELNODES' not in templates or template_key not in templates['MODELNODES']:
+        if section_key not in templates or template_key not in templates[section_key]:
             raise KeyError(f"Missing '{template_key}' configuration in modelnodes.json")
 
-        template_section = templates['MODELNODES'][template_key]
+        template_section = templates[section_key][template_key]
         if not template_section or not isinstance(template_section, dict):
-             raise KeyError(f"Invalid structure for '{template_key}' in modelnodes.json")
+            raise KeyError(f"Invalid structure for '{template_key}' in modelnodes.json")
 
         placeholder_key = next(iter(template_section))
         node_template = template_section[placeholder_key]
         node = json.loads(json.dumps(node_template))
 
         if "inputs" in node and isinstance(node["inputs"], dict):
-             node['inputs'][input_key_for_model_name] = actual_model_name
+            node["inputs"][input_key_for_model_name] = actual_model_name
         else:
-             node['inputs'] = {input_key_for_model_name: actual_model_name}
+            node["inputs"] = {input_key_for_model_name: actual_model_name}
 
         return {str(node_number_str): node}
 

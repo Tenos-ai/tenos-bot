@@ -109,6 +109,8 @@ class QueueManager:
             "seed": job_data.get("seed"), "steps": job_data.get("steps"),
             "guidance": job_data.get("guidance"), # Flux guidance
             "guidance_sdxl": job_data.get("guidance_sdxl"), # SDXL guidance
+            "guidance_qwen": job_data.get("guidance_qwen"),
+            "guidance_wan": job_data.get("guidance_wan"),
             "negative_prompt": job_data.get("negative_prompt"), # SDXL negative prompt
             "style": job_data.get("style"), "width": job_data.get("width"), "height": job_data.get("height"),
             "aspect_ratio_str": job_data.get("aspect_ratio_str"),
@@ -123,7 +125,9 @@ class QueueManager:
             "enhanced_prompt": job_data.get("enhanced_prompt"),
             "enhancer_error": job_data.get("enhancer_error"),
             "model_type_for_enhancer": job_data.get("model_type_for_enhancer", "flux"),
-            "mp_size": job_data.get("mp_size")
+            "mp_size": job_data.get("mp_size"),
+            "supports_animation": job_data.get("supports_animation"),
+            "followup_animation_workflow": job_data.get("followup_animation_workflow"),
         }
         self.pending_jobs[job_id_str] = full_job_data
         print(f"Added job {job_id_str} to pending queue.")

@@ -6,6 +6,45 @@ import discord
 import os
 import numpy as np
 import traceback
+from typing import Dict, Iterable, List, Optional, Tuple
+
+from model_registry import get_model_spec, resolve_model_type_from_prefix
+
+
+MODEL_SELECTION_PREFIX = {
+    "flux": "Flux",
+    "sdxl": "SDXL",
+    "qwen": "Qwen",
+    "wan": "WAN",
+}
+
+MODEL_CATALOG_FILES = {
+    "flux": "modelslist.json",
+    "sdxl": "checkpointslist.json",
+    "qwen": "qwenmodels.json",
+    "wan": "wanmodels.json",
+}
+
+STYLE_FILTERS = {
+    "flux": {"all", "flux"},
+    "sdxl": {"all", "sdxl"},
+    "qwen": {"all", "qwen"},
+    "wan": {"all", "wan"},
+}
+
+DEFAULT_STEP_OPTIONS = {
+    "flux": [4, 8, 16, 24, 32, 40, 48, 56, 64],
+    "sdxl": [16, 20, 26, 32, 40, 50],
+    "qwen": [12, 16, 20, 24, 28, 32, 36, 40],
+    "wan": [12, 18, 24, 30, 36, 42, 50],
+}
+
+GUIDANCE_CONFIG = {
+    "flux": {"start": 0.0, "stop": 10.0, "step": 0.5},
+    "sdxl": {"start": 1.0, "stop": 15.0, "step": 0.5},
+    "qwen": {"start": 0.0, "stop": 10.0, "step": 0.5},
+    "wan": {"start": 1.0, "stop": 15.0, "step": 0.5},
+}
 
 def load_llm_models_config():
     default_config = {
@@ -112,6 +151,74 @@ def load_styles_config():
         return {"off": {"favorite": False}}
 
 
+def _extract_catalog_entries(raw_data: object, *, favorites_key: str = "favorites") -> Tuple[List[str], List[str]]:
+    favorites: List[str] = []
+    items: List[str] = []
+
+    if isinstance(raw_data, dict):
+        raw_favorites = raw_data.get(favorites_key)
+        if isinstance(raw_favorites, dict):
+            for value in raw_favorites.values():
+                if isinstance(value, Iterable) and not isinstance(value, (str, bytes)):
+                    favorites.extend(str(v).strip() for v in value if isinstance(v, str) and v.strip())
+        elif isinstance(raw_favorites, Iterable) and not isinstance(raw_favorites, (str, bytes)):
+            favorites.extend(str(v).strip() for v in raw_favorites if isinstance(v, str) and v.strip())
+
+        for key, value in raw_data.items():
+            if key == favorites_key:
+                continue
+            if isinstance(value, Iterable) and not isinstance(value, (str, bytes)):
+                items.extend(str(v).strip() for v in value if isinstance(v, str) and v.strip())
+    elif isinstance(raw_data, Iterable) and not isinstance(raw_data, (str, bytes)):
+        items.extend(str(v).strip() for v in raw_data if isinstance(v, str) and v.strip())
+
+    # Remove duplicates while preserving order
+    seen: set[str] = set()
+    deduped_items: List[str] = []
+    for entry in items:
+        if entry and entry not in seen:
+            deduped_items.append(entry)
+            seen.add(entry)
+
+    seen_favorites: set[str] = set()
+    deduped_favorites: List[str] = []
+    for fav in favorites:
+        if fav and fav not in seen_favorites:
+            deduped_favorites.append(fav)
+            seen_favorites.add(fav)
+
+    return deduped_favorites, deduped_items
+
+
+def _load_model_catalog(file_name: str) -> Tuple[List[str], List[str]]:
+    if not file_name:
+        return [], []
+
+    try:
+        if not os.path.exists(file_name):
+            return [], []
+        with open(file_name, 'r') as f:
+            raw_data = json.load(f)
+    except Exception as exc:
+        print(f"Warning: Could not load {file_name}: {exc}")
+        return [], []
+
+    return _extract_catalog_entries(raw_data)
+
+
+def _get_first_model_from_catalog(model_type: str) -> Optional[str]:
+    file_name = MODEL_CATALOG_FILES.get(model_type)
+    if not file_name:
+        return None
+
+    favorites, items = _load_model_catalog(file_name)
+    if favorites:
+        return favorites[0]
+    if items:
+        return items[0]
+    return None
+
+
 def load_settings():
     settings_file = 'settings.json'
     try:
@@ -146,8 +253,8 @@ def load_settings():
                 settings[key] = default_value
                 updated = True
 
-        numeric_keys_float = ['default_guidance', 'default_guidance_sdxl', 'upscale_factor', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']
-        numeric_keys_int = ['steps', 'sdxl_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size']
+        numeric_keys_float = ['default_guidance', 'default_guidance_sdxl', 'default_guidance_qwen', 'default_guidance_wan', 'upscale_factor', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']
+        numeric_keys_int = ['steps', 'sdxl_steps', 'qwen_steps', 'wan_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size']
         bool_keys = ['remix_mode', 'llm_enhancer_enabled']
         display_prompt_key = 'display_prompt_preference'
         allowed_display_prompt_options = ['enhanced', 'original']
@@ -393,6 +500,24 @@ def load_settings():
             settings['default_sdxl_negative_prompt'] = default_settings['default_sdxl_negative_prompt']
             updated = True
 
+        for neg_key in ('default_qwen_negative_prompt', 'default_wan_negative_prompt'):
+            if neg_key in settings:
+                value = settings[neg_key]
+                if value is None:
+                    settings[neg_key] = ""
+                    updated = True
+                elif isinstance(value, str):
+                    stripped = value.strip()
+                    if stripped != value:
+                        settings[neg_key] = stripped
+                        updated = True
+                else:
+                    settings[neg_key] = str(value)
+                    updated = True
+            else:
+                settings[neg_key] = default_settings[neg_key]
+                updated = True
+
 
         if updated:
              print(f"Updating {settings_file} with defaults/corrections.")
@@ -408,26 +533,20 @@ def load_settings():
         return _get_default_settings()
 
 def _get_default_settings():
-    default_flux_model_raw = None
-    try:
-        if os.path.exists('modelslist.json'):
-            with open('modelslist.json', 'r') as f: models = json.load(f)
-            default_flux_model_raw = next((m.strip() for type_list in models.values() if isinstance(type_list, list) for m in type_list if isinstance(m, str) and m.strip()), None)
-    except Exception: default_flux_model_raw = None
-
-    default_sdxl_checkpoint_raw = None
-    try:
-        if os.path.exists('checkpointslist.json'):
-            with open('checkpointslist.json', 'r') as f: checkpoints = json.load(f)
-            if isinstance(checkpoints, dict) and isinstance(checkpoints.get('checkpoints'),list):
-                default_sdxl_checkpoint_raw = next((c.strip() for c in checkpoints['checkpoints'] if isinstance(c, str) and c.strip()), None)
-            elif isinstance(checkpoints, list):
-                 default_sdxl_checkpoint_raw = next((c.strip() for c in checkpoints if isinstance(c, str) and c.strip()), None)
-    except Exception: default_sdxl_checkpoint_raw = None
+    default_flux_model_raw = _get_first_model_from_catalog("flux")
+    default_sdxl_checkpoint_raw = _get_first_model_from_catalog("sdxl")
+    default_qwen_checkpoint_raw = _get_first_model_from_catalog("qwen")
+    default_wan_checkpoint_raw = _get_first_model_from_catalog("wan")
 
     default_model_setting = None
-    if default_flux_model_raw: default_model_setting = f"Flux: {default_flux_model_raw}"
-    elif default_sdxl_checkpoint_raw: default_model_setting = f"SDXL: {default_sdxl_checkpoint_raw}"
+    if default_flux_model_raw:
+        default_model_setting = f"{MODEL_SELECTION_PREFIX['flux']}: {default_flux_model_raw}"
+    elif default_qwen_checkpoint_raw:
+        default_model_setting = f"{MODEL_SELECTION_PREFIX['qwen']}: {default_qwen_checkpoint_raw}"
+    elif default_wan_checkpoint_raw:
+        default_model_setting = f"{MODEL_SELECTION_PREFIX['wan']}: {default_wan_checkpoint_raw}"
+    elif default_sdxl_checkpoint_raw:
+        default_model_setting = f"{MODEL_SELECTION_PREFIX['sdxl']}: {default_sdxl_checkpoint_raw}"
 
     default_t5 = None; default_l = None
     try:
@@ -445,20 +564,38 @@ def _get_default_settings():
     return {
         "selected_model": default_model_setting,
         "selected_kontext_model": default_flux_model_raw,
+        "default_flux_model": default_flux_model_raw,
+        "default_sdxl_checkpoint": default_sdxl_checkpoint_raw,
+        "default_qwen_checkpoint": default_qwen_checkpoint_raw,
+        "default_qwen_clip": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+        "default_qwen_vae": "qwen_image_vae.safetensors",
+        "default_wan_checkpoint": default_wan_checkpoint_raw,
+        "default_wan_low_noise_unet": "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
+        "default_wan_clip": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+        "default_wan_vae": "wan_2.1_vae.safetensors",
+        "default_wan_vision_clip": "clip_vision_h.safetensors",
         "steps": 32,
         "sdxl_steps": 26,
+        "qwen_steps": 28,
+        "wan_steps": 30,
         "selected_t5_clip": default_t5,
         "selected_clip_l": default_l,
         "selected_upscale_model": None,
         "selected_vae": None,
         "default_style_flux": "off",
         "default_style_sdxl": "off",
+        "default_style_qwen": "off",
+        "default_style_wan": "off",
         "default_variation_mode": "weak",
         "variation_batch_size": 1,
         "default_batch_size": 1,
         "default_guidance": 3.5,
         "default_guidance_sdxl": 7.0,
+        "default_guidance_qwen": 5.5,
+        "default_guidance_wan": 6.0,
         "default_sdxl_negative_prompt": "",
+        "default_qwen_negative_prompt": "",
+        "default_wan_negative_prompt": "",
         "default_mp_size": 1.0,
         "kontext_guidance": 3.0,
         "kontext_steps": 32,
@@ -476,14 +613,16 @@ def _get_default_settings():
 def save_settings(settings):
     settings_file = 'settings.json'
     try:
-        numeric_keys_float = ['default_guidance', 'default_guidance_sdxl', 'upscale_factor', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']
-        numeric_keys_int = ['steps', 'sdxl_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size']
+        numeric_keys_float = ['default_guidance', 'default_guidance_sdxl', 'default_guidance_qwen', 'default_guidance_wan', 'upscale_factor', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']
+        numeric_keys_int = ['steps', 'sdxl_steps', 'qwen_steps', 'wan_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size']
         bool_keys = ['remix_mode', 'llm_enhancer_enabled']
         string_keys_to_strip = [
             'llm_provider', 'llm_model_gemini', 'llm_model_groq', 'llm_model_openai',
             'selected_model', 'selected_t5_clip', 'selected_clip_l', 'selected_upscale_model',
-            'selected_vae', 'default_style_flux', 'default_style_sdxl', 'default_sdxl_negative_prompt',
-            'selected_kontext_model'
+            'selected_vae', 'default_style_flux', 'default_style_sdxl', 'default_style_qwen', 'default_style_wan',
+            'default_sdxl_negative_prompt', 'default_qwen_negative_prompt', 'default_wan_negative_prompt',
+            'selected_kontext_model', 'default_flux_model', 'default_sdxl_checkpoint', 'default_qwen_checkpoint', 'default_wan_checkpoint',
+            'default_qwen_clip', 'default_qwen_vae', 'default_wan_low_noise_unet', 'default_wan_clip', 'default_wan_vae', 'default_wan_vision_clip'
         ]
         display_prompt_key = 'display_prompt_preference'
         allowed_display_prompt_options = ['enhanced', 'original']
@@ -544,78 +683,131 @@ def save_settings(settings):
 
 
 def get_model_choices(settings):
-    choices = []
-    flux_models_data = {}; sdxl_checkpoints_data = {}
-    try:
-        if os.path.exists('modelslist.json'):
-            with open('modelslist.json', 'r') as f: flux_models_data = json.load(f)
-        if not isinstance(flux_models_data, dict): flux_models_data = {}
-    except Exception: flux_models_data = {}
-    try:
-        if os.path.exists('checkpointslist.json'):
-            with open('checkpointslist.json', 'r') as f: sdxl_checkpoints_data = json.load(f)
-        if not isinstance(sdxl_checkpoints_data, dict): sdxl_checkpoints_data = {}
-    except Exception: sdxl_checkpoints_data = {}
+    choices: List[discord.SelectOption] = []
+    catalogs: Dict[str, Dict[str, set[str]]] = {}
+
+    for model_type in MODEL_SELECTION_PREFIX:
+        favorites, items = _load_model_catalog(MODEL_CATALOG_FILES.get(model_type, ""))
+        catalogs[model_type] = {
+            "favorites": {f for f in favorites},
+            "items": {i for i in items},
+        }
 
     current_model_setting = settings.get('selected_model')
-    if isinstance(current_model_setting, str): current_model_setting = current_model_setting.strip()
+    current_model_value = current_model_setting.strip() if isinstance(current_model_setting, str) else None
 
-    flux_favorites_raw = flux_models_data.get('favorites', [])
-    flux_favorites = [f.strip() for f in flux_favorites_raw if isinstance(f, str)]
-    sdxl_favorites_raw = sdxl_checkpoints_data.get('favorites', [])
-    sdxl_favorites = [f.strip() for f in sdxl_favorites_raw if isinstance(f, str)]
-    
-    canonical_options = []
-    seen_values = set()
+    canonical_options: List[Dict[str, str]] = []
+    seen_values: set[str] = set()
 
-    for model in sorted(flux_favorites):
-        value = f"Flux: {model}"
-        if value not in seen_values:
-            canonical_options.append({'label': f"⭐ [FLUX] {model}", 'value': value})
-            seen_values.add(value)
-    for model in sorted(sdxl_favorites):
-        value = f"SDXL: {model}"
-        if value not in seen_values:
-            canonical_options.append({'label': f"⭐ [SDXL] {model}", 'value': value})
-            seen_values.add(value)
+    for model_type in ("flux", "sdxl", "qwen", "wan"):
+        if model_type not in MODEL_SELECTION_PREFIX:
+            continue
+        prefix_label = MODEL_SELECTION_PREFIX[model_type]
+        display_tag = prefix_label.upper()
+        favorites_sorted = sorted(catalogs[model_type]["favorites"], key=str.lower)
+        items_sorted = sorted(catalogs[model_type]["items"], key=str.lower)
 
-    all_flux_models_raw = []
-    for model_type_key in ['safetensors', 'sft', 'gguf']:
-        all_flux_models_raw.extend(flux_models_data.get(model_type_key, []))
+        for model in favorites_sorted:
+            value = f"{prefix_label}: {model}"
+            if value not in seen_values:
+                canonical_options.append({
+                    'label': f"⭐ [{display_tag}] {model}",
+                    'value': value,
+                })
+                seen_values.add(value)
 
-    for model_raw in sorted(list(set(m.strip() for m in all_flux_models_raw if isinstance(m, str)))):
-        value = f"Flux: {model_raw}"
-        if value not in seen_values:
-            canonical_options.append({'label': f"[FLUX] {model_raw}", 'value': value})
-            seen_values.add(value)
+        for model in items_sorted:
+            value = f"{prefix_label}: {model}"
+            if value not in seen_values:
+                canonical_options.append({
+                    'label': f"[{display_tag}] {model}",
+                    'value': value,
+                })
+                seen_values.add(value)
 
-    all_sdxl_checkpoints_raw = []
-    if isinstance(sdxl_checkpoints_data.get('checkpoints'), list): all_sdxl_checkpoints_raw = sdxl_checkpoints_data['checkpoints']
-    else:
-        for key, value in sdxl_checkpoints_data.items():
-            if isinstance(value, list) and key != 'favorites': all_sdxl_checkpoints_raw.extend(value)
-    
-    for model_raw in sorted(list(set(c for c in all_sdxl_checkpoints_raw if isinstance(c, str)))):
-        value = f"SDXL: {model_raw.strip()}"
-        if value not in seen_values:
-            canonical_options.append({'label': f"[SDXL] {model_raw.strip()}", 'value': value})
-            seen_values.add(value)
-    
-    if current_model_setting and current_model_setting not in seen_values:
-        model_type, actual_name = (current_model_setting.split(":",1)[0].strip().lower(), current_model_setting.split(":",1)[1].strip()) if ":" in current_model_setting else (None, current_model_setting)
-        is_fav = (model_type == "flux" and actual_name in flux_favorites) or \
-                 (model_type == "sdxl" and actual_name in sdxl_favorites)
-        label = f"{'⭐ ' if is_fav else ''}[{model_type.upper() if model_type else '??'}] {actual_name}"
-        canonical_options.insert(0, {'label': label, 'value': current_model_setting})
+    if current_model_value and current_model_value not in seen_values:
+        current_type, actual_name = resolve_model_type_from_prefix(current_model_value)
+        display_prefix = MODEL_SELECTION_PREFIX.get(current_type, current_model_value.split(":", 1)[0].strip() if ":" in current_model_value else current_type or "?")
+        display_tag = display_prefix.upper()
+        favorites_for_type = catalogs.get(current_type, {}).get("favorites", set())
+        actual_display_name = actual_name or (current_model_value.split(":", 1)[-1].strip() if ":" in current_model_value else current_model_value)
+        is_favorite = bool(actual_display_name and actual_display_name in favorites_for_type)
+        label_prefix = "⭐ " if is_favorite else ""
+        canonical_options.insert(0, {
+            'label': f"{label_prefix}[{display_tag}] {actual_display_name}",
+            'value': current_model_value,
+        })
+        seen_values.add(current_model_value)
 
     for option_data in canonical_options:
-        is_default = (option_data['value'] == current_model_setting)
-        choices.append(discord.SelectOption(label=option_data['label'][:100], value=option_data['value'], default=is_default))
+        is_default = (current_model_value is not None and option_data['value'] == current_model_value)
+        choices.append(
+            discord.SelectOption(
+                label=option_data['label'][:100],
+                value=option_data['value'],
+                default=is_default,
+            )
+        )
 
     if choices and not any(o.default for o in choices):
-        if choices: choices[0].default = True
+        choices[0].default = True
 
     return choices[:25]
+
+
+def _build_model_choice_options(settings, model_type: str, setting_key: str) -> List[discord.SelectOption]:
+    """Return select options for a specific model catalog."""
+
+    favorites, items = _load_model_catalog(MODEL_CATALOG_FILES.get(model_type, ""))
+
+    current_value = settings.get(setting_key)
+    if isinstance(current_value, str):
+        current_value = current_value.strip()
+    else:
+        current_value = None
+
+    display_tag = MODEL_SELECTION_PREFIX.get(model_type, model_type.upper())
+    canonical_options: List[Dict[str, str]] = []
+    seen: set[str] = set()
+
+    for model in sorted(favorites, key=str.lower):
+        value = model
+        if value not in seen:
+            canonical_options.append({
+                "label": f"⭐ [{display_tag.upper()}] {model}",
+                "value": value,
+            })
+            seen.add(value)
+
+    for model in sorted(items, key=str.lower):
+        value = model
+        if value not in seen:
+            canonical_options.append({
+                "label": f"[{display_tag.upper()}] {model}",
+                "value": value,
+            })
+            seen.add(value)
+
+    if current_value and current_value not in seen:
+        canonical_options.insert(0, {
+            "label": f"[{display_tag.upper()}] {current_value}",
+            "value": current_value,
+        })
+
+    select_options: List[discord.SelectOption] = []
+    for option in canonical_options:
+        select_options.append(
+            discord.SelectOption(
+                label=option["label"][:100],
+                value=option["value"],
+                default=current_value is not None and option["value"] == current_value,
+            )
+        )
+
+    if select_options and not any(option.default for option in select_options):
+        select_options[0].default = True
+
+    return select_options[:25]
 
 
 def get_clip_choices(settings, clip_type_key, setting_key):
@@ -672,27 +864,36 @@ def get_clip_choices(settings, clip_type_key, setting_key):
 
 def get_t5_clip_choices(settings): return get_clip_choices(settings, 't5', 'selected_t5_clip')
 def get_clip_l_choices(settings): return get_clip_choices(settings, 'clip_L', 'selected_clip_l')
+def get_qwen_clip_choices(settings): return get_clip_choices(settings, 'qwen', 'default_qwen_clip')
+def get_wan_clip_choices(settings): return get_clip_choices(settings, 'wan', 'default_wan_clip')
+def get_wan_vision_clip_choices(settings): return get_clip_choices(settings, 'vision', 'default_wan_vision_clip')
 
 
-def get_style_choices_flux(settings):
-    choices = []; styles = load_styles_config()
-    current_style = settings.get('default_style_flux', 'off').strip()
-    
-    filtered_styles = {name: data for name, data in styles.items() if isinstance(data, dict) and data.get('model_type', 'all') in ['all', 'flux']}
+def get_style_choices_for_model(settings, model_type: str):
+    styles = load_styles_config()
+    spec = get_model_spec(model_type)
+    current_style = str(settings.get(spec.defaults.style_key, 'off') or 'off').strip()
 
-    canonical_options = []
-    favorite_styles = []
-    other_styles = []
-    off_option = None
+    allowed_tags = STYLE_FILTERS.get(model_type, {"all"})
+    filtered_styles = {
+        name: data
+        for name, data in styles.items()
+        if isinstance(data, dict) and data.get('model_type', 'all') in allowed_tags
+    }
+
+    canonical_options: List[dict] = []
+    favorite_styles: List[dict] = []
+    other_styles: List[dict] = []
+    off_option: Optional[dict] = None
 
     for style_raw, data_raw in filtered_styles.items():
-        style = style_raw.strip()
-        is_favorite = data_raw.get('favorite', False)
-        label_prefix = "⭐" if is_favorite and style != "off" else ("🔴" if style == "off" else "")
-        option_label = f"{label_prefix} {style}".strip()
-        option_data = {'label': option_label, 'value': style}
+        style_name = style_raw.strip()
+        is_favorite = bool(data_raw.get('favorite'))
+        label_prefix = "⭐" if is_favorite and style_name != "off" else ("🔴" if style_name == "off" else "")
+        option_label = f"{label_prefix} {style_name}".strip()
+        option_data = {'label': option_label, 'value': style_name}
 
-        if style == 'off':
+        if style_name == 'off':
             off_option = option_data
         elif is_favorite:
             favorite_styles.append(option_data)
@@ -701,122 +902,131 @@ def get_style_choices_flux(settings):
 
     favorite_styles.sort(key=lambda o: o['label'].lstrip('⭐🔴 '))
     other_styles.sort(key=lambda o: o['label'])
-    
+
     if off_option:
         canonical_options.append(off_option)
     canonical_options.extend(favorite_styles)
     canonical_options.extend(other_styles)
 
+    choices: List[discord.SelectOption] = []
     for option_data in canonical_options:
         is_default = (option_data['value'] == current_style)
-        choices.append(discord.SelectOption(label=option_data['label'][:100], value=option_data['value'], default=is_default))
-    
+        choices.append(
+            discord.SelectOption(
+                label=option_data['label'][:100],
+                value=option_data['value'],
+                default=is_default,
+            )
+        )
+
     if choices and not any(opt.default for opt in choices):
-        found = False
         for opt in choices:
             if opt.value == current_style:
                 opt.default = True
-                found = True
                 break
-        if not found and choices:
+        else:
             choices[0].default = True
 
     return choices[:25]
 
 
+def get_style_choices_flux(settings):
+    return get_style_choices_for_model(settings, "flux")
+
+
 def get_style_choices_sdxl(settings):
-    choices = []; styles = load_styles_config()
-    current_style = settings.get('default_style_sdxl', 'off').strip()
-    
-    filtered_styles = {name: data for name, data in styles.items() if isinstance(data, dict) and data.get('model_type', 'all') in ['all', 'sdxl']}
+    return get_style_choices_for_model(settings, "sdxl")
 
-    canonical_options = []
-    favorite_styles = []
-    other_styles = []
-    off_option = None
 
-    for style_raw, data_raw in filtered_styles.items():
-        style = style_raw.strip()
-        is_favorite = data_raw.get('favorite', False)
-        label_prefix = "⭐" if is_favorite and style != "off" else ("🔴" if style == "off" else "")
-        option_label = f"{label_prefix} {style}".strip()
-        option_data = {'label': option_label, 'value': style}
+def get_style_choices_qwen(settings):
+    return get_style_choices_for_model(settings, "qwen")
 
-        if style == 'off':
-            off_option = option_data
-        elif is_favorite:
-            favorite_styles.append(option_data)
-        else:
-            other_styles.append(option_data)
 
-    favorite_styles.sort(key=lambda o: o['label'].lstrip('⭐🔴 '))
-    other_styles.sort(key=lambda o: o['label'])
-    
-    if off_option:
-        canonical_options.append(off_option)
-    canonical_options.extend(favorite_styles)
-    canonical_options.extend(other_styles)
+def get_style_choices_wan(settings):
+    return get_style_choices_for_model(settings, "wan")
 
-    for option_data in canonical_options:
-        is_default = (option_data['value'] == current_style)
-        choices.append(discord.SelectOption(label=option_data['label'][:100], value=option_data['value'], default=is_default))
-    
-    if choices and not any(opt.default for opt in choices):
-        found = False
-        for opt in choices:
-            if opt.value == current_style:
-                opt.default = True
-                found = True
-                break
-        if not found and choices:
-            choices[0].default = True
 
+def get_steps_choices_for_model(settings, model_type: str):
+    spec = get_model_spec(model_type)
+    try:
+        current_steps = int(settings.get(spec.defaults.steps_key, spec.defaults.steps_fallback))
+    except (ValueError, TypeError):
+        current_steps = spec.defaults.steps_fallback
+
+    base_options = DEFAULT_STEP_OPTIONS.get(model_type, DEFAULT_STEP_OPTIONS['flux'])
+    steps_options = sorted(set(base_options + [current_steps]))
+    label = f"Steps ({get_model_spec(model_type).label})"
+
+    choices = [
+        discord.SelectOption(label=f"{step} {label}", value=str(step), default=(step == current_steps))
+        for step in steps_options
+    ]
+    if choices and not any(option.default for option in choices):
+        choices[0].default = True
     return choices[:25]
 
 
 def get_steps_choices(settings):
-    try: current_steps = int(settings.get('steps', 32))
-    except (ValueError, TypeError): current_steps = 32
-    steps_options = sorted(list(set([4, 8, 16, 24, 32, 40, 48, 56, 64] + [current_steps])))
-    choices = [discord.SelectOption(label=f"{s} Steps", value=str(s), default=(s == current_steps)) for s in steps_options]
-    if choices and not any(o.default for o in choices): choices[0].default = True
-    return choices[:25] 
+    return get_steps_choices_for_model(settings, "flux")
+
 
 def get_sdxl_steps_choices(settings):
-    """Creates a list of discord.SelectOption for SDXL steps setting."""
+    return get_steps_choices_for_model(settings, "sdxl")
+
+
+def get_qwen_steps_choices(settings):
+    return get_steps_choices_for_model(settings, "qwen")
+
+
+def get_wan_steps_choices(settings):
+    return get_steps_choices_for_model(settings, "wan")
+
+
+def get_guidance_choices_for_model(settings, model_type: str):
+    spec = get_model_spec(model_type)
     try:
-        current_steps = int(settings.get('sdxl_steps', 26))
+        current_guidance = float(settings.get(spec.defaults.guidance_key, spec.defaults.guidance_fallback))
     except (ValueError, TypeError):
-        current_steps = 26
-    steps_options = sorted(list(set([16, 20, 26, 32, 40, 50] + [current_steps])))
-    choices = [discord.SelectOption(label=f"{s} Steps (SDXL)", value=str(s), default=(s == current_steps)) for s in steps_options]
-    if choices and not any(o.default for o in choices):
+        current_guidance = spec.defaults.guidance_fallback
+
+    config = GUIDANCE_CONFIG.get(model_type, GUIDANCE_CONFIG['flux'])
+    values = [f"{g:.1f}" for g in np.arange(config['start'], config['stop'] + config['step'], config['step'])]
+    current_str = f"{current_guidance:.1f}"
+    if current_str not in values:
+        values.append(current_str)
+        values.sort(key=float)
+
+    label_prefix = f"Guidance ({get_model_spec(model_type).label})"
+    choices = [
+        discord.SelectOption(
+            label=f"{label_prefix}: {value}",
+            value=value,
+            default=(abs(float(value) - current_guidance) < 0.01),
+        )
+        for value in values
+    ]
+    if choices and not any(option.default for option in choices):
         choices[0].default = True
     return choices[:25]
 
+
 def get_guidance_choices(settings):
-    try: current_guidance = float(settings.get('default_guidance', 3.5))
-    except (ValueError, TypeError): current_guidance = 3.5
-    guidance_values_formatted = [f"{g:.1f}" for g in np.arange(0.0, 10.1, 0.5)]
-    current_guidance_str = f"{current_guidance:.1f}"
-    if current_guidance_str not in guidance_values_formatted:
-        guidance_values_formatted.append(current_guidance_str)
-        guidance_values_formatted.sort(key=float)
-    choices = [discord.SelectOption(label=f"Guidance (Flux): {g}", value=g, default=(abs(float(g) - current_guidance) < 0.01)) for g in guidance_values_formatted]
-    if choices and not any(o.default for o in choices): choices[0].default = True
-    return choices[:25]
+    return get_guidance_choices_for_model(settings, "flux")
+
 
 def get_sdxl_guidance_choices(settings):
-    try: current_guidance_sdxl = float(settings.get('default_guidance_sdxl', 7.0))
-    except (ValueError, TypeError): current_guidance_sdxl = 7.0
-    guidance_values_formatted = [f"{g:.1f}" for g in np.arange(1.0, 15.1, 0.5)]
-    current_guidance_sdxl_str = f"{current_guidance_sdxl:.1f}"
-    if current_guidance_sdxl_str not in guidance_values_formatted:
-        guidance_values_formatted.append(current_guidance_sdxl_str)
-        guidance_values_formatted.sort(key=float)
-    choices = [discord.SelectOption(label=f"Guidance (SDXL): {g}", value=g, default=(abs(float(g) - current_guidance_sdxl) < 0.01)) for g in guidance_values_formatted]
-    if choices and not any(o.default for o in choices): choices[0].default = True
-    return choices[:25]
+    return get_guidance_choices_for_model(settings, "sdxl")
+
+
+def get_qwen_guidance_choices(settings):
+    return get_guidance_choices_for_model(settings, "qwen")
+
+
+def get_wan_guidance_choices(settings):
+    return get_guidance_choices_for_model(settings, "wan")
+
+def get_wan_low_noise_unet_choices(settings):
+    return _build_model_choice_options(settings, "wan", "default_wan_low_noise_unet")
 
 def get_variation_mode_choices(settings):
     current_mode = settings.get('default_variation_mode', 'weak')
@@ -967,35 +1177,65 @@ def get_upscale_model_choices(settings):
     return choices[:25]
 
 
-def get_vae_choices(settings):
-    choices = []; models_data = {} # Changed var name
+def _build_vae_choices(settings, setting_key: str):
+    choices = []
+    models_data = {}
     try:
         from comfyui_api import get_available_comfyui_models
         models_data = get_available_comfyui_models(suppress_summary_print=True)
-    except Exception: pass
+    except Exception:
+        models_data = {}
+
     vae_models_raw = models_data.get('vae', []) if isinstance(models_data, dict) else []
-    vae_models = sorted(list(set(v.strip() for v in vae_models_raw if isinstance(v, str))))
-    current_vae_setting = settings.get('selected_vae')
-    current_vae = current_vae_setting.strip() if isinstance(current_vae_setting, str) else None
-    
+    vae_models = sorted(list({v.strip() for v in vae_models_raw if isinstance(v, str)}))
+    current_setting = settings.get(setting_key)
+    current_value = current_setting.strip() if isinstance(current_setting, str) else None
+
     canonical_options = []
     seen_values = set()
     for vae in vae_models:
         if vae not in seen_values:
             canonical_options.append({'label': vae, 'value': vae})
             seen_values.add(vae)
-            
-    if current_vae and current_vae not in seen_values:
-        label = f"{current_vae} (Custom?)"
-        canonical_options.insert(0, {'label': label, 'value': current_vae})
-    
-    for option_data in canonical_options:
-        is_default = (option_data['value'] == current_vae)
-        choices.append(discord.SelectOption(label=option_data['label'][:100], value=option_data['value'], default=is_default))
 
-    if not choices: choices.append(discord.SelectOption(label="None Available/Selected", value="None", default=True if not current_vae else False))
-    elif choices and not any(c.default for c in choices): choices[0].default = True
+    if current_value and current_value not in seen_values:
+        label = f"{current_value} (Custom?)"
+        canonical_options.insert(0, {'label': label, 'value': current_value})
+
+    for option_data in canonical_options:
+        is_default = (option_data['value'] == current_value)
+        choices.append(
+            discord.SelectOption(
+                label=option_data['label'][:100],
+                value=option_data['value'],
+                default=is_default,
+            )
+        )
+
+    if not choices:
+        choices.append(
+            discord.SelectOption(
+                label="None Available/Selected",
+                value="None",
+                default=True if not current_value else False,
+            )
+        )
+    elif choices and not any(c.default for c in choices):
+        choices[0].default = True
+
     return choices[:25]
+
+
+def get_vae_choices(settings):
+    return _build_vae_choices(settings, 'selected_vae')
+
+
+def get_qwen_vae_choices(settings):
+    return _build_vae_choices(settings, 'default_qwen_vae')
+
+
+def get_wan_vae_choices(settings):
+    return _build_vae_choices(settings, 'default_wan_vae')
 
 def get_display_prompt_preference_choices(settings):
     current_preference = settings.get('display_prompt_preference', 'enhanced')
@@ -1046,4 +1286,42 @@ def get_kontext_model_choices(settings):
         choices[0].default = True
 
     return choices[:25]
+
+
+def resolve_model_for_type(settings: Dict[str, object], desired_type: str) -> Optional[str]:
+    desired_key = (desired_type or "").lower()
+    if desired_key not in MODEL_SELECTION_PREFIX:
+        return None
+
+    selected_model_setting = settings.get('selected_model')
+    selected_model_value = selected_model_setting.strip() if isinstance(selected_model_setting, str) else None
+    if selected_model_value:
+        selected_type, _ = resolve_model_type_from_prefix(selected_model_value)
+        if selected_type == desired_key:
+            return selected_model_value
+
+    fallback_key_map = {
+        'flux': 'default_flux_model',
+        'sdxl': 'default_sdxl_checkpoint',
+        'qwen': 'default_qwen_checkpoint',
+        'wan': 'default_wan_checkpoint',
+    }
+
+    fallback_model = None
+    fallback_setting_key = fallback_key_map.get(desired_key)
+    if fallback_setting_key:
+        fallback_setting_value = settings.get(fallback_setting_key)
+        if isinstance(fallback_setting_value, str) and fallback_setting_value.strip():
+            fallback_model = fallback_setting_value.strip()
+
+    if not fallback_model:
+        fallback_model = _get_first_model_from_catalog(desired_key)
+
+    if not fallback_model:
+        return None
+
+    prefix_label = MODEL_SELECTION_PREFIX[desired_key]
+    return f"{prefix_label}: {fallback_model}"
+
+
 # --- END OF FILE settings_manager.py ---

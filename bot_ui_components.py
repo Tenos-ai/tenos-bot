@@ -11,6 +11,7 @@ from file_management import extract_job_id, delete_job_files_and_message
 from utils.show_prompt import reconstruct_full_prompt_string
 from bot_config_loader import ADMIN_ID, ALLOWED_USERS
 from settings_manager import load_settings
+from model_registry import get_model_spec
 from utils.message_utils import safe_interaction_response
 from websocket_client import WebsocketClient
 
@@ -23,18 +24,27 @@ from bot_core_logic import (
     execute_generation_logic
 )
 
-class EditKontextModal(Modal, title='Edit with Kontext'):
-    def __init__(self, primary_image_url: str, interaction: discord.Interaction):
+class EditKontextModal(Modal, title='Image Edit Workflow'):
+    def __init__(self, primary_image_url: str, interaction: discord.Interaction, preset_mode: str | None = None):
         super().__init__(timeout=600)
         self.primary_image_url = primary_image_url
         self.original_interaction = interaction
+        self.preset_mode = (preset_mode or 'kontext').lower()
 
         # Field for the user's instruction, with updated placeholder
         self.instruction_input = TextInput(
             label="Edit Command & Optional Parameters",
             style=discord.TextStyle.paragraph,
-            placeholder="add a hat on the man --steps 40 --ar 1:1\nmake the sky night time --g 4.5",
+            placeholder="make the sky night time --g 4.5 --mode qwen",
             required=True
+        )
+
+        self.mode_input = TextInput(
+            label="Workflow (kontext or qwen)",
+            style=discord.TextStyle.short,
+            default=self.preset_mode,
+            required=False,
+            placeholder="kontext",
         )
 
         # Field for the primary image URL - pre-filled
@@ -44,13 +54,14 @@ class EditKontextModal(Modal, title='Edit with Kontext'):
             style=discord.TextStyle.short,
             required=True,
         )
-        
+
         # Optional fields for additional images
         self.image2_input = TextInput(label="Image 2 (Optional URL)", required=False, placeholder="Paste another image URL to stitch...")
         self.image3_input = TextInput(label="Image 3 (Optional URL)", required=False, placeholder="Paste another image URL to stitch...")
         self.image4_input = TextInput(label="Image 4 (Optional URL)", required=False, placeholder="Paste another image URL to stitch...")
 
         self.add_item(self.instruction_input)
+        self.add_item(self.mode_input)
         self.add_item(self.image1_input)
         self.add_item(self.image2_input)
         self.add_item(self.image3_input)
@@ -66,12 +77,15 @@ class EditKontextModal(Modal, title='Edit with Kontext'):
         if self.image3_input.value: image_urls.append(self.image3_input.value)
         if self.image4_input.value: image_urls.append(self.image4_input.value)
         
+        mode_value = self.mode_input.value.strip().lower() if self.mode_input.value else None
+
         await process_kontext_edit_request(
             context_user=interaction.user,
             context_channel=interaction.channel,
             instruction=instruction,
             image_urls=image_urls,
-            initial_interaction_obj=interaction
+            initial_interaction_obj=interaction,
+            mode=mode_value,
         )
 
     async def on_error(self, interaction: discord.Interaction, error: Exception):
@@ -101,10 +115,17 @@ class RemixModal(Modal, title='Remix Variation'):
         )
         self.add_item(self.prompt_input)
 
-        original_model_type = job_data.get('model_type_for_enhancer', 'flux')
-        if original_model_type == 'sdxl':
+        model_type_key = str(job_data.get('model_type_for_enhancer', 'flux')).lower()
+        try:
+            model_spec = get_model_spec(model_type_key)
+        except KeyError:
+            model_spec = get_model_spec('flux')
+            model_type_key = 'flux'
+
+        if model_spec.generation.supports_negative_prompt:
+            label = f"Negative Prompt ({model_spec.label})"
             self.negative_prompt_input = TextInput(
-                label="Negative Prompt (SDXL Only)",
+                label=label,
                 style=discord.TextStyle.paragraph,
                 default=job_data.get('negative_prompt', ''),
                 required=False
@@ -305,35 +326,47 @@ class GenerationActionsView(View):
                 job_type_item = result_item.get("job_data_for_qm", {}).get("type", action_description.lower())
                 content_str = ""
                 if job_type_item == "upscale":
-                    content_str = (f"{msg_details_item['user_mention']}: Upscaling image #{msg_details_item['image_index']} from job `{msg_details_item['original_job_id']}` (Workflow: {msg_details_item['model_type']})\n" 
-                               f"> **Using Prompt:** `{textwrap.shorten(msg_details_item['prompt_to_display'], 70, placeholder='...')}`\n"
-                               f"> **Seed:** `{msg_details_item['seed']}`, **Style:** `{msg_details_item['style']}`, **Orig AR:** `{msg_details_item['aspect_ratio']}`\n"
-                               f"> **Factor:** `{msg_details_item['upscale_factor']}`, **Denoise:** `{msg_details_item['denoise']}`\n"
-                               f"> **Status:** Queued... ")
+                    model_display = msg_details_item.get('model_type_display') or msg_details_item.get('model_type')
+                    content_str = (f"{msg_details_item['user_mention']}: Upscaling image #{msg_details_item['image_index']} from job `{msg_details_item['original_job_id']}` (Workflow: {model_display})\n"
+                                   f"> **Using Prompt:** `{textwrap.shorten(msg_details_item['prompt_to_display'], 70, placeholder='...')}`\n"
+                                   f"> **Seed:** `{msg_details_item['seed']}`, **Style:** `{msg_details_item['style']}`, **Orig AR:** `{msg_details_item['aspect_ratio']}`\n"
+                                   f"> **Factor:** `{msg_details_item['upscale_factor']}`, **Denoise:** `{msg_details_item['denoise']}`\n"
+                                   f"> **Status:** Queued... ")
+                    if msg_details_item.get('supports_animation') and msg_details_item.get('followup_animation_workflow'):
+                        content_str += f"\n> **Animate:** Use `{msg_details_item['followup_animation_workflow']}` to animate this upscale."
                 elif job_type_item == "variation":
-                    content_str = (f"{msg_details_item['user_mention']}: `{textwrap.shorten(msg_details_item['prompt_to_display'], 50, placeholder='...')}` ({msg_details_item['description']} on img #{msg_details_item['image_index']} from `{msg_details_item['original_job_id']}` - {msg_details_item['model_type']})\n" 
+                    model_display = msg_details_item.get('model_type_display') or msg_details_item.get('model_type')
+                    content_str = (f"{msg_details_item['user_mention']}: `{textwrap.shorten(msg_details_item['prompt_to_display'], 50, placeholder='...')}` ({msg_details_item['description']} on img #{msg_details_item['image_index']} from `{msg_details_item['original_job_id']}` - {model_display})\n"
                                f"> **Seed:** `{msg_details_item['seed']}`, **AR:** `{msg_details_item['aspect_ratio']}`, **Steps:** `{msg_details_item['steps']}`, **Style:** `{msg_details_item['style']}`")
                     if msg_details_item.get('is_remixed'): content_str += "\n> `(Remixed Prompt)`"
                     enhancer_text_val = msg_details_item.get('enhancer_reference_text')
                     if enhancer_text_val: content_str += f"\n{enhancer_text_val.strip()}"
                     content_str += "\n> **Status:** Queued... "
-                elif job_type_item == "generate": 
+                    if msg_details_item.get('supports_animation') and msg_details_item.get('followup_animation_workflow'):
+                        content_str += f"\n> **Animate:** Use `{msg_details_item['followup_animation_workflow']}` to animate this variation."
+                elif job_type_item == "generate":
                     content_str = (f"{msg_details_item['user_mention']}: `{textwrap.shorten(msg_details_item['prompt_to_display'], 1000, placeholder='...')}`")
                     if msg_details_item.get('enhancer_used') and msg_details_item.get('display_preference') == 'enhanced': content_str += " ✨"
                     run_times = msg_details_item.get('total_runs', 1); run_num = msg_details_item.get('run_number', 1)
-                    if run_times > 1: content_str += f" (Rerun {run_num}/{run_times} - {msg_details_item['model_type'].upper()})" 
-                    else: content_str += f" (Rerun/Edited - {msg_details_item['model_type'].upper()})" 
+                    model_display = msg_details_item.get('model_type_display') or msg_details_item.get('model_type', 'UNKNOWN').upper()
+                    if run_times > 1: content_str += f" (Rerun {run_num}/{run_times} - {model_display})"
+                    else: content_str += f" (Rerun/Edited - {model_display})"
                     content_str += f"\n> **Seed:** `{msg_details_item['seed']}`"
                     if msg_details_item.get('aspect_ratio'): content_str += f", **AR:** `{msg_details_item['aspect_ratio']}`"
                     if msg_details_item.get('steps'): content_str += f", **Steps:** `{msg_details_item['steps']}`"
-                    if msg_details_item.get('model_type') == "sdxl": content_str += f", **Guidance (SDXL):** `{msg_details_item['guidance_sdxl']}`"
-                    else: content_str += f", **Guidance (Flux):** `{msg_details_item['guidance_flux']}`"
+                    guidance_label = msg_details_item.get('guidance_display_label')
+                    guidance_value = msg_details_item.get('guidance_display_value')
+                    if guidance_label and guidance_value is not None:
+                        content_str += f", **{guidance_label}:** `{guidance_value}`"
                     if msg_details_item.get('mp_size') is not None: content_str += f", **MP:** `{msg_details_item['mp_size']}`"
                     content_str += f"\n> **Style:** `{msg_details_item['style']}`"
                     if msg_details_item.get('is_img2img'): content_str += f", **Strength:** `{msg_details_item['img_strength_percent']}%`"
                     if msg_details_item.get('negative_prompt'): content_str += f"\n> **No:** `{textwrap.shorten(msg_details_item['negative_prompt'], 100, placeholder='...')}`"
                     content_str += "\n> **Status:** Queued... "
                     if msg_details_item.get("enhancer_applied_message_for_first_run"): content_str += msg_details_item["enhancer_applied_message_for_first_run"]
+                    if msg_details_item.get('supports_animation') and msg_details_item.get('followup_animation_workflow'):
+                        workflow_name = msg_details_item['followup_animation_workflow']
+                        content_str += f"\n> **Animate:** Use `{workflow_name}` to create motion from this result."
                 view_to_send_item = QueuedJobView(**result_item["view_args"]) if result_item.get("view_type") == "QueuedJobView" and result_item.get("view_args") else None
                 sent_message_item = await safe_interaction_response(interaction, content=content_str, view=view_to_send_item)
                 if sent_message_item and result_item["job_data_for_qm"]:

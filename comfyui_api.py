@@ -92,58 +92,86 @@ def queue_prompt(prompt, comfyui_host=COMFYUI_HOST, comfyui_port=COMFYUI_PORT, i
 
         update_last_prompt(prompt)
 
-        ws_client = WebsocketClient()
-        client_id = ws_client.client_id if ws_client and ws_client.is_connected else None
-        
+        try:
+            ws_client = WebsocketClient()
+        except ValueError:
+            ws_client = None
+
+        client_id = getattr(ws_client, "client_id", None) if ws_client is not None else None
+
         p = {"prompt": prompt}
         if client_id:
             p['client_id'] = client_id
-            print(f"Queueing prompt with WebSocket client ID: {client_id}")
+            if ws_client and ws_client.is_connected:
+                print(f"Queueing prompt with WebSocket client ID: {client_id}")
+            else:
+                print(f"Queueing prompt with reserved WebSocket client ID: {client_id}")
         else:
             print("Warning: Queueing prompt without WebSocket client ID. Progress updates will not work.")
         data = json.dumps(p, ensure_ascii=False).encode('utf-8')
-        api_url = f"http://{comfyui_host}:{comfyui_port}/prompt"
-        req = request.Request(api_url, data=data, headers={'Content-Type': 'application/json'})
+
+        endpoints = [
+            f"http://{comfyui_host}:{comfyui_port}/api/queue/prompt",
+            f"http://{comfyui_host}:{comfyui_port}/api/prompt",
+            f"http://{comfyui_host}:{comfyui_port}/prompt",
+        ]
 
         ctx = ssl._create_unverified_context() if ignore_ssl_verify else None
         response = None
+        used_api_url = None
+        api_url = endpoints[0]
 
-        try:
-            response = request.urlopen(req, timeout=20)
-        except error.URLError as e_url:
-             if isinstance(e_url.reason, SocketError) and e_url.reason.errno == 111: 
-                 print(f"ERROR: Connection refused at {api_url}. Is ComfyUI running?")
-                 raise ConnectionRefusedError(f"Connection refused at {api_url}") from e_url
-             elif isinstance(e_url.reason, OSError) and hasattr(e_url.reason, 'winerror') and e_url.reason.winerror == 10061: 
-                  print(f"ERROR: Connection refused at {api_url}. Is ComfyUI running?")
-                  raise ConnectionRefusedError(f"Connection refused at {api_url}") from e_url
-             elif isinstance(e_url.reason, ssl.SSLCertVerificationError):
-                 print("SSL verification failed. Trying with unverified context...")
-                 if ctx:
-                     try:
-                         response = request.urlopen(req, context=ctx, timeout=20)
-                         print("Successfully connected using unverified context.")
-                     except error.URLError as inner_err:
-                         if isinstance(inner_err.reason, SocketError) and inner_err.reason.errno == 111: 
-                             print(f"ERROR: Connection refused at {api_url} (SSL fallback).")
-                             raise ConnectionRefusedError(f"Connection refused at {api_url} (SSL fallback)") from inner_err
-                         elif isinstance(inner_err.reason, OSError) and hasattr(inner_err.reason, 'winerror') and inner_err.reason.winerror == 10061: # type: ignore
-                             print(f"ERROR: Connection refused at {api_url} (SSL fallback).")
-                             raise ConnectionRefusedError(f"Connection refused at {api_url} (SSL fallback)") from inner_err
-                         else:
-                             print(f"Failed even with unverified context: {inner_err.reason}")
-                             raise inner_err
-                     except Exception as e_unverified:
-                          print(f"Unexpected error during SSL fallback: {e_unverified}")
-                          raise e_unverified
-                 else:
-                     print("SSL error occurred but ignore_ssl_verify is False. Cannot proceed.")
-                     raise e_url
-             else:
-                  print(f"URLError during ComfyUI request: {e_url.reason}")
-                  raise e_url
-        except ConnectionRefusedError: 
-             raise
+        for idx, api_url in enumerate(endpoints):
+            req = request.Request(api_url, data=data, headers={'Content-Type': 'application/json'})
+            try:
+                response = request.urlopen(req, timeout=20)
+                used_api_url = api_url
+                break
+            except error.URLError as e_url:
+                if isinstance(e_url.reason, SocketError) and e_url.reason.errno == 111:
+                    print(f"ERROR: Connection refused at {api_url}. Is ComfyUI running?")
+                    raise ConnectionRefusedError(f"Connection refused at {api_url}") from e_url
+                elif isinstance(e_url.reason, OSError) and hasattr(e_url.reason, 'winerror') and e_url.reason.winerror == 10061:
+                    print(f"ERROR: Connection refused at {api_url}. Is ComfyUI running?")
+                    raise ConnectionRefusedError(f"Connection refused at {api_url}") from e_url
+                elif isinstance(e_url.reason, ssl.SSLCertVerificationError):
+                    print("SSL verification failed. Trying with unverified context...")
+                    if ctx:
+                        try:
+                            response = request.urlopen(req, context=ctx, timeout=20)
+                            used_api_url = api_url
+                            print("Successfully connected using unverified context.")
+                            break
+                        except error.URLError as inner_err:
+                            if isinstance(inner_err.reason, SocketError) and inner_err.reason.errno == 111:
+                                print(f"ERROR: Connection refused at {api_url} (SSL fallback).")
+                                raise ConnectionRefusedError(f"Connection refused at {api_url} (SSL fallback)") from inner_err
+                            elif isinstance(inner_err.reason, OSError) and hasattr(inner_err.reason, 'winerror') and inner_err.reason.winerror == 10061:  # type: ignore[attr-defined]
+                                print(f"ERROR: Connection refused at {api_url} (SSL fallback).")
+                                raise ConnectionRefusedError(f"Connection refused at {api_url} (SSL fallback)") from inner_err
+                            else:
+                                if idx + 1 < len(endpoints):
+                                    print(f"Failed even with unverified context: {inner_err.reason}. Trying fallback endpoint...")
+                                    continue
+                                print(f"Failed even with unverified context: {inner_err.reason}")
+                                raise inner_err
+                        except Exception as e_unverified:
+                            print(f"Unexpected error during SSL fallback: {e_unverified}")
+                            raise e_unverified
+                    else:
+                        print("SSL error occurred but ignore_ssl_verify is False. Cannot proceed.")
+                        raise e_url
+                else:
+                    if idx + 1 < len(endpoints):
+                        print(f"URLError during ComfyUI request to {api_url}: {e_url.reason}. Trying fallback endpoint...")
+                        continue
+                    print(f"URLError during ComfyUI request: {e_url.reason}")
+                    raise e_url
+            except error.HTTPError as e_http:
+                if e_http.code in (404, 405) and idx + 1 < len(endpoints):
+                    print(f"Endpoint {api_url} returned {e_http.code}. Trying legacy endpoint {endpoints[idx + 1]}")
+                    continue
+                raise
 
         if response is None:
             print("Error: Could not get a valid response from ComfyUI API (response is None).")
@@ -153,7 +181,8 @@ def queue_prompt(prompt, comfyui_host=COMFYUI_HOST, comfyui_port=COMFYUI_PORT, i
         response_json = json.loads(response_data)
 
         if 'prompt_id' in response_json:
-            print(f"Successfully queued prompt. ComfyUI Prompt ID: {response_json['prompt_id']}")
+            target_url = used_api_url or endpoints[0]
+            print(f"Successfully queued prompt via {target_url}. ComfyUI Prompt ID: {response_json['prompt_id']}")
             return response_json['prompt_id']
         elif 'error' in response_json:
             print(f"Error from ComfyUI API: {response_json['error']}")

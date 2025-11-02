@@ -27,11 +27,30 @@ def load_llm_prompts_config():
     """Loads llm_prompts.json safely and ensures all necessary keys exist."""
     default_flux_prompt = "Your designated function is Flux Prompt Alchemist..." # Collapsed for brevity
     default_sdxl_prompt = "You are a master prompt artist for Illustrious XL..." # Collapsed for brevity
+    default_qwen_prompt = (
+        "You are a visionary prompt artist for Qwen Image generation. Transform every user idea into a lush, imaginative scene "
+        "that plays to Qwen's painterly strengths. Respect any concrete details the user supplies, but otherwise expand the "
+        "concept into a complete visual narrative with a clear subject, setting, mood, and storytelling hook. Describe color "
+        "palettes, lighting, materials, and atmosphere in natural language instead of keyword lists. Mention camera framing or "
+        "lens style only in broad cinematic terms (for example: 'wide shot', 'macro', 'soft focus portrait'). Avoid forbidden "
+        "phrases such as 'masterpiece', 'hyper realistic', or artist names unless explicitly provided. Output a single paragraph "
+        "of descriptive prose that feels ready for an art director, and do not include negative prompts or bullet points."
+    )
+    default_wan_prompt = (
+        "You craft cinematic prompts for WAN 2.2 video diffusion. Expand the user's seed idea into a dynamic sequence that "
+        "emphasizes motion, evolving lighting, and camera movement. Describe the starting state, the evolving action, and the "
+        "final impression using evocative language. Call out pacing cues (for example: 'slow push-in', 'rapid handheld sway'), "
+        "environmental details, weather, and mood. Keep the description concise—two or three sentences that read like stage "
+        "direction—without bullet points or numbered lists. Do not promise ultra-realism, do not reference specific artists or "
+        "brands unless the user insists, and avoid banned booster terms such as 'masterpiece' or '4k'."
+    )
     default_kontext_prompt = "You are a Kontext Instruction Alchemist..." # Collapsed for brevity
-    
+
     default_config = {
         "enhancer_system_prompt": default_flux_prompt,
         "enhancer_system_prompt_sdxl": default_sdxl_prompt,
+        "enhancer_system_prompt_qwen": default_qwen_prompt,
+        "enhancer_system_prompt_wan": default_wan_prompt,
         "enhancer_system_prompt_kontext": default_kontext_prompt
     }
     try:
@@ -57,7 +76,21 @@ def load_llm_prompts_config():
 llm_prompts_config = load_llm_prompts_config()
 FLUX_ENHANCER_SYSTEM_PROMPT = llm_prompts_config.get("enhancer_system_prompt", "")
 SDXL_ENHANCER_SYSTEM_PROMPT = llm_prompts_config.get("enhancer_system_prompt_sdxl", "")
+QWEN_ENHANCER_SYSTEM_PROMPT = llm_prompts_config.get("enhancer_system_prompt_qwen", "")
+WAN_ENHANCER_SYSTEM_PROMPT = llm_prompts_config.get("enhancer_system_prompt_wan", "")
 KONTEXT_ENHANCER_SYSTEM_PROMPT = llm_prompts_config.get("enhancer_system_prompt_kontext", "")
+
+MODEL_TYPE_PROMPTS = {
+    "flux": FLUX_ENHANCER_SYSTEM_PROMPT,
+    "sdxl": SDXL_ENHANCER_SYSTEM_PROMPT,
+    "qwen": QWEN_ENHANCER_SYSTEM_PROMPT,
+    "wan": WAN_ENHANCER_SYSTEM_PROMPT,
+    "kontext": KONTEXT_ENHANCER_SYSTEM_PROMPT,
+}
+
+
+def get_model_type_enhancer_prompt(model_type: str) -> str:
+    return MODEL_TYPE_PROMPTS.get(model_type, FLUX_ENHANCER_SYSTEM_PROMPT)
 
 async def _fetch_and_encode_image(url: str) -> tuple[str | None, str | None]:
     try:
@@ -250,12 +283,9 @@ async def enhance_prompt(original_prompt: str, system_prompt_text_override: str 
 
     system_instruction_to_use = system_prompt_text_override
     if not system_instruction_to_use:
-        if target_model_type.lower() == "sdxl":
-            system_instruction_to_use = SDXL_ENHANCER_SYSTEM_PROMPT
-        elif target_model_type.lower() == "kontext":
-            system_instruction_to_use = KONTEXT_ENHANCER_SYSTEM_PROMPT
-        else:
-            system_instruction_to_use = FLUX_ENHANCER_SYSTEM_PROMPT
+        system_instruction_to_use = MODEL_TYPE_PROMPTS.get(
+            target_model_type.lower(), FLUX_ENHANCER_SYSTEM_PROMPT
+        )
     
     if not system_instruction_to_use:
         system_instruction_to_use = "Enhance the following text for an image generation AI:"

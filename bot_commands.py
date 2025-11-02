@@ -108,13 +108,16 @@ async def handle_gen_command(
             msg_details = result["message_content_details"]
             content = (f"{msg_details['user_mention']}: `{textwrap.shorten(msg_details['prompt_to_display'], 1000, placeholder='...')}`")
             if msg_details['enhancer_used'] and msg_details['display_preference'] == 'enhanced': content += " ✨"
-            if msg_details['total_runs'] > 1: content += f" (Job {msg_details['run_number']}/{msg_details['total_runs']} - {msg_details['model_type'].upper()})"
-            else: content += f" ({msg_details['model_type'].upper()})"
+            model_display = msg_details.get('model_type_display') or msg_details.get('model_type', 'UNKNOWN').upper()
+            if msg_details['total_runs'] > 1: content += f" (Job {msg_details['run_number']}/{msg_details['total_runs']} - {model_display})"
+            else: content += f" ({model_display})"
             content += f"\n> **Seed:** `{msg_details['seed']}`"
             if msg_details['aspect_ratio']: content += f", **AR:** `{msg_details['aspect_ratio']}`"
             if msg_details['steps']: content += f", **Steps:** `{msg_details['steps']}`"
-            if msg_details['model_type'] == "sdxl": content += f", **Guidance (SDXL):** `{msg_details['guidance_sdxl']}`"
-            else: content += f", **Guidance (Flux):** `{msg_details['guidance_flux']}`"
+            guidance_label = msg_details.get('guidance_display_label')
+            guidance_value = msg_details.get('guidance_display_value')
+            if guidance_label and guidance_value is not None:
+                content += f", **{guidance_label}:** `{guidance_value}`"
             if msg_details['mp_size'] is not None: content += f", **MP:** `{msg_details['mp_size']}`"
             content += f"\n> **Style:** `{msg_details['style']}`"
             if msg_details['is_img2img']: content += f", **Strength:** `{msg_details['img_strength_percent']}%`"
@@ -181,7 +184,8 @@ async def handle_reply_upscale(message: discord.Message, referenced_message: dis
     for result in results:
         if result["status"] == "success":
             msg_details = result["message_content_details"]
-            content = (f"{msg_details['user_mention']}: Upscaling image #{msg_details['image_index']} from job `{msg_details['original_job_id']}` (Workflow: {msg_details['model_type']})\n" # model_type IS the current model
+            model_display = msg_details.get('model_type_display') or msg_details.get('model_type')
+            content = (f"{msg_details['user_mention']}: Upscaling image #{msg_details['image_index']} from job `{msg_details['original_job_id']}` (Workflow: {model_display})\n" # model_type IS the current model
                        f"> **Using Prompt:** `{textwrap.shorten(msg_details['prompt_to_display'], 70, placeholder='...')}`\n"
                        f"> **Seed:** `{msg_details['seed']}`, **Style:** `{msg_details['style']}`, **Orig AR:** `{msg_details['aspect_ratio']}`\n"
                        f"> **Factor:** `{msg_details['upscale_factor']}`, **Denoise:** `{msg_details['denoise']}`\n"
@@ -211,7 +215,8 @@ async def handle_reply_vary(message: discord.Message, referenced_message: discor
     for result in results: 
         if result["status"] == "success":
             msg_details = result["message_content_details"]
-            content = (f"{msg_details['user_mention']}: `{textwrap.shorten(msg_details['prompt_to_display'], 50, placeholder='...')}` ({msg_details['description']} on img #{msg_details['image_index']} from `{msg_details['original_job_id']}` - {msg_details['model_type']})\n" # model_type IS the current model
+            model_display = msg_details.get('model_type_display') or msg_details.get('model_type')
+            content = (f"{msg_details['user_mention']}: `{textwrap.shorten(msg_details['prompt_to_display'], 50, placeholder='...')}` ({msg_details['description']} on img #{msg_details['image_index']} from `{msg_details['original_job_id']}` - {model_display})\n" # model_type IS the current model
                        f"> **Seed:** `{msg_details['seed']}`, **AR:** `{msg_details['aspect_ratio']}`, **Steps:** `{msg_details['steps']}`, **Style:** `{msg_details['style']}`")
             if msg_details.get('is_remixed'): 
                 content += "\n> `(Remixed Prompt)`"
@@ -248,12 +253,15 @@ async def handle_reply_rerun(message: discord.Message, referenced_message: disco
             msg_details = result["message_content_details"]
             content = (f"{msg_details['user_mention']}: `{textwrap.shorten(msg_details['prompt_to_display'], 1000, placeholder='...')}`")
             if msg_details['enhancer_used'] and msg_details['display_preference'] == 'enhanced': content += " ✨"
-            content += f" (Rerun {idx+1}/{run_times} - {msg_details['model_type'].upper()})" # model_type IS the current model
+            model_display = msg_details.get('model_type_display') or msg_details.get('model_type', 'UNKNOWN').upper()
+            content += f" (Rerun {idx+1}/{run_times} - {model_display})" # model_type IS the current model
             content += f"\n> **Seed:** `{msg_details['seed']}`"
             if msg_details['aspect_ratio']: content += f", **AR:** `{msg_details['aspect_ratio']}`"
             if msg_details['steps']: content += f", **Steps:** `{msg_details['steps']}`"
-            if msg_details['model_type'] == "sdxl": content += f", **Guidance (SDXL):** `{msg_details['guidance_sdxl']}`"
-            else: content += f", **Guidance (Flux):** `{msg_details['guidance_flux']}`"
+            guidance_label = msg_details.get('guidance_display_label')
+            guidance_value = msg_details.get('guidance_display_value')
+            if guidance_label and guidance_value is not None:
+                content += f", **{guidance_label}:** `{guidance_value}`"
             if msg_details['mp_size'] is not None: content += f", **MP:** `{msg_details['mp_size']}`"
             content += f"\n> **Style:** `{msg_details['style']}`"
             if msg_details['is_img2img']: content += f", **Strength:** `{msg_details['img_strength_percent']}%`"
