@@ -146,14 +146,24 @@ def default_llm_models_config_factory():
     }
 
 def default_llm_prompts_config_factory():
-    
+
     flux_prompt = ("Your designated function is Flux Prompt Alchemist. Your input is raw user text; "
                    "your output is a single, optimized text prompt meticulously crafted for Flux.1 Dev via ComfyUI...")
     sdxl_prompt = ("You are an expert prompt enhancer for SDXL text-to-image generation. Your input is raw user text; "
                    "your output is a single, optimized text prompt meticulously crafted for SDXL via ComfyUI...")
+    qwen_prompt = ("You are a visionary prompt artist for Qwen Image generation. Transform every user idea into a lush, "
+                   "imaginative scene with painterly detail while respecting the user's constraints. Provide a single paragraph "
+                   "of evocative prose that covers subject, setting, mood, color palette, lighting, and atmosphere without "
+                   "resorting to bullet points or negative prompts.")
+    wan_prompt = ("You are an expert cinematic director helping WAN create short video clips. Expand the user's seed idea into "
+                  "a dynamic shot description that highlights motion cues, pacing, and visual storytelling. Mention framing, "
+                  "camera movement, and mood in natural language, and tailor the motion intensity based on the requested "
+                  "profile (slowmo, low, medium, high). Provide exactly one paragraph ready for storyboard execution.")
     return {
         "enhancer_system_prompt": flux_prompt,
-        "enhancer_system_prompt_sdxl": sdxl_prompt
+        "enhancer_system_prompt_sdxl": sdxl_prompt,
+        "enhancer_system_prompt_qwen": qwen_prompt,
+        "enhancer_system_prompt_wan": wan_prompt
     }
 
 def default_styles_config_factory():
@@ -210,6 +220,14 @@ def load_llm_prompts_config_util():
     if not prompts.get("enhancer_system_prompt_sdxl", "").strip():
         print(f"ConfigEditor Warning: 'enhancer_system_prompt_sdxl' missing or empty in {LLM_PROMPTS_FILE_NAME}. Using default.")
         prompts["enhancer_system_prompt_sdxl"] = defaults["enhancer_system_prompt_sdxl"]
+        updated = True
+    if not prompts.get("enhancer_system_prompt_qwen", "").strip():
+        print(f"ConfigEditor Warning: 'enhancer_system_prompt_qwen' missing or empty in {LLM_PROMPTS_FILE_NAME}. Using default.")
+        prompts["enhancer_system_prompt_qwen"] = defaults.get("enhancer_system_prompt_qwen", "")
+        updated = True
+    if not prompts.get("enhancer_system_prompt_wan", "").strip():
+        print(f"ConfigEditor Warning: 'enhancer_system_prompt_wan' missing or empty in {LLM_PROMPTS_FILE_NAME}. Using default.")
+        prompts["enhancer_system_prompt_wan"] = defaults.get("enhancer_system_prompt_wan", "")
         updated = True
     if updated:
         save_json_config(LLM_PROMPTS_FILE_NAME, prompts, "LLM prompts")

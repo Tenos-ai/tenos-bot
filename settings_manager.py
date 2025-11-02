@@ -254,7 +254,7 @@ def load_settings():
                 updated = True
 
         numeric_keys_float = ['default_guidance', 'default_guidance_sdxl', 'default_guidance_qwen', 'default_guidance_wan', 'upscale_factor', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']
-        numeric_keys_int = ['steps', 'sdxl_steps', 'qwen_steps', 'wan_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size']
+        numeric_keys_int = ['steps', 'sdxl_steps', 'qwen_steps', 'wan_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size', 'wan_animation_duration']
         bool_keys = ['remix_mode', 'llm_enhancer_enabled']
         display_prompt_key = 'display_prompt_preference'
         allowed_display_prompt_options = ['enhanced', 'original']
@@ -308,7 +308,7 @@ def load_settings():
              pass
 
 
-        llm_string_keys = ['llm_provider', 'llm_model_gemini', 'llm_model_groq', 'llm_model_openai']
+        llm_string_keys = ['llm_provider', 'llm_model_gemini', 'llm_model_groq', 'llm_model_openai', 'wan_animation_motion_profile', 'wan_animation_resolution', 'active_model_family']
         for key in llm_string_keys:
             if key in settings:
                 if settings[key] is None or isinstance(settings[key], str):
@@ -321,6 +321,49 @@ def load_settings():
                     print(f"Warning: Setting '{key}' has invalid type ({type(settings[key])}). Resetting to default.")
                     settings[key] = default_settings[key]
                     updated = True
+
+        allowed_motion_profiles = {'slowmo', 'low', 'medium', 'high'}
+        motion_profile = str(settings.get('wan_animation_motion_profile', default_settings['wan_animation_motion_profile'])).lower()
+        if motion_profile not in allowed_motion_profiles:
+            print(f"Warning: WAN motion profile '{motion_profile}' invalid. Using default.")
+            settings['wan_animation_motion_profile'] = default_settings['wan_animation_motion_profile']
+            updated = True
+        else:
+            settings['wan_animation_motion_profile'] = motion_profile
+
+        resolution_value = str(settings.get('wan_animation_resolution', default_settings['wan_animation_resolution'])).lower()
+        try:
+            width_str, height_str = resolution_value.split('x', 1)
+            width_val = int(width_str)
+            height_val = int(height_str)
+            if width_val <= 0 or height_val <= 0:
+                raise ValueError
+            settings['wan_animation_resolution'] = f"{width_val}x{height_val}"
+        except (ValueError, AttributeError):
+            print(f"Warning: WAN animation resolution '{resolution_value}' invalid. Using default.")
+            settings['wan_animation_resolution'] = default_settings['wan_animation_resolution']
+            updated = True
+
+        try:
+            duration_val = int(settings.get('wan_animation_duration', default_settings['wan_animation_duration']))
+            if duration_val < 8:
+                duration_val = 8
+            elif duration_val > 240:
+                duration_val = 240
+            settings['wan_animation_duration'] = duration_val
+        except (ValueError, TypeError):
+            print("Warning: WAN animation duration invalid. Using default.")
+            settings['wan_animation_duration'] = default_settings['wan_animation_duration']
+            updated = True
+
+        allowed_families = set(MODEL_SELECTION_PREFIX.keys())
+        active_family = str(settings.get('active_model_family', default_settings['active_model_family'])).lower()
+        if active_family not in allowed_families:
+            print(f"Warning: Active model family '{active_family}' invalid. Using default.")
+            settings['active_model_family'] = default_settings['active_model_family']
+            updated = True
+        else:
+            settings['active_model_family'] = active_family
 
         allowed_providers = list(llm_models_config.get('providers', {}).keys())
         if not allowed_providers: allowed_providers = ['gemini'] # Fallback
@@ -358,56 +401,111 @@ def load_settings():
         available_sdxl_checkpoints = {c.strip().lower(): c.strip() for c in available_sdxl_checkpoints_raw}
 
 
+        available_qwen_models_raw = []
+        try:
+            if os.path.exists('qwenmodels.json'):
+                with open('qwenmodels.json', 'r') as f: qwen_models_data = json.load(f)
+                if isinstance(qwen_models_data, dict):
+                    qwen_list = qwen_models_data.get('checkpoints', [])
+                    if isinstance(qwen_list, list):
+                        available_qwen_models_raw.extend([m for m in qwen_list if isinstance(m, str)])
+                    available_qwen_models_raw = list(set(available_qwen_models_raw))
+        except Exception as e:
+            print(f"Warning: Could not load qwenmodels.json for Qwen model validation: {e}")
+        available_qwen_models = {m.strip().lower(): m.strip() for m in available_qwen_models_raw}
+
+        available_wan_models_raw = []
+        try:
+            if os.path.exists('wanmodels.json'):
+                with open('wanmodels.json', 'r') as f: wan_models_data = json.load(f)
+                if isinstance(wan_models_data, dict):
+                    wan_list = wan_models_data.get('checkpoints', [])
+                    if isinstance(wan_list, list):
+                        available_wan_models_raw.extend([m for m in wan_list if isinstance(m, str)])
+                    available_wan_models_raw = list(set(available_wan_models_raw))
+        except Exception as e:
+            print(f"Warning: Could not load wanmodels.json for WAN model validation: {e}")
+        available_wan_models = {m.strip().lower(): m.strip() for m in available_wan_models_raw}
+
+
         current_selected_model_setting = settings.get('selected_model')
+        model_catalogs = {
+            'flux': available_flux_models,
+            'sdxl': available_sdxl_checkpoints,
+            'qwen': available_qwen_models,
+            'wan': available_wan_models,
+        }
+
+        def _format_model_setting(model_type_key: str, model_name: str | None) -> str | None:
+            if not model_name:
+                return None
+            prefix_label = MODEL_SELECTION_PREFIX.get(model_type_key)
+            if not prefix_label:
+                return None
+            return f"{prefix_label}: {model_name}"
+
         if current_selected_model_setting and isinstance(current_selected_model_setting, str):
             current_selected_model_setting_stripped = current_selected_model_setting.strip()
             model_type, model_name_from_setting = None, current_selected_model_setting_stripped
             if ":" in current_selected_model_setting_stripped:
-                 model_type, model_name_from_setting = current_selected_model_setting_stripped.split(":", 1)
-                 model_type = model_type.strip().lower(); model_name_from_setting = model_name_from_setting.strip() # Already stripped above, but good practice
+                model_type, model_name_from_setting = current_selected_model_setting_stripped.split(":", 1)
+                model_type = model_type.strip().lower()
+                model_name_from_setting = model_name_from_setting.strip()
 
             valid_current_model_found = False
-            if model_type == "flux":
-                if model_name_from_setting.lower() in available_flux_models:
-                    # Ensure the stored value matches the original casing from the list
-                    correctly_cased_name = available_flux_models[model_name_from_setting.lower()]
-                    new_setting_val = f"Flux: {correctly_cased_name}"
-                    if settings['selected_model'] != new_setting_val: updated = True
-                    settings['selected_model'] = new_setting_val
-                    valid_current_model_found = True
-            elif model_type == "sdxl":
-                if model_name_from_setting.lower() in available_sdxl_checkpoints:
-                    correctly_cased_name = available_sdxl_checkpoints[model_name_from_setting.lower()]
-                    new_setting_val = f"SDXL: {correctly_cased_name}"
-                    if settings['selected_model'] != new_setting_val: updated = True
-                    settings['selected_model'] = new_setting_val
-                    valid_current_model_found = True
-            elif model_type is None : # Old format (no prefix), try to match and fix
-                if model_name_from_setting.lower() in available_flux_models:
-                    settings['selected_model'] = f"Flux: {available_flux_models[model_name_from_setting.lower()]}"
-                    valid_current_model_found = True; updated = True
-                elif model_name_from_setting.lower() in available_sdxl_checkpoints:
-                    settings['selected_model'] = f"SDXL: {available_sdxl_checkpoints[model_name_from_setting.lower()]}"
-                    valid_current_model_found = True; updated = True
+            if model_type in model_catalogs and model_name_from_setting:
+                catalog = model_catalogs[model_type]
+                if model_name_from_setting.lower() in catalog:
+                    correctly_cased_name = catalog[model_name_from_setting.lower()]
+                    formatted = _format_model_setting(model_type, correctly_cased_name)
+                    if formatted and settings['selected_model'] != formatted:
+                        settings['selected_model'] = formatted
+                        updated = True
+                    valid_current_model_found = formatted is not None
+            elif model_type is None and model_name_from_setting:
+                for family, catalog in model_catalogs.items():
+                    if model_name_from_setting.lower() in catalog:
+                        formatted = _format_model_setting(family, catalog[model_name_from_setting.lower()])
+                        if formatted:
+                            settings['selected_model'] = formatted
+                            updated = True
+                            valid_current_model_found = True
+                            break
 
             if not valid_current_model_found:
                 print(f"⚠️ Warning: Selected model '{current_selected_model_setting}' not found or type mismatch. Resetting.")
-                if available_flux_models:
-                    first_flux_model = next(iter(available_flux_models.values()))
-                    settings['selected_model'] = f"Flux: {first_flux_model}"
-                elif available_sdxl_checkpoints:
-                    first_sdxl_model = next(iter(available_sdxl_checkpoints.values()))
-                    settings['selected_model'] = f"SDXL: {first_sdxl_model}"
+                fallback_family = settings.get('active_model_family', default_settings['active_model_family'])
+                fallback_catalog = model_catalogs.get(fallback_family) or {}
+                chosen_setting = None
+                if fallback_catalog:
+                    chosen_setting = _format_model_setting(fallback_family, next(iter(fallback_catalog.values())))
                 else:
-                    settings['selected_model'] = None
+                    for fam_key, catalog in model_catalogs.items():
+                        if catalog:
+                            chosen_setting = _format_model_setting(fam_key, next(iter(catalog.values())))
+                            if chosen_setting:
+                                break
+                settings['selected_model'] = chosen_setting
                 updated = True
-            elif current_selected_model_setting != settings['selected_model']: # If stripping or casing correction happened
+            elif current_selected_model_setting != settings['selected_model']:
                 updated = True
 
-        elif not current_selected_model_setting and (available_flux_models or available_sdxl_checkpoints): # If None but models exist
-            if available_flux_models: settings['selected_model'] = f"Flux: {next(iter(available_flux_models.values()))}"
-            elif available_sdxl_checkpoints: settings['selected_model'] = f"SDXL: {next(iter(available_sdxl_checkpoints.values()))}"
-            updated = True
+        else:
+            # No selected model stored; choose based on active family if possible
+            fallback_family = settings.get('active_model_family', default_settings['active_model_family'])
+            fallback_catalog = model_catalogs.get(fallback_family) or {}
+            chosen_setting = None
+            if fallback_catalog:
+                chosen_setting = _format_model_setting(fallback_family, next(iter(fallback_catalog.values())))
+            else:
+                for fam_key, catalog in model_catalogs.items():
+                    if catalog:
+                        chosen_setting = _format_model_setting(fam_key, next(iter(catalog.values())))
+                        if chosen_setting:
+                            break
+            if chosen_setting:
+                settings['selected_model'] = chosen_setting
+                updated = True
             
         current_kontext_model = settings.get('selected_kontext_model')
         if current_kontext_model and isinstance(current_kontext_model, str):
@@ -608,13 +706,17 @@ def _get_default_settings():
         "llm_model_groq": default_groq_model_raw.strip() if default_groq_model_raw else "llama3-8b-8192",
         "llm_model_openai": default_openai_model_raw.strip() if default_openai_model_raw else "gpt-3.5-turbo",
         "display_prompt_preference": "enhanced",
+        "wan_animation_resolution": "512x512",
+        "wan_animation_duration": 33,
+        "wan_animation_motion_profile": "medium",
+        "active_model_family": "flux",
     }
 
 def save_settings(settings):
     settings_file = 'settings.json'
     try:
         numeric_keys_float = ['default_guidance', 'default_guidance_sdxl', 'default_guidance_qwen', 'default_guidance_wan', 'upscale_factor', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']
-        numeric_keys_int = ['steps', 'sdxl_steps', 'qwen_steps', 'wan_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size']
+        numeric_keys_int = ['steps', 'sdxl_steps', 'qwen_steps', 'wan_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size', 'wan_animation_duration']
         bool_keys = ['remix_mode', 'llm_enhancer_enabled']
         string_keys_to_strip = [
             'llm_provider', 'llm_model_gemini', 'llm_model_groq', 'llm_model_openai',
@@ -622,7 +724,8 @@ def save_settings(settings):
             'selected_vae', 'default_style_flux', 'default_style_sdxl', 'default_style_qwen', 'default_style_wan',
             'default_sdxl_negative_prompt', 'default_qwen_negative_prompt', 'default_wan_negative_prompt',
             'selected_kontext_model', 'default_flux_model', 'default_sdxl_checkpoint', 'default_qwen_checkpoint', 'default_wan_checkpoint',
-            'default_qwen_clip', 'default_qwen_vae', 'default_wan_low_noise_unet', 'default_wan_clip', 'default_wan_vae', 'default_wan_vision_clip'
+            'default_qwen_clip', 'default_qwen_vae', 'default_wan_low_noise_unet', 'default_wan_clip', 'default_wan_vae', 'default_wan_vision_clip',
+            'wan_animation_motion_profile', 'wan_animation_resolution', 'active_model_family'
         ]
         display_prompt_key = 'display_prompt_preference'
         allowed_display_prompt_options = ['enhanced', 'original']
@@ -668,6 +771,38 @@ def save_settings(settings):
             display_pref_val = str(valid_settings[display_prompt_key]).lower()
             if display_pref_val not in allowed_display_prompt_options: valid_settings[display_prompt_key] = defaults[display_prompt_key]
             else: valid_settings[display_prompt_key] = display_pref_val
+
+        allowed_motion_profiles = {'slowmo', 'low', 'medium', 'high'}
+        motion_profile_val = str(valid_settings.get('wan_animation_motion_profile', defaults['wan_animation_motion_profile'])).lower()
+        if motion_profile_val not in allowed_motion_profiles:
+            valid_settings['wan_animation_motion_profile'] = defaults['wan_animation_motion_profile']
+        else:
+            valid_settings['wan_animation_motion_profile'] = motion_profile_val
+
+        resolution_value = str(valid_settings.get('wan_animation_resolution', defaults['wan_animation_resolution'])).lower()
+        try:
+            width_str, height_str = resolution_value.split('x', 1)
+            width_val = int(width_str)
+            height_val = int(height_str)
+            if width_val <= 0 or height_val <= 0:
+                raise ValueError
+            valid_settings['wan_animation_resolution'] = f"{width_val}x{height_val}"
+        except (ValueError, AttributeError):
+            valid_settings['wan_animation_resolution'] = defaults['wan_animation_resolution']
+
+        try:
+            duration_val = int(valid_settings.get('wan_animation_duration', defaults['wan_animation_duration']))
+        except (ValueError, TypeError):
+            duration_val = defaults['wan_animation_duration']
+        duration_val = max(8, min(240, duration_val))
+        valid_settings['wan_animation_duration'] = duration_val
+
+        allowed_families = set(MODEL_SELECTION_PREFIX.keys())
+        active_family_val = str(valid_settings.get('active_model_family', defaults['active_model_family'])).lower()
+        if active_family_val not in allowed_families:
+            valid_settings['active_model_family'] = defaults['active_model_family']
+        else:
+            valid_settings['active_model_family'] = active_family_val
 
 
         for key in defaults:
@@ -808,6 +943,112 @@ def _build_model_choice_options(settings, model_type: str, setting_key: str) -> 
         select_options[0].default = True
 
     return select_options[:25]
+
+
+def get_default_flux_model_choices(settings):
+    return _build_model_choice_options(settings, "flux", "default_flux_model")
+
+
+def get_default_sdxl_model_choices(settings):
+    return _build_model_choice_options(settings, "sdxl", "default_sdxl_checkpoint")
+
+
+def get_default_qwen_model_choices(settings):
+    return _build_model_choice_options(settings, "qwen", "default_qwen_checkpoint")
+
+
+def get_default_wan_model_choices(settings):
+    return _build_model_choice_options(settings, "wan", "default_wan_checkpoint")
+
+
+def get_active_model_family_choices(settings):
+    current_family = str(settings.get('active_model_family', 'flux') or 'flux').lower()
+    options: List[discord.SelectOption] = []
+    fallback_key_map = {
+        'flux': 'default_flux_model',
+        'sdxl': 'default_sdxl_checkpoint',
+        'qwen': 'default_qwen_checkpoint',
+        'wan': 'default_wan_checkpoint',
+    }
+    for family_key, prefix_label in MODEL_SELECTION_PREFIX.items():
+        default_model_name = settings.get(fallback_key_map.get(family_key, ''), None)
+        if isinstance(default_model_name, str) and default_model_name.strip():
+            display_name = f"[{prefix_label.upper()}] {default_model_name.strip()}"
+        else:
+            display_name = f"[{prefix_label.upper()}] (No default set)"
+        options.append(
+            discord.SelectOption(
+                label=display_name[:100],
+                value=family_key,
+                default=(family_key == current_family),
+            )
+        )
+    if options and not any(opt.default for opt in options):
+        options[0].default = True
+    return options[:25]
+
+
+def get_wan_animation_resolution_choices(settings):
+    current_value = str(settings.get('wan_animation_resolution', '512x512') or '512x512').lower()
+    preset_resolutions = [
+        '512x512', '768x768', '960x540', '1024x576', '1024x1024', '1280x720', '1536x864', '1920x1080'
+    ]
+    if current_value not in preset_resolutions:
+        preset_resolutions.append(current_value)
+    options: List[discord.SelectOption] = []
+    for res in preset_resolutions:
+        label = f"Resolution: {res}"
+        options.append(
+            discord.SelectOption(
+                label=label[:100],
+                value=res,
+                default=(res == current_value),
+            )
+        )
+    if options and not any(opt.default for opt in options):
+        options[0].default = True
+    return options[:25]
+
+
+def get_wan_animation_duration_choices(settings):
+    try:
+        current_duration = int(settings.get('wan_animation_duration', 33))
+    except (TypeError, ValueError):
+        current_duration = 33
+    preset_durations = [16, 24, 33, 48, 60, 90, 120, 180, 240]
+    if current_duration not in preset_durations:
+        preset_durations.append(current_duration)
+    preset_durations = sorted({max(8, min(240, d)) for d in preset_durations})
+    options: List[discord.SelectOption] = []
+    for duration in preset_durations:
+        label = f"Frames: {duration}"
+        options.append(
+            discord.SelectOption(
+                label=label[:100],
+                value=str(duration),
+                default=(duration == current_duration),
+            )
+        )
+    if options and not any(opt.default for opt in options):
+        options[0].default = True
+    return options[:25]
+
+
+def get_wan_animation_motion_profile_choices(settings):
+    current_profile = str(settings.get('wan_animation_motion_profile', 'medium') or 'medium').lower()
+    options: List[discord.SelectOption] = []
+    for profile in ['slowmo', 'low', 'medium', 'high']:
+        label = f"Motion: {profile.capitalize()}"
+        options.append(
+            discord.SelectOption(
+                label=label[:100],
+                value=profile,
+                default=(profile == current_profile),
+            )
+        )
+    if options and not any(opt.default for opt in options):
+        options[0].default = True
+    return options[:25]
 
 
 def get_clip_choices(settings, clip_type_key, setting_key):

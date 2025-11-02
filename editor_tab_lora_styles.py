@@ -157,7 +157,7 @@ class LoraStylesTab:
         model_type_frame.pack(side=tk.RIGHT)
         ttk.Label(model_type_frame, text="Model Type:", style="Tenos.TLabel").pack(side=tk.LEFT, padx=(0,5))
         model_type_var = tk.StringVar(value=current_style_data.get('model_type', 'all'))
-        model_type_combo = ttk.Combobox(model_type_frame, textvariable=model_type_var, values=["all", "flux", "sdxl"], state="readonly", width=10, style="Tenos.TCombobox")
+        model_type_combo = ttk.Combobox(model_type_frame, textvariable=model_type_var, values=["all", "flux", "sdxl", "qwen", "wan"], state="readonly", width=10, style="Tenos.TCombobox")
         model_type_combo.pack(side=tk.LEFT)
         model_type_var.trace_add("write", lambda *args, s=style_name_to_display: self._update_style_model_type(s))
 

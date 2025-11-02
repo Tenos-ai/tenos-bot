@@ -23,7 +23,19 @@ class EditorConfigManager:
 
         self.config_template_definition = {
             "OUTPUTS": {"UPSCALES": "", "VARIATIONS": "", "GENERATIONS": ""},
-            "MODELS": {"MODEL_FILES": "", "CHECKPOINTS_FOLDER": "", "UPSCALE_MODELS": "", "VAE_MODELS": ""},
+            "MODELS": {
+                "MODEL_FILES": "",
+                "CHECKPOINTS_FOLDER": "",
+                "QWEN_MODELS": "",
+                "WAN_MODELS": "",
+                "UPSCALE_MODELS": "",
+                "VAE_MODELS": "",
+            },
+            "TEXT_ENCODERS": {
+                "QWEN_TEXT_ENCODERS": "",
+                "WAN_TEXT_ENCODERS": "",
+                "WAN_VISION_ENCODERS": "",
+            },
             "CLIP": {"CLIP_FILES": ""},
             "LORAS": {"LORA_FILES": ""},
             "NODES": {"CUSTOM_NODES": ""},
@@ -33,10 +45,15 @@ class EditorConfigManager:
             "ADMIN": {"USERNAME": "", "ID": ""},
             "ALLOWED_USERS": {},
             "LLM_ENHANCER": {"OPENAI_API_KEY": "", "GEMINI_API_KEY": "", "GROQ_API_KEY": ""},
-            "APP_SETTINGS": {"AUTO_UPDATE_ON_STARTUP": False}
+            "APP_SETTINGS": {
+                "AUTO_UPDATE_ON_STARTUP": False,
+                "STATUS_NOTIFICATION_STYLE": "timed",
+                "STATUS_NOTIFICATION_DURATION_MS": 2000,
+            }
         }
         self.settings_template_factory = lambda: {
              "selected_model": None,
+             "active_model_family": "flux",
              "selected_kontext_model": None,
              "default_flux_model": None,
             "default_sdxl_checkpoint": None,
@@ -82,8 +99,9 @@ class EditorConfigManager:
              "llm_model_groq": self._get_default_llm_model_for_provider("groq", "llama3-8b-8192"),
              "llm_model_openai": self._get_default_llm_model_for_provider("openai", "gpt-3.5-turbo"),
              "display_prompt_preference": "enhanced",
-             "status_notification_style": "timed",
-             "status_notification_duration_ms": 2000
+             "wan_animation_resolution": "512x512",
+             "wan_animation_duration": 33,
+             "wan_animation_motion_profile": "medium"
         }
 
     def _get_default_llm_model_for_provider(self, provider_key, fallback_model_name):
@@ -128,7 +146,44 @@ class EditorConfigManager:
                     else: was_config_updated_during_load = True
                 else: merged_config_result[section_key_template] = loaded_config_from_file[section_key_template]
             else: was_config_updated_during_load = True
-        
+
+        legacy_settings_data = None
+        try:
+            if os.path.exists(SETTINGS_FILE_NAME):
+                with open(SETTINGS_FILE_NAME, 'r') as legacy_settings_file:
+                    potential_settings = json.load(legacy_settings_file)
+                if isinstance(potential_settings, dict):
+                    legacy_settings_data = potential_settings
+        except (OSError, json.JSONDecodeError):
+            legacy_settings_data = None
+        except Exception:
+            legacy_settings_data = None
+
+        if legacy_settings_data is not None:
+            app_settings_section = merged_config_result.setdefault("APP_SETTINGS", self.config_template_definition["APP_SETTINGS"].copy())
+            legacy_style_value = legacy_settings_data.pop('status_notification_style', None)
+            if legacy_style_value is not None:
+                normalized_style = str(legacy_style_value).lower()
+                if normalized_style not in {"timed", "sticky"}:
+                    normalized_style = self.config_template_definition["APP_SETTINGS"]["STATUS_NOTIFICATION_STYLE"]
+                if app_settings_section.get("STATUS_NOTIFICATION_STYLE") != normalized_style:
+                    app_settings_section["STATUS_NOTIFICATION_STYLE"] = normalized_style
+                    was_config_updated_during_load = True
+            legacy_duration_value = legacy_settings_data.pop('status_notification_duration_ms', None)
+            if legacy_duration_value is not None:
+                try:
+                    duration_int = int(legacy_duration_value)
+                except (TypeError, ValueError):
+                    duration_int = self.config_template_definition["APP_SETTINGS"]["STATUS_NOTIFICATION_DURATION_MS"]
+                duration_int = max(500, min(60000, duration_int))
+                if app_settings_section.get("STATUS_NOTIFICATION_DURATION_MS") != duration_int:
+                    app_settings_section["STATUS_NOTIFICATION_DURATION_MS"] = duration_int
+                    was_config_updated_during_load = True
+            if 'status_notification_style' in legacy_settings_data or 'status_notification_duration_ms' in legacy_settings_data:
+                legacy_settings_data.pop('status_notification_style', None)
+                legacy_settings_data.pop('status_notification_duration_ms', None)
+            save_json_config(SETTINGS_FILE_NAME, legacy_settings_data, "bot settings")
+
         self.config = merged_config_result
         if was_config_updated_during_load:
             self.save_main_config_data(show_success_message=False)
@@ -151,6 +206,15 @@ class EditorConfigManager:
                             if (section_key == "COMFYUI_API" or section_key == "BOT_INTERNAL_API") and sub_key == "PORT":
                                 try: config_to_write[section_key][sub_key] = int(value_from_ui)
                                 except (ValueError, TypeError): config_to_write[section_key][sub_key] = self.config_template_definition[section_key][sub_key]
+                            elif section_key == "APP_SETTINGS" and sub_key == "STATUS_NOTIFICATION_STYLE":
+                                style_val = str(value_from_ui).lower()
+                                config_to_write[section_key][sub_key] = style_val if style_val in ["timed", "sticky"] else "timed"
+                            elif section_key == "APP_SETTINGS" and sub_key == "STATUS_NOTIFICATION_DURATION_MS":
+                                try:
+                                    duration_val = int(value_from_ui)
+                                except (ValueError, TypeError):
+                                    duration_val = self.config_template_definition[section_key][sub_key]
+                                config_to_write[section_key][sub_key] = max(500, min(60000, duration_val))
                             elif isinstance(tk_var, BooleanVar):
                                 config_to_write[section_key][sub_key] = value_from_ui
                             else: config_to_write[section_key][sub_key] = value_from_ui if value_from_ui is not None else ""
@@ -197,20 +261,6 @@ class EditorConfigManager:
                         allowed_display = ['enhanced', 'original']
                         merged_settings_result[key_template] = str_val if str_val in allowed_display else template_default_val
                         if merged_settings_result[key_template] != str_val: was_settings_updated_during_load = True
-                    elif key_template == 'status_notification_style':
-                        style_val = str(value_from_loaded_file).lower()
-                        allowed_styles = ['timed', 'sticky']
-                        merged_settings_result[key_template] = style_val if style_val in allowed_styles else template_default_val
-                        if merged_settings_result[key_template] != style_val: was_settings_updated_during_load = True
-                    elif key_template == 'status_notification_duration_ms':
-                        try:
-                            duration_val = int(value_from_loaded_file)
-                        except (ValueError, TypeError):
-                            duration_val = template_default_val
-                        duration_clamped = max(500, min(60000, duration_val))
-                        merged_settings_result[key_template] = duration_clamped
-                        if duration_clamped != duration_val:
-                            was_settings_updated_during_load = True
                     elif key_template == 'default_sdxl_negative_prompt':
                         merged_settings_result[key_template] = str(value_from_loaded_file) if value_from_loaded_file is not None else ""
                     elif isinstance(template_default_val, float): merged_settings_result[key_template] = float(value_from_loaded_file)
@@ -265,20 +315,6 @@ class EditorConfigManager:
                     elif key_to_save == 'display_prompt_preference':
                         internal_pref_value = next((k_pref for k_pref, v_pref_disp in self.editor_app.display_prompt_map.items() if v_pref_disp == value_from_ui), 'enhanced')
                         settings_to_write[key_to_save] = internal_pref_value
-                    elif key_to_save == 'status_notification_style':
-                        internal_style = next(
-                            (k_style for k_style, v_style in self.editor_app.notification_style_display_map.items() if v_style == value_from_ui),
-                            str(value_from_ui).lower()
-                        )
-                        if internal_style not in ['timed', 'sticky']:
-                            internal_style = current_settings_template_for_save.get(key_to_save, 'timed')
-                        settings_to_write[key_to_save] = internal_style
-                    elif key_to_save == 'status_notification_duration_ms':
-                        try:
-                            duration_val = int(value_from_ui)
-                        except (ValueError, TypeError):
-                            duration_val = current_settings_template_for_save.get(key_to_save, 2000)
-                        settings_to_write[key_to_save] = max(500, min(60000, duration_val))
                     elif isinstance(current_settings_template_for_save.get(key_to_save), float): settings_to_write[key_to_save] = float(value_from_ui)
                     elif isinstance(current_settings_template_for_save.get(key_to_save), int): settings_to_write[key_to_save] = int(value_from_ui)
                     elif isinstance(current_settings_template_for_save.get(key_to_save), bool):

@@ -35,6 +35,7 @@ from utils.llm_enhancer import (
     KONTEXT_ENHANCER_SYSTEM_PROMPT,
     QWEN_ENHANCER_SYSTEM_PROMPT,
 )
+from wan_animation import prepare_wan_animation_prompt
 
 _bot_instance_core = None
 def register_bot_instance_for_core(bot_instance):
@@ -590,7 +591,18 @@ async def execute_generation_logic(
                 job_result["error_message_text"] = response_status_text_modify or "Failed to prepare prompt payload."
                 results_list.append(job_result); continue
             job_details_current_gen['run_times'] = run_times_gen
-            job_details_current_gen['model_type_for_enhancer'] = current_model_type_for_job 
+            job_details_current_gen['model_type_for_enhancer'] = current_model_type_for_job
+
+            if job_details_current_gen.get('supports_animation'):
+                batch_size_val = job_details_current_gen.get('batch_size', 1)
+                try:
+                    batch_size_int = int(batch_size_val)
+                except (TypeError, ValueError):
+                    batch_size_int = 1
+                can_offer_animation = run_times_gen == 1 and batch_size_int == 1
+                if not can_offer_animation:
+                    job_details_current_gen['supports_animation'] = False
+                    job_details_current_gen['followup_animation_workflow'] = None
 
             comfy_id_current_gen = None; queue_err_msg_gen = None
             try: comfy_id_current_gen = comfy_queue_prompt(mod_prompt_payload_gen, COMFYUI_HOST, COMFYUI_PORT)
@@ -686,6 +698,83 @@ async def process_upscale_request(context_user, context_channel, referenced_mess
         "status": "success", "job_id": job_id_ups, "comfy_prompt_id": comfy_id_ups,
         "message_content_details": msg_details, "view_type": "QueuedJobView",
         "view_args": {"comfy_prompt_id": comfy_id_ups}, "job_data_for_qm": job_data_for_qm_ups
+    }]
+
+
+async def process_wan_animation_request(context_user, context_channel, source_job_id: str):
+    await _ensure_ws_client_id()
+
+    source_job_data = queue_manager.get_job_data_by_id(source_job_id)
+    if not source_job_data:
+        return [{"status": "error", "error_message_text": "Original job data not found for animation."}]
+
+    if not source_job_data.get("supports_animation") or not source_job_data.get("followup_animation_workflow"):
+        return [{"status": "error", "error_message_text": "This job is not eligible for WAN animation."}]
+
+    image_paths = source_job_data.get("image_paths") or []
+    if not image_paths:
+        return [{"status": "error", "error_message_text": "Completed image file not available for animation."}]
+
+    animation_image_path = image_paths[0]
+
+    try:
+        animation_job_id, animation_prompt_payload, animation_job_details = await prepare_wan_animation_prompt(
+            source_job_data,
+            animation_image_path=animation_image_path,
+        )
+    except Exception as animation_error:
+        return [{"status": "error", "error_message_text": f"Failed to prepare WAN animation: {animation_error}"}]
+
+    comfy_id_animation = None
+    queue_error_animation = None
+    try:
+        comfy_id_animation = comfy_queue_prompt(animation_prompt_payload, COMFYUI_HOST, COMFYUI_PORT)
+    except ComfyConnectionRefusedError as e_conn_anim:
+        queue_error_animation = f"Error: Could not connect to ComfyUI ({e_conn_anim})."
+    except Exception as e_queue_anim:
+        queue_error_animation = "Error: Failed to queue WAN animation with ComfyUI."
+        print(f"{queue_error_animation}: {e_queue_anim}")
+
+    if not comfy_id_animation:
+        return [{"status": "error", "error_message_text": queue_error_animation or "Failed to queue WAN animation (unknown error)."}]
+
+    job_data_for_qm_animation = {
+        "job_id": animation_job_id,
+        "comfy_prompt_id": comfy_id_animation,
+        "type": "wan_animation",
+        "original_job_id": source_job_id,
+        "channel_id": context_channel.id,
+        "user_id": context_user.id,
+        "user_name": context_user.name,
+        "user_mention": context_user.mention,
+        **animation_job_details,
+    }
+
+    prompt_summary = animation_job_details.get("animation_prompt_text", animation_job_details.get("prompt", ""))
+    message_details = {
+        "user_mention": context_user.mention,
+        "source_job_id": source_job_id,
+        "model_type": "wan",
+        "model_type_display": "WAN",
+        "prompt_to_display": prompt_summary,
+        "frames": animation_job_details.get("wan_animation_duration"),
+        "resolution": animation_job_details.get("wan_animation_resolution"),
+        "motion_profile": animation_job_details.get("wan_animation_motion_profile"),
+        "llm_provider": animation_job_details.get("llm_provider"),
+        "enhancer_used": animation_job_details.get("enhancer_used", False),
+        "job_type": "wan_animation",
+        "supports_animation": False,
+        "followup_animation_workflow": None,
+    }
+
+    return [{
+        "status": "success",
+        "job_id": animation_job_id,
+        "comfy_prompt_id": comfy_id_animation,
+        "message_content_details": message_details,
+        "view_type": "QueuedJobView",
+        "view_args": {"comfy_prompt_id": comfy_id_animation},
+        "job_data_for_qm": job_data_for_qm_animation,
     }]
 
 async def process_variation_request(context_user, context_channel, referenced_message_obj, variation_type_str, image_idx, edited_prompt_str=None, edited_neg_prompt_str=None, is_interaction=None, initial_interaction_obj=None):
