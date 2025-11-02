@@ -89,7 +89,7 @@ Download the portable zip from this repository via the "Code" button at the top 
 - **Shared Tenos nodes**: Every Qwen and WAN workflow still injects Bob's Latent Optimizer Advanced and the Tenos Resize node to
   keep prompt handling consistent with Flux/SDXL. Confirm that both custom nodes listed above load without errors before running
   generations.
-- **WAN animation flow**: Any WAN generation queued through the bot surfaces an `Animate with WAN` follow-up button in Discord.
+- **WAN animation flow**: Any WAN generation queued through the bot surfaces a `🎞️` follow-up button in Discord.
   This lets you pass the freshly generated image into WAN's image-to-video/text-to-video workflow without leaving the bot,
   ensuring a one-click path from still image to animation.
 

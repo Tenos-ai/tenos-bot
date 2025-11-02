@@ -19,6 +19,7 @@ from bot_core_logic import (
     process_upscale_request as core_process_upscale,
     process_variation_request as core_process_variation,
     process_rerun_request as core_process_rerun,
+    process_wan_animation_request as core_process_animation,
     process_cancel_request,
     process_kontext_edit_request,
     execute_generation_logic
@@ -284,7 +285,40 @@ class GenerationActionsView(View):
         super().__init__(timeout=timeout)
         self.original_message_id = original_message_id; self.original_channel_id = original_channel_id
         self.job_id = job_id; self.bot = bot_ref
-        buttons_def = [ Button(label="Upscale ⬆️", style=discord.ButtonStyle.primary, custom_id=f"upscale_1_{job_id}", row=0), Button(label="Vary W 🤏", style=discord.ButtonStyle.secondary, custom_id=f"vary_w_1_{job_id}", row=0), Button(label="Vary S 💪", style=discord.ButtonStyle.secondary, custom_id=f"vary_s_1_{job_id}", row=0), Button(label="Rerun 🔄", style=discord.ButtonStyle.secondary, custom_id=f"rerun_{job_id}", row=1), Button(label="Edit ✏️", style=discord.ButtonStyle.secondary, custom_id=f"edit_{job_id}", row=1), Button(label="Delete 🗑️", style=discord.ButtonStyle.danger, custom_id=f"delete_{job_id}", row=1)]
+
+        job_data_snapshot = queue_manager.get_job_data_by_id(job_id) or {}
+        job_type_snapshot = str(job_data_snapshot.get('type', 'generate')).lower()
+        self._animation_available = False
+        if job_type_snapshot in {'generate', 'upscale'}:
+            supports_animation = bool(job_data_snapshot.get('supports_animation'))
+            has_followup = bool(job_data_snapshot.get('followup_animation_workflow'))
+            batch_size_val = job_data_snapshot.get('batch_size', 1)
+            try:
+                batch_size_int = int(batch_size_val)
+            except (TypeError, ValueError):
+                batch_size_int = 1
+            is_single = (job_type_snapshot == 'upscale') or batch_size_int == 1
+            if supports_animation and has_followup and is_single:
+                self._animation_available = True
+
+        buttons_def = [
+            Button(label="Upscale ⬆️", style=discord.ButtonStyle.primary, custom_id=f"upscale_1_{job_id}", row=0),
+            Button(label="Vary W 🤏", style=discord.ButtonStyle.secondary, custom_id=f"vary_w_1_{job_id}", row=0),
+            Button(label="Vary S 💪", style=discord.ButtonStyle.secondary, custom_id=f"vary_s_1_{job_id}", row=0),
+            Button(label="Rerun 🔄", style=discord.ButtonStyle.secondary, custom_id=f"rerun_{job_id}", row=1),
+            Button(label="Edit ✏️", style=discord.ButtonStyle.secondary, custom_id=f"edit_{job_id}", row=1),
+            Button(label="Delete 🗑️", style=discord.ButtonStyle.danger, custom_id=f"delete_{job_id}", row=1)
+        ]
+
+        if self._animation_available:
+            buttons_def.append(
+                Button(
+                    label="🎞️",
+                    style=discord.ButtonStyle.success,
+                    custom_id=f"animate_{job_id}",
+                    row=1,
+                )
+            )
         for btn_item in buttons_def:
             action_type_btn = btn_item.custom_id.split('_')[0]
             if action_type_btn == "upscale": btn_item.callback = self.upscale_callback
@@ -292,6 +326,7 @@ class GenerationActionsView(View):
             elif action_type_btn == "rerun": btn_item.callback = self.rerun_callback
             elif action_type_btn == "edit": btn_item.callback = self.edit_callback
             elif action_type_btn == "delete": btn_item.callback = self.delete_callback
+            elif action_type_btn == "animate": btn_item.callback = self.animate_callback
             self.add_item(btn_item)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -367,6 +402,16 @@ class GenerationActionsView(View):
                     if msg_details_item.get('supports_animation') and msg_details_item.get('followup_animation_workflow'):
                         workflow_name = msg_details_item['followup_animation_workflow']
                         content_str += f"\n> **Animate:** Use `{workflow_name}` to create motion from this result."
+                elif job_type_item == "wan_animation":
+                    prompt_snippet = textwrap.shorten(msg_details_item.get('prompt_to_display', ''), 160, placeholder='...')
+                    content_str = (
+                        f"{msg_details_item['user_mention']}: Animating `{msg_details_item.get('source_job_id', 'unknown')}` with WAN\n"
+                        f"> **Frames:** `{msg_details_item.get('frames')}`, **Resolution:** `{msg_details_item.get('resolution')}`, **Motion:** `{msg_details_item.get('motion_profile')}`\n"
+                        f"> **Prompt:** `{prompt_snippet}`\n"
+                        f"> **Status:** Queued... "
+                    )
+                    if msg_details_item.get('enhancer_used') and msg_details_item.get('llm_provider'):
+                        content_str += f"(Prompt via {msg_details_item['llm_provider'].capitalize()})"
                 view_to_send_item = QueuedJobView(**result_item["view_args"]) if result_item.get("view_type") == "QueuedJobView" and result_item.get("view_args") else None
                 sent_message_item = await safe_interaction_response(interaction, content=content_str, view=view_to_send_item)
                 if sent_message_item and result_item["job_data_for_qm"]:
@@ -452,13 +497,25 @@ class GenerationActionsView(View):
     async def delete_callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         for item_btn_del in self.children:
-            if isinstance(item_btn_del,Button) and item_btn_del.custom_id == interaction.data['custom_id']: item_btn_del.disabled=True; item_btn_del.label="Deleting..."; break 
+            if isinstance(item_btn_del,Button) and item_btn_del.custom_id == interaction.data['custom_id']: item_btn_del.disabled=True; item_btn_del.label="Deleting..."; break
         try:
             if interaction.message: await interaction.message.edit(view=self)
         except discord.NotFound: print(f"Original message for delete (job {self.job_id}) not found.")
         except Exception as e_edit_del: print(f"Error editing message for delete button (job {self.job_id}): {e_edit_del}")
         ref_msg_del = await self.get_referenced_message(interaction)
         await delete_job_files_and_message(self.job_id, ref_msg_del, interaction)
+
+    async def animate_callback(self, interaction: discord.Interaction):
+        if not self._animation_available:
+            await safe_interaction_response(interaction, "Animation is not available for this job.", ephemeral=True)
+            return
+
+        results = await core_process_animation(
+            context_user=interaction.user,
+            context_channel=interaction.channel,
+            source_job_id=self.job_id,
+        )
+        await self._process_and_send_action_results(interaction, results, "Animate")
 
 class BatchActionsView(GenerationActionsView):
     def __init__(self, original_message_id: int, original_channel_id: int, job_id: str, batch_size: int, bot_ref, timeout=86400*3):

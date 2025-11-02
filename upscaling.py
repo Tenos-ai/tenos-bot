@@ -474,6 +474,8 @@ def modify_upscale_prompt(
 
     response_status_msg_ups = f"Upscaling image #{image_index} by {upscale_factor_setting:.2f}x (workflow: {current_base_model_type.upper()}). Seed: {upscale_seed}, Style: {style_for_this_upscale}."
     
+    runtime_animation_supported = bool(spec.supports_animation)
+
     job_details_dict_ups = {
         "job_id": upscale_job_id,
         "prompt": prompt_for_upscaler_text_node,
@@ -500,8 +502,11 @@ def modify_upscale_prompt(
         "selected_model": selected_base_model_setting if isinstance(selected_base_model_setting, str) else None,
         "batch_size": 1,
         "style_warning_message": style_warning_message_ups,
-        "supports_animation": spec.supports_animation,
-        "followup_animation_workflow": "wan_image_to_video" if spec.supports_animation else None,
+        "supports_animation": runtime_animation_supported,
+        "followup_animation_workflow": "wan_image_to_video" if runtime_animation_supported else None,
+        "wan_animation_resolution": settings.get('wan_animation_resolution') if runtime_animation_supported else None,
+        "wan_animation_duration": settings.get('wan_animation_duration') if runtime_animation_supported else None,
+        "wan_animation_motion_profile": settings.get('wan_animation_motion_profile') if runtime_animation_supported else None,
         "parameters_used": {
             "seed": upscale_seed,
             "style": style_for_this_upscale,

@@ -124,10 +124,15 @@ class QueueManager:
             "original_prompt": job_data.get("original_prompt"),
             "enhanced_prompt": job_data.get("enhanced_prompt"),
             "enhancer_error": job_data.get("enhancer_error"),
+            "llm_provider": job_data.get("llm_provider"),
             "model_type_for_enhancer": job_data.get("model_type_for_enhancer", "flux"),
             "mp_size": job_data.get("mp_size"),
             "supports_animation": job_data.get("supports_animation"),
             "followup_animation_workflow": job_data.get("followup_animation_workflow"),
+            "wan_animation_resolution": job_data.get("wan_animation_resolution"),
+            "wan_animation_duration": job_data.get("wan_animation_duration"),
+            "wan_animation_motion_profile": job_data.get("wan_animation_motion_profile"),
+            "animation_prompt_text": job_data.get("animation_prompt_text"),
         }
         self.pending_jobs[job_id_str] = full_job_data
         print(f"Added job {job_id_str} to pending queue.")

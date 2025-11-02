@@ -705,11 +705,19 @@ class ConfigEditor:
 
         self.available_models = []
         self.available_checkpoints = []
+        self.available_qwen_models = []
+        self.available_wan_models = []
+        self.available_wan_video_models = []
         self.available_clips_t5 = []
         self.available_clips_l = []
+        self.available_qwen_clips = []
+        self.available_wan_clips = []
+        self.available_wan_vision = []
         self.available_loras = ["None"]
         self.available_upscale_models = ["None"]
         self.available_vaes = ["None"]
+        self.available_qwen_vaes = ["None"]
+        self.available_wan_vaes = ["None"]
 
         self.provider_display_map = { k: v.get("display_name", k.capitalize()) for k, v in self.llm_models_config.get("providers", {}).items() }
         self.display_prompt_map = { "enhanced": "Show Enhanced Prompt ✨", "original": "Show Original Prompt ✍️" }
@@ -724,8 +732,13 @@ class ConfigEditor:
             "OUTPUTS.GENERATIONS": "Primary folder for brand-new image generations.",
             "MODELS.MODEL_FILES": "Root directory containing your Flux model checkpoints.",
             "MODELS.CHECKPOINTS_FOLDER": "Location for SDXL checkpoints used by the bot.",
+            "MODELS.QWEN_MODELS": "Folder containing Qwen diffusion checkpoints (e.g., qwen2-vl).",
+            "MODELS.WAN_MODELS": "Folder containing WAN diffusion checkpoints for text/video workflows.",
             "MODELS.UPSCALE_MODELS": "Folder with upscale models available to ComfyUI.",
             "MODELS.VAE_MODELS": "Directory containing VAE files referenced by SDXL.",
+            "TEXT_ENCODERS.QWEN_TEXT_ENCODERS": "Directory with Qwen text encoder weights (text & image encoders).",
+            "TEXT_ENCODERS.WAN_TEXT_ENCODERS": "Directory containing WAN text encoder weights.",
+            "TEXT_ENCODERS.WAN_VISION_ENCODERS": "Directory for WAN vision encoders used during animation workflows.",
             "CLIP.CLIP_FILES": "Folder where CLIP model files are stored.",
             "LORAS.LORA_FILES": "Directory with LoRA assets available for selection.",
             "NODES.CUSTOM_NODES": "ComfyUI custom nodes folder used during node installation.",
@@ -740,18 +753,28 @@ class ConfigEditor:
             "LLM_ENHANCER.OPENAI_API_KEY": "Key used when sending prompt enhancement requests to OpenAI.",
             "LLM_ENHANCER.GEMINI_API_KEY": "Key used for Google Gemini prompt enhancements.",
             "LLM_ENHANCER.GROQ_API_KEY": "Key used for Groq LLM prompt enhancements.",
-            "APP_SETTINGS.AUTO_UPDATE_ON_STARTUP": "When enabled the configurator will check for updates on launch."
+            "APP_SETTINGS.AUTO_UPDATE_ON_STARTUP": "When enabled the configurator will check for updates on launch.",
+            "APP_SETTINGS.STATUS_NOTIFICATION_STYLE": "Controls whether editor status banners auto-dismiss or stay until dismissed.",
+            "APP_SETTINGS.STATUS_NOTIFICATION_DURATION_MS": "Duration (ms) before timed notifications close automatically."
         }
 
         self.settings_help_text = {
-            "selected_model": "Default Flux/SDXL model used for general image generation.",
+            "selected_model": "Default Flux/SDXL/Qwen/WAN model used for general image generation.",
+            "active_model_family": "Sets which model family is active for new /gen requests.",
             "selected_kontext_model": "Flux model dedicated to Kontext workflows.",
             "selected_t5_clip": "T5 text encoder paired with your primary model.",
             "selected_clip_l": "CLIP-L encoder providing textual guidance to Flux.",
             "selected_upscale_model": "Upscaler used when enhancing image resolution.",
             "selected_vae": "VAE loaded for color-space decoding during SDXL generations.",
+            "default_flux_model": "Default Flux checkpoint loaded for text-to-image runs.",
+            "default_sdxl_checkpoint": "Default SDXL checkpoint loaded for text-to-image runs.",
+            "default_qwen_checkpoint": "Default Qwen diffusion checkpoint for image workflows.",
+            "default_wan_checkpoint": "Default WAN diffusion checkpoint for still-image workflows.",
+            "default_wan_low_noise_unet": "WAN low-noise UNet used when launching 1-click animations.",
             "default_style_flux": "Starting style applied to Flux prompts.",
             "default_style_sdxl": "Starting style applied to SDXL prompts.",
+            "default_style_qwen": "Starting style applied to Qwen prompts.",
+            "default_style_wan": "Starting style applied to WAN prompts.",
             "default_variation_mode": "Controls how strongly variation prompts deviate.",
             "variation_batch_size": "Number of variation images generated at once.",
             "default_batch_size": "Default image count per generation request.",
@@ -759,9 +782,15 @@ class ConfigEditor:
             "default_mp_size": "Target megapixel size for Flux renders.",
             "steps": "Number of inference steps Flux will run.",
             "sdxl_steps": "Number of inference steps for SDXL workflows.",
+            "qwen_steps": "Number of inference steps for Qwen workflows.",
+            "wan_steps": "Number of inference steps for WAN workflows.",
             "default_guidance": "Flux guidance scale balancing prompt adherence.",
             "default_guidance_sdxl": "Guidance scale for SDXL prompts.",
+            "default_guidance_qwen": "Guidance scale for Qwen prompts.",
+            "default_guidance_wan": "Guidance scale for WAN prompts.",
             "default_sdxl_negative_prompt": "Baseline negative prompt applied to SDXL generations.",
+            "default_qwen_negative_prompt": "Baseline negative prompt applied to Qwen generations.",
+            "default_wan_negative_prompt": "Baseline negative prompt applied to WAN generations.",
             "kontext_guidance": "Guidance scale used in Kontext operations.",
             "kontext_steps": "Inference steps used for Kontext prompts.",
             "kontext_mp_size": "Megapixel target for Kontext renders.",
@@ -770,8 +799,14 @@ class ConfigEditor:
             "llm_provider": "Select which LLM provider backs prompt enhancement.",
             "llm_model": "Specific LLM model used for prompt enhancement with the selected provider.",
             "display_prompt_preference": "Choose whether to show enhanced or original prompts in the UI.",
-            "status_notification_style": "Choose whether status messages auto-dismiss or stay until you dismiss them.",
-            "status_notification_duration_ms": "How long timed status messages remain visible before disappearing."
+            "default_qwen_clip": "Default CLIP encoder paired with Qwen checkpoints.",
+            "default_qwen_vae": "Default VAE for decoding Qwen latents.",
+            "default_wan_clip": "Default WAN text encoder for still-image runs.",
+            "default_wan_vae": "Default VAE for decoding WAN latents.",
+            "default_wan_vision_clip": "Default WAN vision encoder used during animation.",
+            "wan_animation_resolution": "Default resolution for WAN 1-click animations (width x height).",
+            "wan_animation_duration": "Number of frames rendered by the WAN animation workflow.",
+            "wan_animation_motion_profile": "Guides the LLM to bias WAN animations toward slowmo/low/medium/high motion."
         }
 
         self.status_banner = StatusBanner(self.master, self.color, self.register_theme_subscriber)
@@ -861,16 +896,18 @@ class ConfigEditor:
     def show_status_message(self, message, level="info", duration=DEFAULT_STATUS_DURATION):
         resolved_duration = duration
         allow_dismiss = False
-        settings = getattr(self.config_manager, "settings", {}) if hasattr(self, "config_manager") else {}
+        app_prefs = {}
+        if hasattr(self, "config_manager") and getattr(self.config_manager, "config", None):
+            app_prefs = self.config_manager.config.get("APP_SETTINGS", {}) or {}
 
         if duration is DEFAULT_STATUS_DURATION:
-            style = str(settings.get("status_notification_style", "timed")).lower()
+            style = str(app_prefs.get("STATUS_NOTIFICATION_STYLE", "timed")).lower()
             if style == "sticky":
                 resolved_duration = None
                 allow_dismiss = True
             else:
                 try:
-                    preferred = int(settings.get("status_notification_duration_ms", 2000))
+                    preferred = int(app_prefs.get("STATUS_NOTIFICATION_DURATION_MS", 2000))
                 except (TypeError, ValueError):
                     preferred = 2000
                 resolved_duration = max(500, min(60000, preferred))
@@ -1403,6 +1440,10 @@ class ConfigEditor:
         for key in self.config_manager.config_template_definition.get("MODELS", {}):
             create_config_row(models_body, "MODELS", key, nav_section_key="paths", is_path=True)
 
+        text_encoders_body = build_section(self.paths_tab_frame, "Text Encoders", initially_open=False)
+        for key in self.config_manager.config_template_definition.get("TEXT_ENCODERS", {}):
+            create_config_row(text_encoders_body, "TEXT_ENCODERS", key, nav_section_key="paths", is_path=True)
+
         clip_body = build_section(self.paths_tab_frame, "CLIP Resources", initially_open=False)
         for key in self.config_manager.config_template_definition.get("CLIP", {}):
             create_config_row(clip_body, "CLIP", key, nav_section_key="paths", is_path=True)
@@ -1461,6 +1502,82 @@ class ConfigEditor:
             "focus_widget": auto_update_check,
             "section": "app_settings",
         }
+
+        notif_style_var = tk.StringVar(value=str(app_settings.get("STATUS_NOTIFICATION_STYLE", "timed")).lower())
+        self.config_vars["APP_SETTINGS.STATUS_NOTIFICATION_STYLE"] = notif_style_var
+        notif_style_row = ttk.Frame(app_settings_body, style="Tenos.TFrame")
+        notif_style_row.pack(fill=tk.X, pady=4)
+        ttk.Label(notif_style_row, text="Status Notification Style:", style="Tenos.TLabel").grid(row=0, column=0, sticky="w")
+        notif_style_combo = ttk.Combobox(
+            notif_style_row,
+            textvariable=notif_style_var,
+            state="readonly",
+            values=["timed", "sticky"],
+            width=18,
+            style="Tenos.TCombobox"
+        )
+        notif_style_combo.grid(row=0, column=1, padx=(12, 0), sticky="w")
+        self.config_input_widgets["APP_SETTINGS.STATUS_NOTIFICATION_STYLE"] = notif_style_combo
+        self.attach_tooltip(notif_style_combo, self.config_help_text.get("APP_SETTINGS.STATUS_NOTIFICATION_STYLE"))
+        self.config_row_metadata["APP_SETTINGS.STATUS_NOTIFICATION_STYLE"] = {
+            "frame": notif_style_row,
+            "pack": {"fill": tk.X, "pady": 4},
+            "label": "Status Notification Style",
+            "help_text": self.config_help_text.get("APP_SETTINGS.STATUS_NOTIFICATION_STYLE", ""),
+            "label_widget": notif_style_combo,
+            "default_style": "Tenos.TCombobox",
+            "highlight_style": None,
+            "focus_widget": notif_style_combo,
+            "section": "app_settings",
+        }
+
+        duration_default = app_settings.get("STATUS_NOTIFICATION_DURATION_MS", 2000)
+        try:
+            duration_default = int(duration_default)
+        except (TypeError, ValueError):
+            duration_default = 2000
+        duration_default = max(500, min(60000, duration_default))
+
+        notif_duration_var = tk.StringVar(value=str(duration_default))
+        self.config_vars["APP_SETTINGS.STATUS_NOTIFICATION_DURATION_MS"] = notif_duration_var
+        notif_duration_row = ttk.Frame(app_settings_body, style="Tenos.TFrame")
+        notif_duration_row.pack(fill=tk.X, pady=4)
+        ttk.Label(notif_duration_row, text="Notification Duration (ms):", style="Tenos.TLabel").grid(row=0, column=0, sticky="w")
+        notif_duration_spin = ttk.Spinbox(
+            notif_duration_row,
+            from_=500,
+            to=60000,
+            increment=250,
+            textvariable=notif_duration_var,
+            width=12,
+            validate='key',
+            validatecommand=(self._digits_validator, '%P'),
+            style="TSpinbox"
+        )
+        notif_duration_spin.grid(row=0, column=1, padx=(12, 0), sticky="w")
+        self.config_input_widgets["APP_SETTINGS.STATUS_NOTIFICATION_DURATION_MS"] = notif_duration_spin
+        self.attach_tooltip(notif_duration_spin, self.config_help_text.get("APP_SETTINGS.STATUS_NOTIFICATION_DURATION_MS"))
+        self.config_row_metadata["APP_SETTINGS.STATUS_NOTIFICATION_DURATION_MS"] = {
+            "frame": notif_duration_row,
+            "pack": {"fill": tk.X, "pady": 4},
+            "label": "Notification Duration (ms)",
+            "help_text": self.config_help_text.get("APP_SETTINGS.STATUS_NOTIFICATION_DURATION_MS", ""),
+            "label_widget": notif_duration_spin,
+            "default_style": "TSpinbox",
+            "highlight_style": None,
+            "focus_widget": notif_duration_spin,
+            "section": "app_settings",
+        }
+
+        def _sync_app_notification_duration(*_args):
+            style_key = str(notif_style_var.get()).lower()
+            try:
+                notif_duration_spin.configure(state='normal' if style_key == 'timed' else 'disabled')
+            except tk.TclError:
+                pass
+
+        notif_style_var.trace_add('write', lambda *args: _sync_app_notification_duration())
+        self.master.after(10, _sync_app_notification_duration)
 
         buttons_row = ttk.Frame(app_settings_body, style="Tenos.TFrame")
         buttons_row.pack(fill=tk.X, pady=(8, 0))
@@ -1790,6 +1907,8 @@ class ConfigEditor:
             ("general", "General"),
             ("flux", "Flux"),
             ("sdxl", "SDXL"),
+            ("qwen", "Qwen"),
+            ("wan", "WAN"),
             ("kontext", "Kontext"),
             ("llm", "LLM"),
         ]
@@ -1800,6 +1919,8 @@ class ConfigEditor:
         self.general_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_nav.get_section_frame("general"))
         self.flux_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_nav.get_section_frame("flux"))
         self.sdxl_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_nav.get_section_frame("sdxl"))
+        self.qwen_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_nav.get_section_frame("qwen"))
+        self.wan_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_nav.get_section_frame("wan"))
         self.kontext_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_nav.get_section_frame("kontext"))
         self.llm_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_nav.get_section_frame("llm"))
 
@@ -1852,6 +1973,8 @@ class ConfigEditor:
             self.general_settings_content_frame,
             self.flux_settings_content_frame,
             self.sdxl_settings_content_frame,
+            self.qwen_settings_content_frame,
+            self.wan_settings_content_frame,
             self.kontext_settings_content_frame,
             self.llm_settings_content_frame,
         ]:
@@ -1871,9 +1994,9 @@ class ConfigEditor:
             help_label = ttk.Label(container, text="?", style="Help.TLabel")
 
             tk_var_instance = None
-            if var_key_name in ['default_guidance', 'upscale_factor', 'default_guidance_sdxl', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']:
+            if var_key_name in ['default_guidance', 'upscale_factor', 'default_guidance_sdxl', 'default_guidance_qwen', 'default_guidance_wan', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']:
                 tk_var_instance = tk.DoubleVar()
-            elif var_key_name in ['steps', 'sdxl_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size', 'status_notification_duration_ms']:
+            elif var_key_name in ['steps', 'sdxl_steps', 'qwen_steps', 'wan_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size', 'wan_animation_duration']:
                 tk_var_instance = tk.IntVar()
             elif var_key_name in ['remix_mode', 'llm_enhancer_enabled']:
                 tk_var_instance = tk.BooleanVar()
@@ -1920,8 +2043,6 @@ class ConfigEditor:
                     display_options = [self.provider_display_map.get(k, k) for k in safe_options_list]
                 elif var_key_name == 'display_prompt_preference':
                     display_options = [self.display_prompt_map.get(k, k) for k in sorted(self.display_prompt_map.keys())]
-                elif var_key_name == 'status_notification_style':
-                    display_options = [self.notification_style_display_map.get(k, k) for k in safe_options_list]
 
                 current_display_value = tk_var_instance.get()
                 if current_display_value and current_display_value not in display_options:
@@ -1998,11 +2119,17 @@ class ConfigEditor:
         # General Tab Sections
         general_models_section = CollapsibleSection(self.general_settings_content_frame, "Model Selection", self.color)
         general_models_section.pack(fill=tk.X, padx=4, pady=(0, 6))
+        general_model_options = (
+            [f"Flux: {m}" for m in self.available_models]
+            + [f"SDXL: {c}" for c in self.available_checkpoints]
+            + [f"Qwen: {m}" for m in self.available_qwen_models]
+            + [f"WAN: {m}" for m in self.available_wan_models]
+        )
         create_setting_row_ui(
             general_models_section.body(),
             "Selected Model",
             ttk.Combobox,
-            [f"Flux: {m}" for m in self.available_models] + [f"SDXL: {c}" for c in self.available_checkpoints],
+            general_model_options,
             'selected_model',
             section_key='general'
         )
@@ -2034,46 +2161,6 @@ class ConfigEditor:
         create_setting_row_ui(general_defaults_section.body(), "Default Upscale Factor", ttk.Spinbox, var_key_name='upscale_factor', section_key='general', from_=1.0, to=4.0, increment=0.05, format="%.2f")
         create_setting_row_ui(general_defaults_section.body(), "Default MP Size", ttk.Spinbox, var_key_name='default_mp_size', section_key='general', from_=0.1, to=8.0, increment=0.05, format="%.2f")
 
-        notifications_section = CollapsibleSection(self.general_settings_content_frame, "Status Notifications", self.color)
-        notifications_section.pack(fill=tk.X, padx=4, pady=(0, 6))
-        create_setting_row_ui(
-            notifications_section.body(),
-            "Default Notification Style",
-            ttk.Combobox,
-            list(self.notification_style_display_map.keys()),
-            'status_notification_style',
-            section_key='general'
-        )
-        duration_widget = create_setting_row_ui(
-            notifications_section.body(),
-            "Timed Notification Duration (ms)",
-            ttk.Spinbox,
-            var_key_name='status_notification_duration_ms',
-            section_key='general',
-            from_=500,
-            to=60000,
-            increment=100
-        )
-
-        style_var = self.settings_vars.get('status_notification_style')
-
-        def _sync_duration_state(*_args):
-            if not style_var or not duration_widget:
-                return
-            try:
-                style_display = style_var.get()
-                style_internal = next(
-                    (key for key, label in self.notification_style_display_map.items() if label == style_display),
-                    str(style_display).lower()
-                )
-                duration_widget.configure(state='normal' if style_internal == 'timed' else 'disabled')
-            except tk.TclError:
-                pass
-
-        if style_var and duration_widget:
-            style_var.trace_add('write', lambda *args: _sync_duration_state())
-            self.master.after(10, _sync_duration_state)
-
         # Flux Section
         flux_styles = sorted([name for name, data in self.styles_config.items() if data.get('model_type', 'all') in ['all', 'flux']])
         flux_section = CollapsibleSection(self.flux_settings_content_frame, "Flux Defaults", self.color)
@@ -2090,6 +2177,36 @@ class ConfigEditor:
         create_setting_row_ui(sdxl_section.body(), "Default Steps", ttk.Spinbox, var_key_name='sdxl_steps', section_key='sdxl', from_=4, to=128, increment=2)
         create_setting_row_ui(sdxl_section.body(), "Default Guidance", ttk.Spinbox, var_key_name='default_guidance_sdxl', section_key='sdxl', from_=0.0, to=20.0, increment=0.1, format="%.1f")
         create_setting_row_ui(sdxl_section.body(), "Default Negative Prompt", scrolledtext.ScrolledText, var_key_name='default_sdxl_negative_prompt', section_key='sdxl', is_text_area_field=True)
+
+        qwen_styles = sorted([name for name, data in self.styles_config.items() if data.get('model_type', 'all') in ['all', 'qwen']])
+        qwen_section = CollapsibleSection(self.qwen_settings_content_frame, "Qwen Defaults", self.color)
+        qwen_section.pack(fill=tk.X, padx=4, pady=(0, 6))
+        create_setting_row_ui(qwen_section.body(), "Default Model", ttk.Combobox, self.available_qwen_models, 'default_qwen_checkpoint', section_key='qwen')
+        create_setting_row_ui(qwen_section.body(), "Default Style", ttk.Combobox, qwen_styles, 'default_style_qwen', section_key='qwen')
+        create_setting_row_ui(qwen_section.body(), "Default Steps", ttk.Spinbox, var_key_name='qwen_steps', section_key='qwen', from_=4, to=128, increment=2)
+        create_setting_row_ui(qwen_section.body(), "Default Guidance", ttk.Spinbox, var_key_name='default_guidance_qwen', section_key='qwen', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+        create_setting_row_ui(qwen_section.body(), "Default Negative Prompt", scrolledtext.ScrolledText, var_key_name='default_qwen_negative_prompt', section_key='qwen', is_text_area_field=True)
+        qwen_clip_options = list(dict.fromkeys(['None'] + self.available_qwen_clips))
+        create_setting_row_ui(qwen_section.body(), "Default Qwen CLIP", ttk.Combobox, qwen_clip_options, 'default_qwen_clip', section_key='qwen')
+        create_setting_row_ui(qwen_section.body(), "Default Qwen VAE", ttk.Combobox, self.available_qwen_vaes, 'default_qwen_vae', section_key='qwen')
+
+        wan_styles = sorted([name for name, data in self.styles_config.items() if data.get('model_type', 'all') in ['all', 'wan']])
+        wan_section = CollapsibleSection(self.wan_settings_content_frame, "WAN Defaults", self.color)
+        wan_section.pack(fill=tk.X, padx=4, pady=(0, 6))
+        create_setting_row_ui(wan_section.body(), "Default Model", ttk.Combobox, self.available_wan_models, 'default_wan_checkpoint', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Low Noise UNet", ttk.Combobox, self.available_wan_video_models, 'default_wan_low_noise_unet', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Default Style", ttk.Combobox, wan_styles, 'default_style_wan', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Default Steps", ttk.Spinbox, var_key_name='wan_steps', section_key='wan', from_=4, to=128, increment=2)
+        create_setting_row_ui(wan_section.body(), "Default Guidance", ttk.Spinbox, var_key_name='default_guidance_wan', section_key='wan', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+        create_setting_row_ui(wan_section.body(), "Default Negative Prompt", scrolledtext.ScrolledText, var_key_name='default_wan_negative_prompt', section_key='wan', is_text_area_field=True)
+        wan_clip_options = list(dict.fromkeys(['None'] + self.available_wan_clips))
+        wan_vision_options = list(dict.fromkeys(['None'] + self.available_wan_vision))
+        create_setting_row_ui(wan_section.body(), "Default WAN CLIP", ttk.Combobox, wan_clip_options, 'default_wan_clip', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Default WAN VAE", ttk.Combobox, self.available_wan_vaes, 'default_wan_vae', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Default Vision Encoder", ttk.Combobox, wan_vision_options, 'default_wan_vision_clip', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Animation Resolution", ttk.Entry, var_key_name='wan_animation_resolution', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Animation Duration (frames)", ttk.Spinbox, var_key_name='wan_animation_duration', section_key='wan', from_=8, to=480, increment=1)
+        create_setting_row_ui(wan_section.body(), "Animation Motion Profile", ttk.Combobox, ['slowmo', 'low', 'medium', 'high'], 'wan_animation_motion_profile', section_key='wan')
 
         # Kontext Section
         kontext_section = CollapsibleSection(self.kontext_settings_content_frame, "Kontext Defaults", self.color)
@@ -2169,39 +2286,144 @@ class ConfigEditor:
             llm_model_label_widget.config(text=f"{label_base} ({new_provider_display}):")
 
     def load_available_files(self):
-        self.available_models = []; self.available_checkpoints = []; self.available_clips_t5 = []; self.available_clips_l = []; self.available_loras = ["None"]; self.available_upscale_models = ["None"]; self.available_vaes = ["None"]
+        self.available_models = []
+        self.available_checkpoints = []
+        self.available_qwen_models = []
+        self.available_wan_models = []
+        self.available_wan_video_models = []
+        self.available_clips_t5 = []
+        self.available_clips_l = []
+        self.available_qwen_clips = []
+        self.available_wan_clips = []
+        self.available_wan_vision = []
+        self.available_loras = ["None"]
+        self.available_upscale_models = ["None"]
+        self.available_vaes = ["None"]
+        self.available_qwen_vaes = ["None"]
+        self.available_wan_vaes = ["None"]
+
         try:
             if os.path.exists(MODELS_LIST_FILE_NAME):
-                with open(MODELS_LIST_FILE_NAME,'r') as f_ml: models_data = json.load(f_ml)
-                if isinstance(models_data,dict): self.available_models = sorted(list(set(m_name for model_type_list in [models_data.get(type_key,[]) for type_key in ['safetensors','sft','gguf']] for m_name in model_type_list if isinstance(m_name,str))),key=str.lower)
-        except Exception: pass
+                with open(MODELS_LIST_FILE_NAME, 'r') as f_ml:
+                    models_data = json.load(f_ml)
+                if isinstance(models_data, dict):
+                    self.available_models = sorted(
+                        list(
+                            set(
+                                m_name
+                                for model_type_list in [models_data.get(type_key, []) for type_key in ['safetensors', 'sft', 'gguf']]
+                                for m_name in model_type_list
+                                if isinstance(m_name, str)
+                            )
+                        ),
+                        key=str.lower,
+                    )
+        except Exception:
+            pass
+
         try:
             if os.path.exists(CHECKPOINTS_LIST_FILE_NAME):
-                with open(CHECKPOINTS_LIST_FILE_NAME,'r') as f_cp: checkpoints_data = json.load(f_cp)
-                if isinstance(checkpoints_data,dict):
-                    sdxl_chkpts = checkpoints_data.get('checkpoints',[]) if isinstance(checkpoints_data.get('checkpoints'),list) else []
+                with open(CHECKPOINTS_LIST_FILE_NAME, 'r') as f_cp:
+                    checkpoints_data = json.load(f_cp)
+                if isinstance(checkpoints_data, dict):
+                    sdxl_chkpts = checkpoints_data.get('checkpoints', []) if isinstance(checkpoints_data.get('checkpoints'), list) else []
                     if not sdxl_chkpts:
-                        for k_cp,v_cp_list in checkpoints_data.items():
-                            if isinstance(v_cp_list,list) and k_cp != 'favorites': sdxl_chkpts.extend(c_name for c_name in v_cp_list if isinstance(c_name,str))
-                    self.available_checkpoints = sorted(list(set(sdxl_chkpts)),key=str.lower)
-        except Exception: pass
+                        for k_cp, v_cp_list in checkpoints_data.items():
+                            if isinstance(v_cp_list, list) and k_cp != 'favorites':
+                                sdxl_chkpts.extend(c_name for c_name in v_cp_list if isinstance(c_name, str))
+                    self.available_checkpoints = sorted(list(set(sdxl_chkpts)), key=str.lower)
+        except Exception:
+            pass
+
+        try:
+            if os.path.exists(QWEN_MODELS_FILE_NAME):
+                with open(QWEN_MODELS_FILE_NAME, 'r') as f_qm:
+                    qwen_data = json.load(f_qm)
+                if isinstance(qwen_data, dict):
+                    qwen_models = qwen_data.get('checkpoints', []) if isinstance(qwen_data.get('checkpoints'), list) else []
+                    self.available_qwen_models = sorted({m for m in qwen_models if isinstance(m, str)}, key=str.lower)
+        except Exception:
+            pass
+
+        try:
+            if os.path.exists(WAN_MODELS_FILE_NAME):
+                with open(WAN_MODELS_FILE_NAME, 'r') as f_wm:
+                    wan_data = json.load(f_wm)
+                if isinstance(wan_data, dict):
+                    wan_text = wan_data.get('checkpoints', []) if isinstance(wan_data.get('checkpoints'), list) else []
+                    wan_video = wan_data.get('video', []) if isinstance(wan_data.get('video'), list) else []
+                    self.available_wan_models = sorted({m for m in wan_text if isinstance(m, str)}, key=str.lower)
+                    self.available_wan_video_models = sorted({m for m in wan_video if isinstance(m, str)}, key=str.lower)
+        except Exception:
+            pass
+
         try:
             if os.path.exists(CLIP_LIST_FILE_NAME):
-                with open(CLIP_LIST_FILE_NAME,'r') as f_cl: clips_data = json.load(f_cl)
-                if isinstance(clips_data,dict):
-                    self.available_clips_t5 = sorted([c_name for c_name in clips_data.get('t5',[]) if isinstance(c_name,str)],key=str.lower)
-                    self.available_clips_l = sorted([c_name for c_name in clips_data.get('clip_L',[]) if isinstance(c_name,str)],key=str.lower)
-        except Exception: pass
-        lora_folder = self.config_manager.config.get('LORAS',{}).get('LORA_FILES',''); upscale_folder = self.config_manager.config.get('MODELS',{}).get('UPSCALE_MODELS',''); vae_folder = self.config_manager.config.get('MODELS',{}).get('VAE_MODELS','')
+                with open(CLIP_LIST_FILE_NAME, 'r') as f_cl:
+                    clips_data = json.load(f_cl)
+                if isinstance(clips_data, dict):
+                    self.available_clips_t5 = sorted([c_name for c_name in clips_data.get('t5', []) if isinstance(c_name, str)], key=str.lower)
+                    self.available_clips_l = sorted([c_name for c_name in clips_data.get('clip_L', []) if isinstance(c_name, str)], key=str.lower)
+                    self.available_qwen_clips = sorted([c_name for c_name in clips_data.get('qwen', []) if isinstance(c_name, str)], key=str.lower)
+                    self.available_wan_clips = sorted([c_name for c_name in clips_data.get('wan', []) if isinstance(c_name, str)], key=str.lower)
+                    self.available_wan_vision = sorted([c_name for c_name in clips_data.get('vision', []) if isinstance(c_name, str)], key=str.lower)
+        except Exception:
+            pass
+
+        lora_folder = self.config_manager.config.get('LORAS', {}).get('LORA_FILES', '')
+        upscale_folder = self.config_manager.config.get('MODELS', {}).get('UPSCALE_MODELS', '')
+        vae_folder = self.config_manager.config.get('MODELS', {}).get('VAE_MODELS', '')
+
         if lora_folder and os.path.isdir(lora_folder):
-            try: self.available_loras.extend(sorted([f_name for f_name in os.listdir(lora_folder) if f_name.lower().endswith(('.safetensors','.pt','.ckpt'))],key=str.lower))
-            except Exception: pass
+            try:
+                self.available_loras.extend(
+                    sorted(
+                        [
+                            f_name
+                            for f_name in os.listdir(lora_folder)
+                            if f_name.lower().endswith(('.safetensors', '.pt', '.ckpt'))
+                        ],
+                        key=str.lower,
+                    )
+                )
+            except Exception:
+                pass
+
         if upscale_folder and os.path.isdir(upscale_folder):
-            try: self.available_upscale_models.extend(sorted([f_name for f_name in os.listdir(upscale_folder) if f_name.lower().endswith(('.pth','.onnx','.safetensors','.pt','.bin'))],key=str.lower))
-            except Exception: pass
+            try:
+                self.available_upscale_models.extend(
+                    sorted(
+                        [
+                            f_name
+                            for f_name in os.listdir(upscale_folder)
+                            if f_name.lower().endswith(('.pth', '.onnx', '.safetensors', '.pt', '.bin'))
+                        ],
+                        key=str.lower,
+                    )
+                )
+            except Exception:
+                pass
+
         if vae_folder and os.path.isdir(vae_folder):
-            try: self.available_vaes.extend(sorted([f_name for f_name in os.listdir(vae_folder) if f_name.lower().endswith(('.pt','.safetensors','.pth','.ckpt'))],key=str.lower))
-            except Exception: pass
+            try:
+                self.available_vaes.extend(
+                    sorted(
+                        [
+                            f_name
+                            for f_name in os.listdir(vae_folder)
+                            if f_name.lower().endswith(('.pt', '.safetensors', '.pth', '.ckpt'))
+                        ],
+                        key=str.lower,
+                    )
+                )
+            except Exception:
+                pass
+
+        deduped_vaes = list(dict.fromkeys(self.available_vaes))
+        if deduped_vaes:
+            self.available_vaes = deduped_vaes
+            self.available_qwen_vaes = list(deduped_vaes)
+            self.available_wan_vaes = list(deduped_vaes)
 
     def _debounce_canvas_configure(self, canvas_widget, event=None):
         if hasattr(canvas_widget, '_debounce_id_config_editor'):

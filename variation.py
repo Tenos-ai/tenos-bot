@@ -458,6 +458,8 @@ def modify_variation_prompt(
             provider_enh = source_job_data_enh.get('llm_provider', "LLM").capitalize()
             enhancer_ref_text = f"\n> `(Based on Enhanced Prompt via {provider_enh})`"
 
+    runtime_animation_supported = bool(spec.supports_animation and batch_size == 1)
+
     job_details_dict_var = {
         "job_id": variation_job_id,
         "prompt": prompt_for_variation_node,
@@ -484,8 +486,11 @@ def modify_variation_prompt(
         "selected_model": selected_base_model_setting if isinstance(selected_base_model_setting, str) else None,
         "enhancer_reference_text": enhancer_ref_text,
         "style_warning_message": style_warning_message_var,
-        "supports_animation": spec.supports_animation,
-        "followup_animation_workflow": "wan_image_to_video" if spec.supports_animation else None,
+        "supports_animation": runtime_animation_supported,
+        "followup_animation_workflow": "wan_image_to_video" if runtime_animation_supported else None,
+        "wan_animation_resolution": settings.get('wan_animation_resolution') if runtime_animation_supported else None,
+        "wan_animation_duration": settings.get('wan_animation_duration') if runtime_animation_supported else None,
+        "wan_animation_motion_profile": settings.get('wan_animation_motion_profile') if runtime_animation_supported else None,
         "parameters_used": {
             "seed": base_seed,
             "style": style_for_this_variation,

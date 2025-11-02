@@ -57,6 +57,8 @@ class LLMPromptsTab:
 
         create_prompt_sub_tab(llm_sub_notebook, "Flux Prompt", 'enhancer_system_prompt')
         create_prompt_sub_tab(llm_sub_notebook, "SDXL Prompt", 'enhancer_system_prompt_sdxl')
+        create_prompt_sub_tab(llm_sub_notebook, "Qwen Prompt", 'enhancer_system_prompt_qwen')
+        create_prompt_sub_tab(llm_sub_notebook, "WAN Prompt", 'enhancer_system_prompt_wan')
         create_prompt_sub_tab(llm_sub_notebook, "Kontext Prompt", 'enhancer_system_prompt_kontext')
 
         self._create_history_controls()

@@ -176,9 +176,10 @@ def update_qwen_models_list(config_path, output_file):
         with open(config_path, 'r') as config_file:
             config = json.load(config_file)
 
-        checkpoint_directory = config.get('MODELS', {}).get('CHECKPOINTS_FOLDER')
+        models_section = config.get('MODELS', {}) if isinstance(config.get('MODELS'), dict) else {}
+        checkpoint_directory = models_section.get('QWEN_MODELS') or models_section.get('CHECKPOINTS_FOLDER')
         if not checkpoint_directory:
-            print("ModelScanner Error: CHECKPOINTS_FOLDER path not found in config for Qwen models.")
+            print("ModelScanner Error: No Qwen model directory configured (QWEN_MODELS or CHECKPOINTS_FOLDER).")
             return
 
         qwen_models = _scan_keyword_models(
@@ -217,9 +218,10 @@ def update_wan_models_list(config_path, output_file):
         with open(config_path, 'r') as config_file:
             config = json.load(config_file)
 
-        checkpoint_directory = config.get('MODELS', {}).get('CHECKPOINTS_FOLDER')
+        models_section = config.get('MODELS', {}) if isinstance(config.get('MODELS'), dict) else {}
+        checkpoint_directory = models_section.get('WAN_MODELS') or models_section.get('CHECKPOINTS_FOLDER')
         if not checkpoint_directory:
-            print("ModelScanner Error: CHECKPOINTS_FOLDER path not found in config for WAN models.")
+            print("ModelScanner Error: No WAN model directory configured (WAN_MODELS or CHECKPOINTS_FOLDER).")
             return
 
         wan_candidates = _scan_keyword_models(
@@ -305,7 +307,7 @@ def update_checkpoints_list(config_path, output_file):
 def scan_clip_files(config_path, output_file):
     """Scan for CLIP files and categorize by size."""
     print(f"ModelScanner: Updating CLIP list ({output_file})...")
-    current_favorites = {'t5': [], 'clip_L': []}
+    current_favorites = {'t5': [], 'clip_L': [], 'qwen': [], 'wan': [], 'vision': []}
     try:
         with open(config_path, 'r') as config_file:
             config_data = json.load(config_file)
@@ -323,8 +325,24 @@ def scan_clip_files(config_path, output_file):
 
         clip_files = {
             "t5": [],
-            "clip_L": []
+            "clip_L": [],
+            "qwen": [],
+            "wan": [],
+            "vision": []
         }
+
+        def _collect_encoders(target_list: list[str], directory: str):
+            if not directory or not os.path.exists(directory):
+                return
+            try:
+                for filename in os.listdir(directory):
+                    if filename.lower().endswith(".safetensors"):
+                        target_list.append(filename)
+            except OSError as exc:
+                print(f"ModelScanner Error accessing text encoder directory {directory}: {exc}")
+            except Exception as exc:  # pragma: no cover - defensive logging only
+                print(f"ModelScanner Unexpected error scanning text encoder directory {directory}: {exc}")
+                traceback.print_exc()
 
         try:
             for filename in os.listdir(clip_directory):
@@ -346,6 +364,11 @@ def scan_clip_files(config_path, output_file):
              print(f"ModelScanner Unexpected error listing CLIP directory: {e_list}")
              traceback.print_exc()
 
+        text_encoder_section = config_data.get('TEXT_ENCODERS', {}) if isinstance(config_data.get('TEXT_ENCODERS'), dict) else {}
+        _collect_encoders(clip_files['qwen'], text_encoder_section.get('QWEN_TEXT_ENCODERS', ''))
+        _collect_encoders(clip_files['wan'], text_encoder_section.get('WAN_TEXT_ENCODERS', ''))
+        _collect_encoders(clip_files['vision'], text_encoder_section.get('WAN_VISION_ENCODERS', ''))
+
         for key in clip_files:
             clip_files[key].sort(key=str.lower)
 
@@ -358,8 +381,14 @@ def scan_clip_files(config_path, output_file):
                     if isinstance(fav_data, dict):
                         t5_favs = fav_data.get('t5', [])
                         l_favs = fav_data.get('clip_L', [])
+                        qwen_favs = fav_data.get('qwen', [])
+                        wan_favs = fav_data.get('wan', [])
+                        vision_favs = fav_data.get('vision', [])
                         current_favorites['t5'] = [str(f) for f in t5_favs if isinstance(f, str)] if isinstance(t5_favs, list) else []
                         current_favorites['clip_L'] = [str(f) for f in l_favs if isinstance(f, str)] if isinstance(l_favs, list) else []
+                        current_favorites['qwen'] = [str(f) for f in qwen_favs if isinstance(f, str)] if isinstance(qwen_favs, list) else []
+                        current_favorites['wan'] = [str(f) for f in wan_favs if isinstance(f, str)] if isinstance(wan_favs, list) else []
+                        current_favorites['vision'] = [str(f) for f in vision_favs if isinstance(f, str)] if isinstance(vision_favs, list) else []
                     else:
                          print(f"ModelScanner Warning: 'favorites' in {output_file} is not a dictionary. Ignoring old favorites.")
             except (json.JSONDecodeError, OSError) as e:

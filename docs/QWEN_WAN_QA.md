@@ -22,7 +22,7 @@ Use this checklist after updating the bot or ComfyUI workflows to ensure the new
 ## WAN 2.2 validation
 
 1. Queue `/gen` with a WAN 2.2 model and confirm the completion message highlights the animation-ready badge.
-2. Click the `Animate with WAN` button on the generation result and ensure the follow-up job enqueues successfully.
+2. Click the `🎞️` button on the generation result and ensure the follow-up job enqueues successfully.
 3. Execute a WAN variation (`Vary W`/`Vary S`) and confirm the job metadata shows `ModelSamplingSD3` in the ComfyUI log.
 4. Upscale the WAN output with `--up` and verify the Bob's latent helper parameters display the WAN family label.
 

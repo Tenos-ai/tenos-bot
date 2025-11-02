@@ -616,6 +616,12 @@ async def modify_prompt(
         else: 
             final_batch_size_for_job_details = default_batch_size_from_settings
 
+    runtime_animation_supported = bool(
+        spec.supports_animation
+        and not is_img2img
+        and final_batch_size_for_job_details == 1
+    )
+
     job_details_dict = {
         "job_id": job_id,
         "prompt": text_for_generation,
@@ -650,8 +656,11 @@ async def modify_prompt(
         "enhanced_prompt": enhancer_info.get('enhanced_text'),
         "enhancer_error": enhancer_info.get('error'),
         "style_warning_message": style_warning_message,
-        "supports_animation": spec.supports_animation,
-        "followup_animation_workflow": "wan_image_to_video" if spec.supports_animation else None,
+        "supports_animation": runtime_animation_supported,
+        "followup_animation_workflow": "wan_image_to_video" if runtime_animation_supported else None,
+        "wan_animation_resolution": settings.get('wan_animation_resolution') if runtime_animation_supported else None,
+        "wan_animation_duration": settings.get('wan_animation_duration') if runtime_animation_supported else None,
+        "wan_animation_motion_profile": settings.get('wan_animation_motion_profile') if runtime_animation_supported else None,
     }
     status_message_for_user = f"Prompt prepared for job {job_id} ({model_type.upper()}{' Img2Img' if is_img2img else ' Text2Img'})."
     return job_id, modified_prompt, status_message_for_user, job_details_dict
