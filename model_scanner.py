@@ -3,6 +3,63 @@ import json
 import requests
 import traceback
 
+SPECIAL_MODEL_EXTENSIONS = (".safetensors", ".ckpt", ".pth", ".gguf")
+
+
+def _load_existing_favorites_list(output_file):
+    """Return a sanitized favorites list from an existing catalog file."""
+    favorites: list[str] = []
+
+    if not os.path.exists(output_file):
+        return favorites
+
+    try:
+        with open(output_file, 'r') as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            raw_favorites = data.get('favorites', [])
+            if isinstance(raw_favorites, list):
+                favorites = [
+                    str(entry).strip()
+                    for entry in raw_favorites
+                    if isinstance(entry, str) and entry.strip()
+                ]
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"ModelScanner Warning: Could not read favorites from {output_file}: {exc}")
+    except Exception as exc:  # pragma: no cover - defensive logging only
+        print(f"ModelScanner Warning: Unexpected error reading favorites from {output_file}: {exc}")
+        traceback.print_exc()
+
+    return favorites
+
+
+def _scan_keyword_models(directory_path: str, include_keywords: tuple[str, ...], *, exclude_keywords: tuple[str, ...] = ()) -> list[str]:
+    """Scan a directory for model files whose names contain the provided keywords."""
+
+    if not directory_path or not os.path.exists(directory_path):
+        print(f"ModelScanner Warning: Directory does not exist for keyword scan: {directory_path}")
+        return []
+
+    discovered: list[str] = []
+
+    try:
+        for filename in os.listdir(directory_path):
+            lower_name = filename.lower()
+            if not lower_name.endswith(SPECIAL_MODEL_EXTENSIONS):
+                continue
+            if exclude_keywords and any(term in lower_name for term in exclude_keywords):
+                continue
+            if any(keyword in lower_name for keyword in include_keywords):
+                discovered.append(filename)
+    except OSError as exc:
+        print(f"ModelScanner Error accessing directory {directory_path}: {exc}")
+    except Exception as exc:  # pragma: no cover - defensive logging only
+        print(f"ModelScanner Unexpected error during keyword scan ({directory_path}): {exc}")
+        traceback.print_exc()
+
+    discovered.sort(key=str.lower)
+    return discovered
+
 def scan_models(model_directory):
     """Scan for Flux model files in the specified directory."""
     models = {
@@ -108,6 +165,95 @@ def scan_checkpoints(checkpoint_directory):
 
     checkpoints["checkpoints"].sort(key=str.lower)
     return checkpoints
+
+def update_qwen_models_list(config_path, output_file):
+    """Update the Qwen Image checkpoints list from the configured directory."""
+
+    print(f"ModelScanner: Updating Qwen models list ({output_file})...")
+    favorites = _load_existing_favorites_list(output_file)
+
+    try:
+        with open(config_path, 'r') as config_file:
+            config = json.load(config_file)
+
+        checkpoint_directory = config.get('MODELS', {}).get('CHECKPOINTS_FOLDER')
+        if not checkpoint_directory:
+            print("ModelScanner Error: CHECKPOINTS_FOLDER path not found in config for Qwen models.")
+            return
+
+        qwen_models = _scan_keyword_models(
+            checkpoint_directory,
+            include_keywords=("qwen",),
+            exclude_keywords=("vae", "clip", "vision"),
+        )
+
+        payload = {
+            "favorites": favorites,
+            "checkpoints": qwen_models,
+        }
+
+        try:
+            with open(output_file, 'w') as f:
+                json.dump(payload, f, indent=2)
+            print(f"ModelScanner: Successfully updated Qwen models list in {output_file}")
+        except OSError as exc:
+            print(f"ModelScanner Error writing Qwen models file {output_file}: {exc}")
+        except Exception as exc:  # pragma: no cover - defensive logging only
+            print(f"ModelScanner Unexpected error writing {output_file} (Qwen models): {exc}")
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
+        print(f"ModelScanner Error reading config file {config_path} for Qwen models: {exc}")
+    except Exception as exc:  # pragma: no cover - defensive logging only
+        print(f"ModelScanner Unexpected error updating Qwen models: {exc}")
+        traceback.print_exc()
+
+
+def update_wan_models_list(config_path, output_file):
+    """Update the WAN 2.2 checkpoints list from the configured directory."""
+
+    print(f"ModelScanner: Updating WAN models list ({output_file})...")
+    favorites = _load_existing_favorites_list(output_file)
+
+    try:
+        with open(config_path, 'r') as config_file:
+            config = json.load(config_file)
+
+        checkpoint_directory = config.get('MODELS', {}).get('CHECKPOINTS_FOLDER')
+        if not checkpoint_directory:
+            print("ModelScanner Error: CHECKPOINTS_FOLDER path not found in config for WAN models.")
+            return
+
+        wan_candidates = _scan_keyword_models(
+            checkpoint_directory,
+            include_keywords=("wan",),
+            exclude_keywords=("vae", "vision", "clip"),
+        )
+
+        video_models = [
+            model_name
+            for model_name in wan_candidates
+            if any(tag in model_name.lower() for tag in ("video", "i2v"))
+        ]
+        text_models = [model_name for model_name in wan_candidates if model_name not in video_models]
+
+        payload = {
+            "favorites": favorites,
+            "checkpoints": text_models,
+            "video": video_models,
+        }
+
+        try:
+            with open(output_file, 'w') as f:
+                json.dump(payload, f, indent=2)
+            print(f"ModelScanner: Successfully updated WAN models list in {output_file}")
+        except OSError as exc:
+            print(f"ModelScanner Error writing WAN models file {output_file}: {exc}")
+        except Exception as exc:  # pragma: no cover - defensive logging only
+            print(f"ModelScanner Unexpected error writing {output_file} (WAN models): {exc}")
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
+        print(f"ModelScanner Error reading config file {config_path} for WAN models: {exc}")
+    except Exception as exc:  # pragma: no cover - defensive logging only
+        print(f"ModelScanner Unexpected error updating WAN models: {exc}")
+        traceback.print_exc()
 
 def update_checkpoints_list(config_path, output_file):
     """Update the SDXL checkpoints list from the configured directory."""
@@ -293,5 +439,7 @@ if __name__ == "__main__":
     print("Running Model Scanner directly...")
     update_models_list('config.json', 'modelslist.json')
     update_checkpoints_list('config.json', 'checkpointslist.json')
+    update_qwen_models_list('config.json', 'qwenmodels.json')
+    update_wan_models_list('config.json', 'wanmodels.json')
     scan_clip_files('config.json', 'cliplist.json')
     print("Model Scanner finished.")

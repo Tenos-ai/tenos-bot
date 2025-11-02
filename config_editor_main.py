@@ -505,6 +505,7 @@ from editor_constants import (
     CONFIG_FILE_NAME, SETTINGS_FILE_NAME, STYLES_CONFIG_FILE_NAME,
     LLM_MODELS_FILE_NAME, LLM_PROMPTS_FILE_NAME,
     MODELS_LIST_FILE_NAME, CHECKPOINTS_LIST_FILE_NAME, CLIP_LIST_FILE_NAME,
+    QWEN_MODELS_FILE_NAME, WAN_MODELS_FILE_NAME,
     ICON_PATH_ICO, ICON_PATH_PNG,
     BOT_SCRIPT_NAME
 )
@@ -2447,9 +2448,19 @@ class ConfigEditor:
         valid_paths_exist = any(pth_val and isinstance(pth_val,str) and os.path.isdir(pth_val) for pth_val in paths_map.values())
         if not valid_paths_exist: msg = "No valid paths configured for scanning."; self.log_queue.put(("stderr",f"{msg}\n")); return msg
         try:
-            if paths_map["Flux Models"] and os.path.isdir(paths_map["Flux Models"]): self.log_queue.put(("worker","Scanning Flux models...\n")); model_scanner.update_models_list(CONFIG_FILE_NAME,MODELS_LIST_FILE_NAME)
-            if paths_map["CLIP Files"] and os.path.isdir(paths_map["CLIP Files"]): self.log_queue.put(("worker","Scanning CLIPs...\n")); model_scanner.scan_clip_files(CONFIG_FILE_NAME,CLIP_LIST_FILE_NAME)
-            if paths_map["SDXL Checkpoints"] and os.path.isdir(paths_map["SDXL Checkpoints"]): self.log_queue.put(("worker","Scanning SDXL checkpoints...\n")); model_scanner.update_checkpoints_list(CONFIG_FILE_NAME,CHECKPOINTS_LIST_FILE_NAME)
+            if paths_map["Flux Models"] and os.path.isdir(paths_map["Flux Models"]):
+                self.log_queue.put(("worker","Scanning Flux models...\n"))
+                model_scanner.update_models_list(CONFIG_FILE_NAME,MODELS_LIST_FILE_NAME)
+            if paths_map["CLIP Files"] and os.path.isdir(paths_map["CLIP Files"]):
+                self.log_queue.put(("worker","Scanning CLIPs...\n"))
+                model_scanner.scan_clip_files(CONFIG_FILE_NAME,CLIP_LIST_FILE_NAME)
+            if paths_map["SDXL Checkpoints"] and os.path.isdir(paths_map["SDXL Checkpoints"]):
+                self.log_queue.put(("worker","Scanning SDXL checkpoints...\n"))
+                model_scanner.update_checkpoints_list(CONFIG_FILE_NAME,CHECKPOINTS_LIST_FILE_NAME)
+                self.log_queue.put(("worker","Scanning Qwen models...\n"))
+                model_scanner.update_qwen_models_list(CONFIG_FILE_NAME, QWEN_MODELS_FILE_NAME)
+                self.log_queue.put(("worker","Scanning WAN models...\n"))
+                model_scanner.update_wan_models_list(CONFIG_FILE_NAME, WAN_MODELS_FILE_NAME)
         except Exception as e_scan_call: scan_errors_list.append(f"Error during scan call: {e_scan_call}"); self.log_queue.put(("stderr",f"Scan Call Error: {e_scan_call}\n")); traceback.print_exc()
         if scan_errors_list: return "File Scanning Completed with Issues:\n"+"\n".join(scan_errors_list)
         return "File scanning finished. Lists updated. \n(UI dropdowns will refresh after this message)."

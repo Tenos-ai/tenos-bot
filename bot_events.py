@@ -18,7 +18,13 @@ from file_management import extract_job_id, delete_job_files_and_message, remove
 from queue_manager import queue_manager
 from utils.show_prompt import reconstruct_full_prompt_string
 from utils.message_utils import send_long_message
-from model_scanner import update_models_list, scan_clip_files, update_checkpoints_list
+from model_scanner import (
+    update_models_list,
+    scan_clip_files,
+    update_checkpoints_list,
+    update_qwen_models_list,
+    update_wan_models_list,
+)
 from comfyui_api import get_available_comfyui_models
 from settings_manager import load_settings, load_styles_config
 from bot_ui_components import QueuedJobView
@@ -75,6 +81,10 @@ def update_models_on_startup():
     except Exception as e: print(f"ERROR updating Flux models list: {e}"); traceback.print_exc()
     try: update_checkpoints_list('config.json', 'checkpointslist.json'); print("SDXL checkpoints list updated.")
     except Exception as e: print(f"ERROR updating SDXL checkpoints list: {e}"); traceback.print_exc()
+    try: update_qwen_models_list('config.json', 'qwenmodels.json'); print("Qwen models list updated.")
+    except Exception as e: print(f"ERROR updating Qwen models list: {e}"); traceback.print_exc()
+    try: update_wan_models_list('config.json', 'wanmodels.json'); print("WAN models list updated.")
+    except Exception as e: print(f"ERROR updating WAN models list: {e}"); traceback.print_exc()
     try: scan_clip_files('config.json', 'cliplist.json'); print("CLIP list updated.")
     except Exception as e: print(f"ERROR updating CLIP list: {e}"); traceback.print_exc()
 
