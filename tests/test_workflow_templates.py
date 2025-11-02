@@ -42,6 +42,7 @@ from model_registry import (
     copy_variation_template,
     copy_upscale_template,
     copy_animation_template,
+    resolve_model_type_from_prefix,
 )
 import prompt_templates
 from qwen_editing import (
@@ -196,11 +197,12 @@ class WorkflowTemplateTests(unittest.TestCase):
 
     def test_qwen_edit_falls_back_when_lora_missing(self) -> None:
         original_template = prompt_templates.qwen_edit_prompt
+        qwen_module = None
         try:
             patched_template = json.loads(json.dumps(original_template))
             patched_template.pop(str(prompt_templates.QWEN_LORA_NODE), None)
             prompt_templates.qwen_edit_prompt = patched_template
-            import qwen_editing as qwen_module
+            import qwen_editing as qwen_module  # type: ignore
             qwen_module.qwen_edit_prompt = patched_template
 
             settings = {
@@ -236,8 +238,37 @@ class WorkflowTemplateTests(unittest.TestCase):
             )
         finally:
             prompt_templates.qwen_edit_prompt = original_template
-            import qwen_editing as qwen_module
-            qwen_module.qwen_edit_prompt = original_template
+            if qwen_module is not None:
+                qwen_module.qwen_edit_prompt = original_template
+
+
+class ModelTypeResolutionTests(unittest.TestCase):
+    """Ensure model type resolution works for prefixed and legacy names."""
+
+    def test_qwen_filename_without_prefix_maps_to_qwen(self) -> None:
+        model_type, actual = resolve_model_type_from_prefix("qwen_image_fp8_e4m3fn.safetensors")
+        self.assertEqual(model_type, "qwen")
+        self.assertEqual(actual, "qwen_image_fp8_e4m3fn.safetensors")
+
+    def test_wan_filename_without_prefix_maps_to_wan(self) -> None:
+        model_type, actual = resolve_model_type_from_prefix("wan2.2_t2v_low_noise_14b_fp8_scaled.safetensors")
+        self.assertEqual(model_type, "wan")
+        self.assertEqual(actual, "wan2.2_t2v_low_noise_14b_fp8_scaled.safetensors")
+
+    def test_path_components_are_considered_for_family_detection(self) -> None:
+        model_type, actual = resolve_model_type_from_prefix("C:/models/QWEN/qwen_image_fp8_e4m3fn.safetensors")
+        self.assertEqual(model_type, "qwen")
+        self.assertEqual(actual, "C:/models/QWEN/qwen_image_fp8_e4m3fn.safetensors")
+
+    def test_default_to_sdxl_when_no_family_hint_present(self) -> None:
+        model_type, actual = resolve_model_type_from_prefix("sdxl_base_1.0.safetensors")
+        self.assertEqual(model_type, "sdxl")
+        self.assertEqual(actual, "sdxl_base_1.0.safetensors")
+
+    def test_flux_extensions_remain_supported(self) -> None:
+        model_type, actual = resolve_model_type_from_prefix("flux1-dev.sft")
+        self.assertEqual(model_type, "flux")
+        self.assertEqual(actual, "flux1-dev.sft")
 
 
 if __name__ == "__main__":  # pragma: no cover

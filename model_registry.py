@@ -565,6 +565,23 @@ PREFIX_TO_MODEL_TYPE = {
 }
 
 
+_QWEN_FILENAME_HINTS = ("qwen", "auraflow")
+_WAN_FILENAME_HINTS = ("wan",)
+
+
+def _path_component_matches_hint(component: str, hints: tuple[str, ...]) -> bool:
+    """Return True if the given path component suggests a model family."""
+
+    for hint in hints:
+        if not hint:
+            continue
+        if component.startswith(hint):
+            return True
+        if f"_{hint}" in component or f"-{hint}" in component:
+            return True
+    return False
+
+
 def resolve_model_type_from_prefix(selected_model_name_with_prefix: Optional[str]) -> tuple[str, Optional[str]]:
     """Return (model_type, actual_model_name) from a prefixed selection string."""
 
@@ -581,7 +598,15 @@ def resolve_model_type_from_prefix(selected_model_name_with_prefix: Optional[str
     lowered = norm.lower()
     if lowered.endswith((".gguf", ".sft")):
         return "flux", norm
+
     if lowered.endswith((".safetensors", ".ckpt", ".pth")):
+        normalized_path = lowered.replace("\\", "/")
+        path_parts = [part for part in normalized_path.split("/") if part]
+        for part in reversed(path_parts):
+            if _path_component_matches_hint(part, _QWEN_FILENAME_HINTS):
+                return "qwen", norm
+            if _path_component_matches_hint(part, _WAN_FILENAME_HINTS):
+                return "wan", norm
         return "sdxl", norm
 
     return "flux", norm
