@@ -150,6 +150,11 @@ class WorkflowTemplateTests(unittest.TestCase):
             3.1,
             msg="Qwen img2img sampling node should seed cfg_rescale to 3.1",
         )
+        self.assertEqual(
+            sampling_inputs.get("shift"),
+            0.0,
+            msg="Qwen img2img sampling node should seed shift to 0.0",
+        )
 
     def test_wan_templates_include_loader_nodes(self) -> None:
         wan_spec = MODEL_REGISTRY["wan"]
@@ -162,6 +167,11 @@ class WorkflowTemplateTests(unittest.TestCase):
             sampling_inputs.get("model_b"),
             [str(prompt_templates.WAN_SECOND_UNET_LOADER_NODE), 0],
         )
+        self.assertEqual(
+            sampling_inputs.get("shift"),
+            0.0,
+            msg="WAN sampling node should seed shift to 0.0",
+        )
 
         var_template = copy_variation_template(wan_spec.variation)
         self.assertTrue(_contains_class(var_template, "UNETLoader"))
@@ -172,6 +182,11 @@ class WorkflowTemplateTests(unittest.TestCase):
             var_sampling_inputs.get("model_b"),
             [str(prompt_templates.WAN_SECOND_UNET_LOADER_NODE), 0],
         )
+        self.assertEqual(
+            var_sampling_inputs.get("shift"),
+            0.0,
+            msg="WAN variation sampling should seed shift to 0.0",
+        )
 
         upscale_template = copy_upscale_template(wan_spec.upscale)
         self.assertTrue(_contains_class(upscale_template, "UNETLoader"))
@@ -181,6 +196,11 @@ class WorkflowTemplateTests(unittest.TestCase):
         self.assertEqual(
             upscale_sampling_inputs.get("model_b"),
             [str(prompt_templates.WAN_SECOND_UNET_LOADER_NODE), 0],
+        )
+        self.assertEqual(
+            upscale_sampling_inputs.get("shift"),
+            0.0,
+            msg="WAN upscale sampling should seed shift to 0.0",
         )
 
     def test_wan_animation_template_contains_required_nodes(self) -> None:
@@ -193,6 +213,11 @@ class WorkflowTemplateTests(unittest.TestCase):
         self.assertEqual(
             sampling_inputs.get("model_b"),
             [str(prompt_templates.WAN_SECOND_UNET_LOADER_NODE), 0],
+        )
+        self.assertEqual(
+            sampling_inputs.get("shift"),
+            0.0,
+            msg="WAN animation sampling should seed shift to 0.0",
         )
 
     def test_qwen_edit_falls_back_when_lora_missing(self) -> None:
