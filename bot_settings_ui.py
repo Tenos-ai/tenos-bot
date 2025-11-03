@@ -5,7 +5,6 @@ from typing import Callable, Optional
 
 from settings_manager import (
     load_settings, save_settings,
-    get_model_choices,
     get_steps_choices, get_sdxl_steps_choices, get_qwen_steps_choices, get_wan_steps_choices,
     get_guidance_choices, get_sdxl_guidance_choices, get_qwen_guidance_choices, get_wan_guidance_choices,
     get_t5_clip_choices, get_clip_l_choices, get_qwen_clip_choices, get_wan_clip_choices, get_wan_vision_clip_choices,
@@ -18,7 +17,8 @@ from settings_manager import (
     get_default_flux_model_choices, get_default_sdxl_model_choices,
     get_default_qwen_model_choices, get_default_wan_model_choices,
     get_active_model_family_choices, get_wan_animation_resolution_choices,
-    get_wan_animation_duration_choices, get_wan_animation_motion_profile_choices
+    get_wan_animation_duration_choices, get_wan_animation_motion_profile_choices,
+    sync_active_model_selection
 )
 
 # --- UI Select Components for /settings ---
@@ -36,6 +36,7 @@ class _ModelSettingSelect(discord.ui.Select):
         convert_func=lambda value: value,
         error_message: Optional[str] = None,
         content_message: str = "Settings updated.",
+        post_save_hook: Optional[Callable[[dict, object], None]] = None,
     ):
         self.settings = settings
         self._setting_key = setting_key
@@ -43,6 +44,7 @@ class _ModelSettingSelect(discord.ui.Select):
         self._convert_func = convert_func
         self._error_message = error_message
         self._content_message = content_message
+        self._post_save_hook = post_save_hook
         options = choices_func(self.settings)
         super().__init__(options=options, placeholder=placeholder)
 
@@ -68,24 +70,24 @@ class _ModelSettingSelect(discord.ui.Select):
             return
 
         self.settings[self._setting_key] = converted_value
+        if self._post_save_hook:
+            try:
+                self._post_save_hook(self.settings, converted_value)
+            except Exception as hook_error:
+                print(f"Settings hook error for '{self._setting_key}': {hook_error}")
         save_settings(self.settings)
 
         view = self._view_factory(self.settings)
         await interaction.response.edit_message(content=self._content_message, view=view)
 
 
-class ModelSelect(discord.ui.Select):
-    def __init__(self, settings):
-        self.settings = settings
-        choices = get_model_choices(self.settings)
-        super().__init__(options=choices, placeholder="Select Default Model")
+def _sync_if_active_family(target_family: str) -> Callable[[dict, object], None]:
+    def _hook(settings: dict, _value: object) -> None:
+        current_family = str(settings.get('active_model_family', 'flux') or 'flux').lower()
+        if current_family == target_family:
+            sync_active_model_selection(settings, active_family=target_family)
 
-    async def callback(self, interaction: discord.Interaction):
-        if not self.values: return
-        self.settings['selected_model'] = self.values[0]
-        save_settings(self.settings)
-        view = ModelClipSettingsView(self.settings)
-        await interaction.response.edit_message(content="Configure Model & CLIP Settings:", view=view)
+    return _hook
 
 
 class ActiveModelFamilySelect(_ModelSettingSelect):
@@ -97,7 +99,8 @@ class ActiveModelFamilySelect(_ModelSettingSelect):
             choices_func=get_active_model_family_choices,
             view_factory=lambda data: ModelClipSettingsView(data),
             convert_func=lambda value: str(value).lower(),
-            content_message="Configure Model & CLIP Settings:",
+            content_message="Select Active Model Family:",
+            post_save_hook=lambda data, value: sync_active_model_selection(data, active_family=str(value)),
         )
 
 
@@ -110,6 +113,7 @@ class DefaultFluxModelSelect(_ModelSettingSelect):
             choices_func=get_default_flux_model_choices,
             view_factory=lambda data: FluxSettingsView(data),
             content_message="Configure Flux Model Settings:",
+            post_save_hook=_sync_if_active_family('flux'),
         )
 
 
@@ -122,6 +126,7 @@ class DefaultSDXLModelSelect(_ModelSettingSelect):
             choices_func=get_default_sdxl_model_choices,
             view_factory=lambda data: SDXLSettingsView(data),
             content_message="Configure SDXL Model Settings:",
+            post_save_hook=_sync_if_active_family('sdxl'),
         )
 
 
@@ -134,6 +139,7 @@ class DefaultQwenModelSelect(_ModelSettingSelect):
             choices_func=get_default_qwen_model_choices,
             view_factory=lambda data: QwenSettingsView(data),
             content_message="Configure Qwen Model Settings:",
+            post_save_hook=_sync_if_active_family('qwen'),
         )
 
 
@@ -146,6 +152,7 @@ class DefaultWANModelSelect(_ModelSettingSelect):
             choices_func=get_default_wan_model_choices,
             view_factory=lambda data: WANSettingsView(data),
             content_message="Configure WAN Model Settings:",
+            post_save_hook=_sync_if_active_family('wan'),
         )
 
 class StepsSelect(_ModelSettingSelect):
@@ -267,8 +274,8 @@ class WANLowNoiseUnetSelect(_ModelSettingSelect):
             placeholder="Select WAN Low-Noise UNet",
             setting_key='default_wan_low_noise_unet',
             choices_func=get_wan_low_noise_unet_choices,
-            view_factory=lambda data: WANSettingsView(data),
-            content_message="Configure WAN Model Settings:",
+            view_factory=lambda data: WANLoaderSettingsView(data),
+            content_message="Configure WAN Loader Settings:",
         )
 
 
@@ -336,8 +343,8 @@ class T5ClipSelect(discord.ui.Select):
         if not self.values: return
         self.settings['selected_t5_clip'] = self.values[0]
         save_settings(self.settings)
-        view = ModelClipSettingsView(self.settings)
-        await interaction.response.edit_message(content="Configure Model & CLIP Settings:", view=view)
+        view = FluxClipSettingsView(self.settings)
+        await interaction.response.edit_message(content="Configure Flux CLIP Settings:", view=view)
 
 class ClipLSelect(discord.ui.Select):
     def __init__(self, settings):
@@ -349,8 +356,8 @@ class ClipLSelect(discord.ui.Select):
         if not self.values: return
         self.settings['selected_clip_l'] = self.values[0]
         save_settings(self.settings)
-        view = ModelClipSettingsView(self.settings)
-        await interaction.response.edit_message(content="Configure Model & CLIP Settings:", view=view)
+        view = FluxClipSettingsView(self.settings)
+        await interaction.response.edit_message(content="Configure Flux CLIP Settings:", view=view)
 
 
 class QwenClipSelect(_ModelSettingSelect):
@@ -360,8 +367,8 @@ class QwenClipSelect(_ModelSettingSelect):
             placeholder="Select Default Qwen CLIP",
             setting_key='default_qwen_clip',
             choices_func=get_qwen_clip_choices,
-            view_factory=lambda data: QwenSettingsView(data),
-            content_message="Configure Qwen Model Settings:",
+            view_factory=lambda data: QwenAdvancedSettingsView(data),
+            content_message="Configure Qwen Loader Settings:",
         )
 
 
@@ -372,8 +379,8 @@ class QwenVAESelect(_ModelSettingSelect):
             placeholder="Select Default Qwen VAE",
             setting_key='default_qwen_vae',
             choices_func=get_qwen_vae_choices,
-            view_factory=lambda data: QwenSettingsView(data),
-            content_message="Configure Qwen Model Settings:",
+            view_factory=lambda data: QwenAdvancedSettingsView(data),
+            content_message="Configure Qwen Loader Settings:",
         )
 
 
@@ -384,8 +391,8 @@ class WANClipSelect(_ModelSettingSelect):
             placeholder="Select Default WAN CLIP",
             setting_key='default_wan_clip',
             choices_func=get_wan_clip_choices,
-            view_factory=lambda data: WANSettingsView(data),
-            content_message="Configure WAN Model Settings:",
+            view_factory=lambda data: WANLoaderSettingsView(data),
+            content_message="Configure WAN Loader Settings:",
         )
 
 
@@ -396,8 +403,8 @@ class WANVisionClipSelect(_ModelSettingSelect):
             placeholder="Select WAN Vision CLIP",
             setting_key='default_wan_vision_clip',
             choices_func=get_wan_vision_clip_choices,
-            view_factory=lambda data: WANSettingsView(data),
-            content_message="Configure WAN Model Settings:",
+            view_factory=lambda data: WANLoaderSettingsView(data),
+            content_message="Configure WAN Loader Settings:",
         )
 
 
@@ -408,8 +415,8 @@ class WANVAESelect(_ModelSettingSelect):
             placeholder="Select Default WAN VAE",
             setting_key='default_wan_vae',
             choices_func=get_wan_vae_choices,
-            view_factory=lambda data: WANSettingsView(data),
-            content_message="Configure WAN Model Settings:",
+            view_factory=lambda data: WANLoaderSettingsView(data),
+            content_message="Configure WAN Loader Settings:",
         )
 
 
@@ -420,8 +427,8 @@ class WANAnimationResolutionSelect(_ModelSettingSelect):
             placeholder="WAN Animation Resolution",
             setting_key='wan_animation_resolution',
             choices_func=get_wan_animation_resolution_choices,
-            view_factory=lambda data: WANSettingsView(data),
-            content_message="Configure WAN Model Settings:",
+            view_factory=lambda data: WANAnimationSettingsView(data),
+            content_message="Configure WAN Animation Settings:",
         )
 
 
@@ -432,10 +439,10 @@ class WANAnimationDurationSelect(_ModelSettingSelect):
             placeholder="WAN Animation Frames",
             setting_key='wan_animation_duration',
             choices_func=get_wan_animation_duration_choices,
-            view_factory=lambda data: WANSettingsView(data),
+            view_factory=lambda data: WANAnimationSettingsView(data),
             convert_func=int,
             error_message="Invalid frame count selected.",
-            content_message="Configure WAN Model Settings:",
+            content_message="Configure WAN Animation Settings:",
         )
 
 
@@ -446,9 +453,9 @@ class WANAnimationMotionProfileSelect(_ModelSettingSelect):
             placeholder="WAN Motion Profile",
             setting_key='wan_animation_motion_profile',
             choices_func=get_wan_animation_motion_profile_choices,
-            view_factory=lambda data: WANSettingsView(data),
+            view_factory=lambda data: WANAnimationSettingsView(data),
             convert_func=lambda value: str(value).lower(),
-            content_message="Configure WAN Model Settings:",
+            content_message="Configure WAN Animation Settings:",
         )
 
 
@@ -620,7 +627,7 @@ class MainSettingsButtonView(discord.ui.View):
     @discord.ui.button(label="Models & Clips", style=discord.ButtonStyle.primary, row=0)
     async def model_clips_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = ModelClipSettingsView(self.settings)
-        await interaction.response.edit_message(content="Configure Model & CLIP Settings:", view=view)
+        await interaction.response.edit_message(content="Select Active Model Family:", view=view)
 
     @discord.ui.button(label="General Settings", style=discord.ButtonStyle.primary, row=0)
     async def general_settings_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -666,9 +673,6 @@ class ModelClipSettingsView(BaseSettingsView):
     def __init__(self, settings_ref):
         super().__init__(settings_ref)
         self.add_item(ActiveModelFamilySelect(self.settings))
-        self.add_item(ModelSelect(self.settings))
-        self.add_item(T5ClipSelect(self.settings))
-        self.add_item(ClipLSelect(self.settings))
 
 class GeneralSettingsView(BaseSettingsView):
     def __init__(self, settings_ref):
@@ -691,6 +695,18 @@ class FluxSettingsView(BaseSettingsView):
 
         guidance_select = GuidanceSelect(self.settings)
         self.add_item(guidance_select)
+
+    @discord.ui.button(label="Flux CLIP Models", style=discord.ButtonStyle.secondary, row=4)
+    async def flux_clip_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = FluxClipSettingsView(self.settings)
+        await interaction.response.edit_message(content="Configure Flux CLIP Settings:", view=view)
+
+
+class FluxClipSettingsView(BaseSettingsView):
+    def __init__(self, settings_ref):
+        super().__init__(settings_ref)
+        self.add_item(T5ClipSelect(self.settings))
+        self.add_item(ClipLSelect(self.settings))
 
 class SDXLSettingsView(BaseSettingsView):
     def __init__(self, settings_ref):
@@ -723,11 +739,17 @@ class QwenSettingsView(BaseSettingsView):
         guidance_select = QwenGuidanceSelect(self.settings)
         self.add_item(guidance_select)
 
-        clip_select = QwenClipSelect(self.settings)
-        self.add_item(clip_select)
+    @discord.ui.button(label="Qwen Loaders", style=discord.ButtonStyle.secondary, row=4)
+    async def qwen_loaders_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = QwenAdvancedSettingsView(self.settings)
+        await interaction.response.edit_message(content="Configure Qwen Loader Settings:", view=view)
 
-        vae_select = QwenVAESelect(self.settings)
-        self.add_item(vae_select)
+
+class QwenAdvancedSettingsView(BaseSettingsView):
+    def __init__(self, settings_ref):
+        super().__init__(settings_ref)
+        self.add_item(QwenClipSelect(self.settings))
+        self.add_item(QwenVAESelect(self.settings))
 
 
 class WANSettingsView(BaseSettingsView):
@@ -745,26 +767,32 @@ class WANSettingsView(BaseSettingsView):
         guidance_select = WANGuidanceSelect(self.settings)
         self.add_item(guidance_select)
 
-        low_noise_select = WANLowNoiseUnetSelect(self.settings)
-        self.add_item(low_noise_select)
+    @discord.ui.button(label="WAN Loaders", style=discord.ButtonStyle.secondary, row=4)
+    async def wan_loaders_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = WANLoaderSettingsView(self.settings)
+        await interaction.response.edit_message(content="Configure WAN Loader Settings:", view=view)
 
-        clip_select = WANClipSelect(self.settings)
-        self.add_item(clip_select)
+    @discord.ui.button(label="WAN Animation", style=discord.ButtonStyle.secondary, row=4)
+    async def wan_animation_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = WANAnimationSettingsView(self.settings)
+        await interaction.response.edit_message(content="Configure WAN Animation Settings:", view=view)
 
-        vision_clip_select = WANVisionClipSelect(self.settings)
-        self.add_item(vision_clip_select)
 
-        wan_vae_select = WANVAESelect(self.settings)
-        self.add_item(wan_vae_select)
+class WANLoaderSettingsView(BaseSettingsView):
+    def __init__(self, settings_ref):
+        super().__init__(settings_ref)
+        self.add_item(WANLowNoiseUnetSelect(self.settings))
+        self.add_item(WANClipSelect(self.settings))
+        self.add_item(WANVisionClipSelect(self.settings))
+        self.add_item(WANVAESelect(self.settings))
 
-        anim_res_select = WANAnimationResolutionSelect(self.settings)
-        self.add_item(anim_res_select)
 
-        anim_duration_select = WANAnimationDurationSelect(self.settings)
-        self.add_item(anim_duration_select)
-
-        motion_profile_select = WANAnimationMotionProfileSelect(self.settings)
-        self.add_item(motion_profile_select)
+class WANAnimationSettingsView(BaseSettingsView):
+    def __init__(self, settings_ref):
+        super().__init__(settings_ref)
+        self.add_item(WANAnimationResolutionSelect(self.settings))
+        self.add_item(WANAnimationDurationSelect(self.settings))
+        self.add_item(WANAnimationMotionProfileSelect(self.settings))
 
 class VariationRemixSettingsView(BaseSettingsView):
     def __init__(self, settings_ref):

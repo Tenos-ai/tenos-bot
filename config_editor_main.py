@@ -2119,18 +2119,13 @@ class ConfigEditor:
         # General Tab Sections
         general_models_section = CollapsibleSection(self.general_settings_content_frame, "Model Selection", self.color)
         general_models_section.pack(fill=tk.X, padx=4, pady=(0, 6))
-        general_model_options = (
-            [f"Flux: {m}" for m in self.available_models]
-            + [f"SDXL: {c}" for c in self.available_checkpoints]
-            + [f"Qwen: {m}" for m in self.available_qwen_models]
-            + [f"WAN: {m}" for m in self.available_wan_models]
-        )
+        active_family_options = ['flux', 'sdxl', 'qwen', 'wan']
         create_setting_row_ui(
             general_models_section.body(),
-            "Selected Model",
+            "Active Model Family",
             ttk.Combobox,
-            general_model_options,
-            'selected_model',
+            active_family_options,
+            'active_model_family',
             section_key='general'
         )
         create_setting_row_ui(general_models_section.body(), "Selected T5 Clip", ttk.Combobox, self.available_clips_t5, 'selected_t5_clip', section_key='general')
@@ -2165,6 +2160,7 @@ class ConfigEditor:
         flux_styles = sorted([name for name, data in self.styles_config.items() if data.get('model_type', 'all') in ['all', 'flux']])
         flux_section = CollapsibleSection(self.flux_settings_content_frame, "Flux Defaults", self.color)
         flux_section.pack(fill=tk.X, padx=4, pady=(0, 6))
+        create_setting_row_ui(flux_section.body(), "Default Model", ttk.Combobox, self.available_models, 'default_flux_model', section_key='flux')
         create_setting_row_ui(flux_section.body(), "Default Style", ttk.Combobox, flux_styles, 'default_style_flux', section_key='flux')
         create_setting_row_ui(flux_section.body(), "Default Steps", ttk.Spinbox, var_key_name='steps', section_key='flux', from_=4, to=128, increment=4)
         create_setting_row_ui(flux_section.body(), "Default Guidance", ttk.Spinbox, var_key_name='default_guidance', section_key='flux', from_=0.0, to=20.0, increment=0.1, format="%.1f")
@@ -2173,6 +2169,7 @@ class ConfigEditor:
         sdxl_styles = sorted([name for name, data in self.styles_config.items() if data.get('model_type', 'all') in ['all', 'sdxl']])
         sdxl_section = CollapsibleSection(self.sdxl_settings_content_frame, "SDXL Defaults", self.color)
         sdxl_section.pack(fill=tk.X, padx=4, pady=(0, 6))
+        create_setting_row_ui(sdxl_section.body(), "Default Checkpoint", ttk.Combobox, self.available_checkpoints, 'default_sdxl_checkpoint', section_key='sdxl')
         create_setting_row_ui(sdxl_section.body(), "Default Style", ttk.Combobox, sdxl_styles, 'default_style_sdxl', section_key='sdxl')
         create_setting_row_ui(sdxl_section.body(), "Default Steps", ttk.Spinbox, var_key_name='sdxl_steps', section_key='sdxl', from_=4, to=128, increment=2)
         create_setting_row_ui(sdxl_section.body(), "Default Guidance", ttk.Spinbox, var_key_name='default_guidance_sdxl', section_key='sdxl', from_=0.0, to=20.0, increment=0.1, format="%.1f")

@@ -18,6 +18,47 @@ MODEL_SELECTION_PREFIX = {
     "wan": "WAN",
 }
 
+
+def _format_prefixed_model_name(model_family: str, model_name: Optional[str]) -> Optional[str]:
+    """Return a canonical "Prefix: Model" string for the active family."""
+
+    if not model_name:
+        return None
+
+    prefix_label = MODEL_SELECTION_PREFIX.get(model_family)
+    if not prefix_label:
+        return None
+
+    cleaned_name = model_name.strip()
+    if not cleaned_name:
+        return None
+
+    return f"{prefix_label}: {cleaned_name}"
+
+
+def sync_active_model_selection(settings: dict, *, active_family: Optional[str] = None) -> None:
+    """Ensure the `selected_model` matches the configured active family default."""
+
+    if not isinstance(settings, dict):
+        return
+
+    family_key = active_family or str(settings.get("active_model_family", "flux") or "flux").lower()
+    default_map = {
+        "flux": "default_flux_model",
+        "sdxl": "default_sdxl_checkpoint",
+        "qwen": "default_qwen_checkpoint",
+        "wan": "default_wan_checkpoint",
+    }
+
+    default_key = default_map.get(family_key)
+    if not default_key:
+        settings["selected_model"] = None
+        return
+
+    selected_default = settings.get(default_key)
+    formatted = _format_prefixed_model_name(family_key, selected_default if isinstance(selected_default, str) else None)
+    settings["selected_model"] = formatted
+
 MODEL_CATALOG_FILES = {
     "flux": "modelslist.json",
     "sdxl": "checkpointslist.json",
@@ -428,7 +469,6 @@ def load_settings():
         available_wan_models = {m.strip().lower(): m.strip() for m in available_wan_models_raw}
 
 
-        current_selected_model_setting = settings.get('selected_model')
         model_catalogs = {
             'flux': available_flux_models,
             'sdxl': available_sdxl_checkpoints,
@@ -436,76 +476,53 @@ def load_settings():
             'wan': available_wan_models,
         }
 
-        def _format_model_setting(model_type_key: str, model_name: str | None) -> str | None:
-            if not model_name:
-                return None
-            prefix_label = MODEL_SELECTION_PREFIX.get(model_type_key)
-            if not prefix_label:
-                return None
-            return f"{prefix_label}: {model_name}"
+        fallback_key_map = {
+            'flux': 'default_flux_model',
+            'sdxl': 'default_sdxl_checkpoint',
+            'qwen': 'default_qwen_checkpoint',
+            'wan': 'default_wan_checkpoint',
+        }
 
+        for family_key, default_key in fallback_key_map.items():
+            catalog = model_catalogs.get(family_key) or {}
+            current_default = settings.get(default_key)
+            if isinstance(current_default, str) and current_default.strip().lower() in catalog:
+                corrected = catalog[current_default.strip().lower()]
+                if corrected != current_default:
+                    settings[default_key] = corrected
+                    updated = True
+                continue
+            if catalog:
+                fallback_model = next(iter(catalog.values()))
+                if fallback_model != current_default:
+                    settings[default_key] = fallback_model
+                    updated = True
+
+        sync_active_model_selection(settings)
+
+        current_selected_model_setting = settings.get('selected_model')
         if current_selected_model_setting and isinstance(current_selected_model_setting, str):
-            current_selected_model_setting_stripped = current_selected_model_setting.strip()
-            model_type, model_name_from_setting = None, current_selected_model_setting_stripped
-            if ":" in current_selected_model_setting_stripped:
-                model_type, model_name_from_setting = current_selected_model_setting_stripped.split(":", 1)
-                model_type = model_type.strip().lower()
-                model_name_from_setting = model_name_from_setting.strip()
-
-            valid_current_model_found = False
-            if model_type in model_catalogs and model_name_from_setting:
+            current_model_setting_stripped = current_selected_model_setting.strip()
+            model_type, model_name_from_setting = resolve_model_type_from_prefix(current_model_setting_stripped)
+            if model_type in model_catalogs:
                 catalog = model_catalogs[model_type]
-                if model_name_from_setting.lower() in catalog:
-                    correctly_cased_name = catalog[model_name_from_setting.lower()]
-                    formatted = _format_model_setting(model_type, correctly_cased_name)
-                    if formatted and settings['selected_model'] != formatted:
+                if model_name_from_setting and model_name_from_setting.lower() in catalog:
+                    corrected_name = catalog[model_name_from_setting.lower()]
+                    formatted = _format_prefixed_model_name(model_type, corrected_name)
+                    if formatted and formatted != settings['selected_model']:
                         settings['selected_model'] = formatted
                         updated = True
-                    valid_current_model_found = formatted is not None
-            elif model_type is None and model_name_from_setting:
-                for family, catalog in model_catalogs.items():
-                    if model_name_from_setting.lower() in catalog:
-                        formatted = _format_model_setting(family, catalog[model_name_from_setting.lower()])
-                        if formatted:
-                            settings['selected_model'] = formatted
-                            updated = True
-                            valid_current_model_found = True
-                            break
-
-            if not valid_current_model_found:
-                print(f"⚠️ Warning: Selected model '{current_selected_model_setting}' not found or type mismatch. Resetting.")
-                fallback_family = settings.get('active_model_family', default_settings['active_model_family'])
-                fallback_catalog = model_catalogs.get(fallback_family) or {}
-                chosen_setting = None
-                if fallback_catalog:
-                    chosen_setting = _format_model_setting(fallback_family, next(iter(fallback_catalog.values())))
-                else:
-                    for fam_key, catalog in model_catalogs.items():
-                        if catalog:
-                            chosen_setting = _format_model_setting(fam_key, next(iter(catalog.values())))
-                            if chosen_setting:
-                                break
-                settings['selected_model'] = chosen_setting
-                updated = True
-            elif current_selected_model_setting != settings['selected_model']:
-                updated = True
-
-        else:
-            # No selected model stored; choose based on active family if possible
-            fallback_family = settings.get('active_model_family', default_settings['active_model_family'])
-            fallback_catalog = model_catalogs.get(fallback_family) or {}
-            chosen_setting = None
-            if fallback_catalog:
-                chosen_setting = _format_model_setting(fallback_family, next(iter(fallback_catalog.values())))
+                elif catalog:
+                    fallback_model = next(iter(catalog.values()))
+                    settings[fallback_key_map[model_type]] = fallback_model
+                    settings['selected_model'] = _format_prefixed_model_name(model_type, fallback_model)
+                    updated = True
             else:
-                for fam_key, catalog in model_catalogs.items():
-                    if catalog:
-                        chosen_setting = _format_model_setting(fam_key, next(iter(catalog.values())))
-                        if chosen_setting:
-                            break
-            if chosen_setting:
-                settings['selected_model'] = chosen_setting
+                print(f"⚠️ Warning: Selected model '{current_selected_model_setting}' not recognized. Resetting to active family.")
+                sync_active_model_selection(settings)
                 updated = True
+        else:
+            sync_active_model_selection(settings)
             
         current_kontext_model = settings.get('selected_kontext_model')
         if current_kontext_model and isinstance(current_kontext_model, str):
@@ -809,6 +826,8 @@ def save_settings(settings):
             if key not in valid_settings:
                 print(f"Warning: Key '{key}' missing before saving. Adding default.")
                 valid_settings[key] = defaults[key]
+
+        sync_active_model_selection(valid_settings)
 
         with open(settings_file, 'w') as f:
             json.dump(valid_settings, f, indent=2)
