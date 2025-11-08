@@ -1,23 +1,23 @@
 # --- START OF FILE bot_settings_ui.py ---
 import discord
-import json
 from typing import Callable, Optional
 
 from settings_manager import (
     load_settings, save_settings,
-    get_steps_choices, get_sdxl_steps_choices, get_qwen_steps_choices, get_wan_steps_choices,
-    get_guidance_choices, get_sdxl_guidance_choices, get_qwen_guidance_choices, get_wan_guidance_choices,
-    get_t5_clip_choices, get_clip_l_choices, get_sdxl_clip_choices, get_qwen_clip_choices, get_wan_clip_choices, get_wan_vision_clip_choices,
+    get_steps_choices, get_sdxl_steps_choices, get_qwen_steps_choices, get_qwen_edit_steps_choices, get_wan_steps_choices,
+    get_guidance_choices, get_sdxl_guidance_choices, get_qwen_guidance_choices, get_qwen_edit_guidance_choices, get_wan_guidance_choices,
+    get_t5_clip_choices, get_clip_l_choices, get_sdxl_clip_choices, get_qwen_clip_choices, get_qwen_edit_clip_choices, get_wan_clip_choices, get_wan_vision_clip_choices,
     get_style_choices_flux, get_style_choices_sdxl, get_style_choices_qwen, get_style_choices_wan,
     get_variation_mode_choices, get_batch_size_choices, get_variation_batch_size_choices,
     get_remix_mode_choices, get_upscale_factor_choices,
     get_llm_enhancer_choices, get_llm_provider_choices, get_llm_model_choices,
     get_mp_size_choices, get_display_prompt_preference_choices,
-    get_editing_mode_choices, get_flux_vae_choices, get_qwen_vae_choices, get_sdxl_vae_choices, get_wan_vae_choices, get_wan_low_noise_unet_choices,
+    get_editing_mode_choices, get_flux_vae_choices, get_qwen_vae_choices, get_qwen_edit_vae_choices, get_sdxl_vae_choices, get_wan_vae_choices, get_wan_low_noise_unet_choices,
     get_default_flux_model_choices, get_default_sdxl_model_choices,
-    get_default_qwen_model_choices, get_default_wan_model_choices,
+    get_default_qwen_model_choices, get_default_qwen_edit_model_choices, get_default_wan_model_choices,
     get_active_model_family_choices, get_wan_animation_resolution_choices,
     get_wan_animation_duration_choices, get_wan_animation_motion_profile_choices,
+    get_qwen_edit_shift_choices, get_qwen_edit_denoise_choices,
     sync_active_model_selection
 )
 
@@ -94,12 +94,12 @@ class ActiveModelFamilySelect(_ModelSettingSelect):
     def __init__(self, settings):
         super().__init__(
             settings,
-            placeholder="Set Active Model Family",
+            placeholder="Choose Active Model Type",
             setting_key='active_model_family',
             choices_func=get_active_model_family_choices,
-            view_factory=lambda data: ModelClipSettingsView(data),
+            view_factory=lambda data: MainSettingsButtonView(data),
             convert_func=lambda value: str(value).lower(),
-            content_message="Select Active Model Family:",
+            content_message="Tenos.ai Bot Settings:",
             post_save_hook=lambda data, value: sync_active_model_selection(data, active_family=str(value)),
         )
 
@@ -108,7 +108,7 @@ class EditingModeSelect(_ModelSettingSelect):
     def __init__(self, settings):
         super().__init__(
             settings,
-            placeholder="Select Default Editing Workflow",
+            placeholder="Choose Default Editing Workflow",
             setting_key='default_editing_mode',
             choices_func=get_editing_mode_choices,
             view_factory=lambda data: GeneralSettingsView(data),
@@ -147,12 +147,25 @@ class DefaultQwenModelSelect(_ModelSettingSelect):
     def __init__(self, settings):
         super().__init__(
             settings,
-            placeholder="Select Default Qwen Model",
+            placeholder="Select Default Qwen Image Model",
             setting_key='default_qwen_checkpoint',
             choices_func=get_default_qwen_model_choices,
             view_factory=lambda data: QwenSettingsView(data),
-            content_message="Configure Qwen Model Settings:",
+            content_message="Configure Qwen Image Model Settings:",
             post_save_hook=_sync_if_active_family('qwen'),
+        )
+
+
+class DefaultQwenEditModelSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Default Qwen Edit Model",
+            setting_key='default_qwen_edit_checkpoint',
+            choices_func=get_default_qwen_edit_model_choices,
+            view_factory=lambda data: QwenEditSettingsView(data),
+            content_message="Configure Qwen Edit Settings:",
+            post_save_hook=_sync_if_active_family('qwen_edit'),
         )
 
 
@@ -206,7 +219,7 @@ class QwenStepsSelect(_ModelSettingSelect):
             view_factory=lambda data: QwenSettingsView(data),
             convert_func=int,
             error_message="Invalid Qwen step value selected.",
-            content_message="Configure Qwen Model Settings:",
+            content_message="Configure Qwen Image Model Settings:",
         )
 
 
@@ -286,7 +299,49 @@ class QwenGuidanceSelect(_ModelSettingSelect):
             view_factory=lambda data: QwenSettingsView(data),
             convert_func=float,
             error_message="Invalid Qwen guidance value selected.",
-            content_message="Configure Qwen Model Settings:",
+            content_message="Configure Qwen Image Model Settings:",
+        )
+
+
+class QwenEditStepsSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Qwen Edit Steps",
+            setting_key='qwen_edit_steps',
+            choices_func=get_qwen_edit_steps_choices,
+            view_factory=lambda data: QwenEditSettingsView(data),
+            convert_func=int,
+            error_message="Invalid Qwen Edit step value selected.",
+            content_message="Configure Qwen Edit Settings:",
+        )
+
+
+class QwenEditGuidanceSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Qwen Edit Guidance",
+            setting_key='default_guidance_qwen_edit',
+            choices_func=get_qwen_edit_guidance_choices,
+            view_factory=lambda data: QwenEditSettingsView(data),
+            convert_func=float,
+            error_message="Invalid Qwen Edit guidance selected.",
+            content_message="Configure Qwen Edit Settings:",
+        )
+
+
+class QwenEditShiftSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Qwen Edit Shift",
+            setting_key='qwen_edit_shift',
+            choices_func=get_qwen_edit_shift_choices,
+            view_factory=lambda data: QwenEditSettingsView(data),
+            convert_func=float,
+            error_message="Invalid Qwen Edit shift selected.",
+            content_message="Configure Qwen Edit Settings:",
         )
 
 
@@ -424,6 +479,18 @@ class QwenClipSelect(_ModelSettingSelect):
         )
 
 
+class QwenEditClipSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Default Qwen Edit CLIP",
+            setting_key='default_qwen_edit_clip',
+            choices_func=get_qwen_edit_clip_choices,
+            view_factory=lambda data: QwenEditAdvancedSettingsView(data),
+            content_message="Configure Qwen Edit Loader Settings:",
+        )
+
+
 class QwenVAESelect(_ModelSettingSelect):
     def __init__(self, settings):
         super().__init__(
@@ -433,6 +500,32 @@ class QwenVAESelect(_ModelSettingSelect):
             choices_func=get_qwen_vae_choices,
             view_factory=lambda data: QwenAdvancedSettingsView(data),
             content_message="Configure Qwen Loader Settings:",
+        )
+
+
+class QwenEditVAESelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Default Qwen Edit VAE",
+            setting_key='default_qwen_edit_vae',
+            choices_func=get_qwen_edit_vae_choices,
+            view_factory=lambda data: QwenEditAdvancedSettingsView(data),
+            content_message="Configure Qwen Edit Loader Settings:",
+        )
+
+
+class QwenEditDenoiseSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Qwen Edit Denoise",
+            setting_key='qwen_edit_denoise',
+            choices_func=get_qwen_edit_denoise_choices,
+            view_factory=lambda data: QwenEditAdvancedSettingsView(data),
+            convert_func=float,
+            error_message="Invalid Qwen Edit denoise selected.",
+            content_message="Configure Qwen Edit Loader Settings:",
         )
 
 
@@ -543,7 +636,7 @@ class DefaultStyleSelectQwen(_ModelSettingSelect):
             setting_key='default_style_qwen',
             choices_func=get_style_choices_qwen,
             view_factory=lambda data: QwenSettingsView(data),
-            content_message="Configure Qwen Model Settings:",
+            content_message="Configure Qwen Image Model Settings:",
         )
 
 
@@ -673,58 +766,63 @@ class BaseSettingsView(discord.ui.View):
 
 class MainSettingsButtonView(discord.ui.View):
     def __init__(self, settings_ref):
-        super().__init__(timeout=180) 
+        super().__init__(timeout=180)
         self.settings = settings_ref
 
-    @discord.ui.button(label="Models & Clips", style=discord.ButtonStyle.primary, row=0)
-    async def model_clips_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        view = ModelClipSettingsView(self.settings)
-        await interaction.response.edit_message(content="Select Active Model Family:", view=view)
+        active_family_select = ActiveModelFamilySelect(self.settings)
+        active_family_select.row = 0
+        self.add_item(active_family_select)
 
-    @discord.ui.button(label="General Settings", style=discord.ButtonStyle.primary, row=0)
+        editing_select = EditingModeSelect(self.settings)
+        editing_select._view_factory = lambda data: MainSettingsButtonView(data)
+        editing_select._content_message = "Tenos.ai Bot Settings:"
+        editing_select.row = 1
+        self.add_item(editing_select)
+
+    @discord.ui.button(label="General Settings", style=discord.ButtonStyle.primary, row=2)
     async def general_settings_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = GeneralSettingsView(self.settings)
         await interaction.response.edit_message(content="Configure General Settings:", view=view)
 
-    @discord.ui.button(label="Flux Specifics", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Flux Defaults", style=discord.ButtonStyle.secondary, row=2)
     async def flux_settings_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = FluxSettingsView(self.settings)
         await interaction.response.edit_message(content="Configure Flux Model Settings:", view=view)
 
-    @discord.ui.button(label="SDXL Specifics", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="SDXL Defaults", style=discord.ButtonStyle.secondary, row=2)
     async def sdxl_settings_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = SDXLSettingsView(self.settings)
         await interaction.response.edit_message(content="Configure SDXL Model Settings:", view=view)
 
-    @discord.ui.button(label="Qwen Specifics", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Qwen Image Defaults", style=discord.ButtonStyle.secondary, row=3)
     async def qwen_settings_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = QwenSettingsView(self.settings)
-        await interaction.response.edit_message(content="Configure Qwen Model Settings:", view=view)
+        await interaction.response.edit_message(content="Configure Qwen Image Model Settings:", view=view)
 
-    @discord.ui.button(label="WAN Specifics", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Qwen Edit Defaults", style=discord.ButtonStyle.secondary, row=3)
+    async def qwen_edit_settings_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = QwenEditSettingsView(self.settings)
+        await interaction.response.edit_message(content="Configure Qwen Edit Settings:", view=view)
+
+    @discord.ui.button(label="WAN Defaults", style=discord.ButtonStyle.secondary, row=3)
     async def wan_settings_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = WANSettingsView(self.settings)
         await interaction.response.edit_message(content="Configure WAN Model Settings:", view=view)
-        
-    @discord.ui.button(label="Variation & Remix", style=discord.ButtonStyle.primary, row=2)
+
+    @discord.ui.button(label="Variation & Remix", style=discord.ButtonStyle.primary, row=4)
     async def variation_remix_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = VariationRemixSettingsView(self.settings)
         await interaction.response.edit_message(content="Configure Variation & Remix Settings:", view=view)
 
-    @discord.ui.button(label="LLM Enhancer", style=discord.ButtonStyle.primary, row=2)
+    @discord.ui.button(label="LLM Enhancer", style=discord.ButtonStyle.primary, row=4)
     async def llm_settings_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = LLMSettingsView(self.settings)
         await interaction.response.edit_message(content="Configure LLM Enhancer & Display Settings:", view=view)
 
-    @discord.ui.button(label="Close Settings", style=discord.ButtonStyle.grey, row=3)
+    @discord.ui.button(label="Close Settings", style=discord.ButtonStyle.grey, row=4)
     async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content="Settings panel closed.", view=None)
 
-
-class ModelClipSettingsView(BaseSettingsView):
-    def __init__(self, settings_ref):
-        super().__init__(settings_ref)
-        self.add_item(ActiveModelFamilySelect(self.settings))
 
 class GeneralSettingsView(BaseSettingsView):
     def __init__(self, settings_ref):
@@ -768,12 +866,6 @@ class SDXLSettingsView(BaseSettingsView):
         default_select = DefaultSDXLModelSelect(self.settings)
         self.add_item(default_select)
 
-        clip_select = SDXLClipSelect(self.settings)
-        self.add_item(clip_select)
-
-        vae_select = SDXLVAESelect(self.settings)
-        self.add_item(vae_select)
-
         style_select = DefaultStyleSelectSDXL(self.settings)
         self.add_item(style_select)
 
@@ -782,6 +874,18 @@ class SDXLSettingsView(BaseSettingsView):
 
         guidance_select = SDXLGuidanceSelect(self.settings)
         self.add_item(guidance_select)
+
+    @discord.ui.button(label="SDXL Loaders", style=discord.ButtonStyle.secondary, row=4)
+    async def sdxl_loaders_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = SDXLLoaderSettingsView(self.settings)
+        await interaction.response.edit_message(content="Configure SDXL Loader Settings:", view=view)
+
+
+class SDXLLoaderSettingsView(BaseSettingsView):
+    def __init__(self, settings_ref):
+        super().__init__(settings_ref)
+        self.add_item(SDXLClipSelect(self.settings))
+        self.add_item(SDXLVAESelect(self.settings))
 
 
 class QwenSettingsView(BaseSettingsView):
@@ -802,7 +906,7 @@ class QwenSettingsView(BaseSettingsView):
     @discord.ui.button(label="Qwen Loaders", style=discord.ButtonStyle.secondary, row=4)
     async def qwen_loaders_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = QwenAdvancedSettingsView(self.settings)
-        await interaction.response.edit_message(content="Configure Qwen Loader Settings:", view=view)
+        await interaction.response.edit_message(content="Configure Qwen Image Loader Settings:", view=view)
 
 
 class QwenAdvancedSettingsView(BaseSettingsView):
@@ -810,6 +914,28 @@ class QwenAdvancedSettingsView(BaseSettingsView):
         super().__init__(settings_ref)
         self.add_item(QwenClipSelect(self.settings))
         self.add_item(QwenVAESelect(self.settings))
+
+
+class QwenEditSettingsView(BaseSettingsView):
+    def __init__(self, settings_ref):
+        super().__init__(settings_ref)
+        self.add_item(DefaultQwenEditModelSelect(self.settings))
+        self.add_item(QwenEditGuidanceSelect(self.settings))
+        self.add_item(QwenEditStepsSelect(self.settings))
+        self.add_item(QwenEditShiftSelect(self.settings))
+
+    @discord.ui.button(label="Qwen Edit Loaders", style=discord.ButtonStyle.secondary, row=4)
+    async def qwen_edit_loaders_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = QwenEditAdvancedSettingsView(self.settings)
+        await interaction.response.edit_message(content="Configure Qwen Edit Loader Settings:", view=view)
+
+
+class QwenEditAdvancedSettingsView(BaseSettingsView):
+    def __init__(self, settings_ref):
+        super().__init__(settings_ref)
+        self.add_item(QwenEditClipSelect(self.settings))
+        self.add_item(QwenEditVAESelect(self.settings))
+        self.add_item(QwenEditDenoiseSelect(self.settings))
 
 
 class WANSettingsView(BaseSettingsView):
@@ -869,6 +995,6 @@ class LLMSettingsView(BaseSettingsView):
         if settings_ref.get('llm_enhancer_enabled', False):
             model_select = LLMModelSelect(self.settings)
             if not model_select.disabled:
-                 self.add_item(model_select)
+                self.add_item(model_select)
         self.add_item(DisplayPromptPreferenceSelect(self.settings))
 # --- END OF FILE bot_settings_ui.py ---

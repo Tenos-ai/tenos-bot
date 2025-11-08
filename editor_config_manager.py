@@ -308,6 +308,12 @@ class EditorConfigManager:
         try:
             current_settings_template_for_save = self.settings_template_factory()
             settings_to_write = current_settings_template_for_save.copy()
+            float_bounds = {
+                'default_qwen_shift': (0.0, 10.0),
+                'qwen_edit_shift': (0.0, 10.0),
+                'default_wan_shift': (0.0, 10.0),
+                'qwen_edit_denoise': (0.0, 1.0),
+            }
             for key_to_save in settings_to_write:
                 if key_to_save in self.editor_app.settings_vars:
                     ui_var_instance = self.editor_app.settings_vars[key_to_save]
@@ -323,7 +329,19 @@ class EditorConfigManager:
                     elif key_to_save == 'display_prompt_preference':
                         internal_pref_value = next((k_pref for k_pref, v_pref_disp in self.editor_app.display_prompt_map.items() if v_pref_disp == value_from_ui), 'enhanced')
                         settings_to_write[key_to_save] = internal_pref_value
-                    elif isinstance(current_settings_template_for_save.get(key_to_save), float): settings_to_write[key_to_save] = float(value_from_ui)
+                    elif isinstance(current_settings_template_for_save.get(key_to_save), float):
+                        try:
+                            numeric_val = float(value_from_ui)
+                        except (TypeError, ValueError):
+                            numeric_val = current_settings_template_for_save[key_to_save]
+                        bounds = float_bounds.get(key_to_save)
+                        if bounds:
+                            min_val, max_val = bounds
+                            if numeric_val < min_val:
+                                numeric_val = min_val
+                            if numeric_val > max_val:
+                                numeric_val = max_val
+                        settings_to_write[key_to_save] = numeric_val
                     elif isinstance(current_settings_template_for_save.get(key_to_save), int): settings_to_write[key_to_save] = int(value_from_ui)
                     elif isinstance(current_settings_template_for_save.get(key_to_save), bool):
                         if isinstance(value_from_ui, str):

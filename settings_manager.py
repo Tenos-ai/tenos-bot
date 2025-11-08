@@ -15,8 +15,11 @@ MODEL_SELECTION_PREFIX = {
     "flux": "Flux",
     "sdxl": "SDXL",
     "qwen": "Qwen",
+    "qwen_edit": "Qwen Edit",
     "wan": "WAN",
 }
+
+GENERATION_MODEL_FAMILIES = ("flux", "sdxl", "qwen", "qwen_edit", "wan")
 
 
 def _format_prefixed_model_name(model_family: str, model_name: Optional[str]) -> Optional[str]:
@@ -47,6 +50,7 @@ def sync_active_model_selection(settings: dict, *, active_family: Optional[str] 
         "flux": "default_flux_model",
         "sdxl": "default_sdxl_checkpoint",
         "qwen": "default_qwen_checkpoint",
+        "qwen_edit": "default_qwen_edit_checkpoint",
         "wan": "default_wan_checkpoint",
     }
 
@@ -63,6 +67,7 @@ MODEL_CATALOG_FILES = {
     "flux": "modelslist.json",
     "sdxl": "checkpointslist.json",
     "qwen": "qwenmodels.json",
+    "qwen_edit": "qweneditmodels.json",
     "wan": "wanmodels.json",
 }
 
@@ -70,6 +75,7 @@ STYLE_FILTERS = {
     "flux": {"all", "flux"},
     "sdxl": {"all", "sdxl"},
     "qwen": {"all", "qwen"},
+    "qwen_edit": {"all", "qwen", "qwen_edit"},
     "wan": {"all", "wan"},
 }
 
@@ -77,6 +83,7 @@ DEFAULT_STEP_OPTIONS = {
     "flux": [4, 8, 16, 24, 32, 40, 48, 56, 64],
     "sdxl": [16, 20, 26, 32, 40, 50],
     "qwen": [12, 16, 20, 24, 28, 32, 36, 40],
+    "qwen_edit": [12, 16, 20, 24, 28, 32, 36, 40],
     "wan": [12, 18, 24, 30, 36, 42, 50],
 }
 
@@ -84,6 +91,7 @@ GUIDANCE_CONFIG = {
     "flux": {"start": 0.0, "stop": 10.0, "step": 0.5},
     "sdxl": {"start": 1.0, "stop": 15.0, "step": 0.5},
     "qwen": {"start": 0.0, "stop": 10.0, "step": 0.5},
+    "qwen_edit": {"start": 0.0, "stop": 10.0, "step": 0.5},
     "wan": {"start": 1.0, "stop": 15.0, "step": 0.5},
 }
 
@@ -294,22 +302,65 @@ def load_settings():
                 settings[key] = default_value
                 updated = True
 
-        numeric_keys_float = ['default_guidance', 'default_guidance_sdxl', 'default_guidance_qwen', 'default_guidance_wan', 'upscale_factor', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size', 'default_qwen_shift', 'default_wan_shift', 'qwen_edit_denoise', 'qwen_edit_shift']
-        numeric_keys_int = ['steps', 'sdxl_steps', 'qwen_steps', 'wan_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size', 'wan_animation_duration']
+        numeric_keys_float = [
+            'default_guidance',
+            'default_guidance_sdxl',
+            'default_guidance_qwen',
+            'default_guidance_qwen_edit',
+            'default_guidance_wan',
+            'upscale_factor',
+            'default_mp_size',
+            'kontext_guidance',
+            'kontext_mp_size',
+            'default_qwen_shift',
+            'default_wan_shift',
+            'qwen_edit_denoise',
+            'qwen_edit_shift',
+        ]
+        float_bounds = {
+            'default_qwen_shift': (0.0, 10.0),
+            'qwen_edit_shift': (0.0, 10.0),
+            'default_wan_shift': (0.0, 10.0),
+            'qwen_edit_denoise': (0.0, 1.0),
+        }
+        numeric_keys_int = [
+            'steps',
+            'sdxl_steps',
+            'qwen_steps',
+            'qwen_edit_steps',
+            'wan_steps',
+            'default_batch_size',
+            'kontext_steps',
+            'variation_batch_size',
+            'wan_animation_duration',
+        ]
         bool_keys = ['remix_mode', 'llm_enhancer_enabled']
         display_prompt_key = 'display_prompt_preference'
         allowed_display_prompt_options = ['enhanced', 'original']
 
 
         for key in numeric_keys_float:
-             if key in settings:
-                 try:
-                     if settings[key] is None: continue
-                     settings[key] = float(settings[key])
-                 except (ValueError, TypeError):
-                      print(f"Warning: Setting '{key}' has invalid type ({type(settings[key])}). Resetting to default.")
-                      settings[key] = default_settings[key]
-                      updated = True
+            if key in settings:
+                try:
+                    if settings[key] is None:
+                        continue
+                    coerced_val = float(settings[key])
+                except (ValueError, TypeError):
+                    print(f"Warning: Setting '{key}' has invalid type ({type(settings[key])}). Resetting to default.")
+                    coerced_val = float(default_settings[key])
+                    updated = True
+
+                bounds = float_bounds.get(key)
+                if bounds:
+                    min_val, max_val = bounds
+                    if coerced_val < min_val:
+                        coerced_val = min_val
+                        updated = True
+                    if coerced_val > max_val:
+                        coerced_val = max_val
+                        updated = True
+
+                settings[key] = coerced_val
 
         for key in numeric_keys_int:
             if key in settings:
@@ -397,7 +448,7 @@ def load_settings():
             settings['wan_animation_duration'] = default_settings['wan_animation_duration']
             updated = True
 
-        allowed_families = set(MODEL_SELECTION_PREFIX.keys())
+        allowed_families = set(GENERATION_MODEL_FAMILIES)
         active_family = str(settings.get('active_model_family', default_settings['active_model_family'])).lower()
         if active_family not in allowed_families:
             print(f"Warning: Active model family '{active_family}' invalid. Using default.")
@@ -405,6 +456,20 @@ def load_settings():
             updated = True
         else:
             settings['active_model_family'] = active_family
+
+        edit_mode_raw = str(settings.get('default_editing_mode', default_settings['default_editing_mode']) or default_settings['default_editing_mode']).lower()
+        qwen_edit_aliases = {'qwen_edit', 'qwen', 'qwen-image-edit', 'qwen_image_edit', 'qwenedit'}
+        kontext_aliases = {'kontext', 'kontext_edit', 'kontext-edit'}
+        if edit_mode_raw in qwen_edit_aliases:
+            normalized_edit_mode = 'qwen_edit'
+        elif edit_mode_raw in kontext_aliases:
+            normalized_edit_mode = 'kontext'
+        else:
+            print(f"Warning: Editing mode '{edit_mode_raw}' invalid. Using default.")
+            normalized_edit_mode = default_settings['default_editing_mode']
+        if normalized_edit_mode != edit_mode_raw:
+            updated = True
+        settings['default_editing_mode'] = normalized_edit_mode
 
         allowed_providers = list(llm_models_config.get('providers', {}).keys())
         if not allowed_providers: allowed_providers = ['gemini'] # Fallback
@@ -455,6 +520,20 @@ def load_settings():
             print(f"Warning: Could not load qwenmodels.json for Qwen model validation: {e}")
         available_qwen_models = {m.strip().lower(): m.strip() for m in available_qwen_models_raw}
 
+        available_qwen_edit_models_raw = []
+        try:
+            if os.path.exists('qweneditmodels.json'):
+                with open('qweneditmodels.json', 'r') as f:
+                    qwen_edit_models_data = json.load(f)
+                if isinstance(qwen_edit_models_data, dict):
+                    edit_list = qwen_edit_models_data.get('checkpoints', [])
+                    if isinstance(edit_list, list):
+                        available_qwen_edit_models_raw.extend([m for m in edit_list if isinstance(m, str)])
+                    available_qwen_edit_models_raw = list(set(available_qwen_edit_models_raw))
+        except Exception as e:
+            print(f"Warning: Could not load qweneditmodels.json for Qwen Edit model validation: {e}")
+        available_qwen_edit_models = {m.strip().lower(): m.strip() for m in available_qwen_edit_models_raw}
+
         available_wan_models_raw = []
         try:
             if os.path.exists('wanmodels.json'):
@@ -473,6 +552,7 @@ def load_settings():
             'flux': available_flux_models,
             'sdxl': available_sdxl_checkpoints,
             'qwen': available_qwen_models,
+            'qwen_edit': available_qwen_edit_models,
             'wan': available_wan_models,
         }
 
@@ -480,6 +560,7 @@ def load_settings():
             'flux': 'default_flux_model',
             'sdxl': 'default_sdxl_checkpoint',
             'qwen': 'default_qwen_checkpoint',
+            'qwen_edit': 'default_qwen_edit_checkpoint',
             'wan': 'default_wan_checkpoint',
         }
 
@@ -615,7 +696,7 @@ def load_settings():
             settings['default_sdxl_negative_prompt'] = default_settings['default_sdxl_negative_prompt']
             updated = True
 
-        for neg_key in ('default_qwen_negative_prompt', 'default_wan_negative_prompt'):
+        for neg_key in ('default_qwen_negative_prompt', 'default_qwen_edit_negative_prompt', 'default_wan_negative_prompt'):
             if neg_key in settings:
                 value = settings[neg_key]
                 if value is None:
@@ -651,6 +732,7 @@ def _get_default_settings():
     default_flux_model_raw = _get_first_model_from_catalog("flux")
     default_sdxl_checkpoint_raw = _get_first_model_from_catalog("sdxl")
     default_qwen_checkpoint_raw = _get_first_model_from_catalog("qwen")
+    default_qwen_edit_checkpoint_raw = _get_first_model_from_catalog("qwen_edit")
     default_wan_checkpoint_raw = _get_first_model_from_catalog("wan")
 
     default_model_setting = None
@@ -658,6 +740,8 @@ def _get_default_settings():
         default_model_setting = f"{MODEL_SELECTION_PREFIX['flux']}: {default_flux_model_raw}"
     elif default_qwen_checkpoint_raw:
         default_model_setting = f"{MODEL_SELECTION_PREFIX['qwen']}: {default_qwen_checkpoint_raw}"
+    elif default_qwen_edit_checkpoint_raw:
+        default_model_setting = f"{MODEL_SELECTION_PREFIX['qwen_edit']}: {default_qwen_edit_checkpoint_raw}"
     elif default_wan_checkpoint_raw:
         default_model_setting = f"{MODEL_SELECTION_PREFIX['wan']}: {default_wan_checkpoint_raw}"
     elif default_sdxl_checkpoint_raw:
@@ -688,6 +772,11 @@ def _get_default_settings():
         "default_qwen_clip": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
         "default_qwen_vae": "qwen_image_vae.safetensors",
         "default_qwen_shift": 0.0,
+        "default_qwen_edit_checkpoint": default_qwen_edit_checkpoint_raw,
+        "default_qwen_edit_clip": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+        "default_qwen_edit_vae": "qwen_image_vae.safetensors",
+        "default_guidance_qwen_edit": 5.5,
+        "qwen_edit_steps": 28,
         "default_wan_checkpoint": default_wan_checkpoint_raw,
         "default_wan_low_noise_unet": "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
         "default_wan_clip": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
@@ -715,6 +804,7 @@ def _get_default_settings():
         "default_guidance_wan": 6.0,
         "default_sdxl_negative_prompt": "",
         "default_qwen_negative_prompt": "",
+        "default_qwen_edit_negative_prompt": "",
         "default_wan_negative_prompt": "",
         "default_mp_size": 1.0,
         "qwen_edit_denoise": 0.6,
@@ -740,16 +830,36 @@ def _get_default_settings():
 def save_settings(settings):
     settings_file = 'settings.json'
     try:
-        numeric_keys_float = ['default_guidance', 'default_guidance_sdxl', 'default_guidance_qwen', 'default_guidance_wan', 'upscale_factor', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']
-        numeric_keys_int = ['steps', 'sdxl_steps', 'qwen_steps', 'wan_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size', 'wan_animation_duration']
+        numeric_keys_float = [
+            'default_guidance',
+            'default_guidance_sdxl',
+            'default_guidance_qwen',
+            'default_guidance_qwen_edit',
+            'default_guidance_wan',
+            'upscale_factor',
+            'default_mp_size',
+            'kontext_guidance',
+            'kontext_mp_size',
+            'default_qwen_shift',
+            'default_wan_shift',
+            'qwen_edit_denoise',
+            'qwen_edit_shift',
+        ]
+        float_bounds = {
+            'default_qwen_shift': (0.0, 10.0),
+            'qwen_edit_shift': (0.0, 10.0),
+            'default_wan_shift': (0.0, 10.0),
+            'qwen_edit_denoise': (0.0, 1.0),
+        }
+        numeric_keys_int = ['steps', 'sdxl_steps', 'qwen_steps', 'qwen_edit_steps', 'wan_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size', 'wan_animation_duration']
         bool_keys = ['remix_mode', 'llm_enhancer_enabled']
         string_keys_to_strip = [
             'llm_provider', 'llm_model_gemini', 'llm_model_groq', 'llm_model_openai',
             'selected_model', 'selected_t5_clip', 'selected_clip_l', 'selected_upscale_model',
             'selected_vae', 'default_style_flux', 'default_style_sdxl', 'default_style_qwen', 'default_style_wan',
-            'default_sdxl_negative_prompt', 'default_qwen_negative_prompt', 'default_wan_negative_prompt',
-            'selected_kontext_model', 'default_flux_model', 'default_sdxl_checkpoint', 'default_qwen_checkpoint', 'default_wan_checkpoint',
-            'default_flux_vae', 'default_sdxl_clip', 'default_sdxl_vae', 'default_qwen_clip', 'default_qwen_vae', 'default_wan_low_noise_unet', 'default_wan_clip', 'default_wan_vae', 'default_wan_vision_clip',
+            'default_sdxl_negative_prompt', 'default_qwen_negative_prompt', 'default_qwen_edit_negative_prompt', 'default_wan_negative_prompt',
+            'selected_kontext_model', 'default_flux_model', 'default_sdxl_checkpoint', 'default_qwen_checkpoint', 'default_qwen_edit_checkpoint', 'default_wan_checkpoint',
+            'default_flux_vae', 'default_sdxl_clip', 'default_sdxl_vae', 'default_qwen_clip', 'default_qwen_vae', 'default_qwen_edit_clip', 'default_qwen_edit_vae', 'default_wan_low_noise_unet', 'default_wan_clip', 'default_wan_vae', 'default_wan_vision_clip',
             'wan_animation_motion_profile', 'wan_animation_resolution', 'active_model_family', 'default_editing_mode'
         ]
         display_prompt_key = 'display_prompt_preference'
@@ -760,11 +870,23 @@ def save_settings(settings):
         defaults = _get_default_settings()
 
         for key in numeric_keys_float:
-             if key in valid_settings:
-                 try:
-                     if valid_settings[key] is None: continue
-                     valid_settings[key] = float(valid_settings[key])
-                 except (ValueError, TypeError): valid_settings[key] = defaults[key]
+            if key in valid_settings:
+                try:
+                    if valid_settings[key] is None:
+                        continue
+                    coerced_val = float(valid_settings[key])
+                except (ValueError, TypeError):
+                    coerced_val = defaults[key]
+
+                bounds = float_bounds.get(key)
+                if bounds:
+                    min_val, max_val = bounds
+                    if coerced_val < min_val:
+                        coerced_val = min_val
+                    if coerced_val > max_val:
+                        coerced_val = max_val
+
+                valid_settings[key] = coerced_val
 
         for key in numeric_keys_int:
              if key in valid_settings:
@@ -822,12 +944,23 @@ def save_settings(settings):
         duration_val = max(8, min(240, duration_val))
         valid_settings['wan_animation_duration'] = duration_val
 
-        allowed_families = set(MODEL_SELECTION_PREFIX.keys())
+        allowed_families = set(GENERATION_MODEL_FAMILIES)
         active_family_val = str(valid_settings.get('active_model_family', defaults['active_model_family'])).lower()
         if active_family_val not in allowed_families:
             valid_settings['active_model_family'] = defaults['active_model_family']
         else:
             valid_settings['active_model_family'] = active_family_val
+
+        edit_mode_raw = str(valid_settings.get('default_editing_mode', defaults['default_editing_mode']) or defaults['default_editing_mode']).lower()
+        qwen_edit_aliases = {'qwen_edit', 'qwen', 'qwen-image-edit', 'qwen_image_edit', 'qwenedit'}
+        kontext_aliases = {'kontext', 'kontext_edit', 'kontext-edit'}
+        if edit_mode_raw in qwen_edit_aliases:
+            normalized_edit_mode = 'qwen_edit'
+        elif edit_mode_raw in kontext_aliases:
+            normalized_edit_mode = 'kontext'
+        else:
+            normalized_edit_mode = defaults['default_editing_mode']
+        valid_settings['default_editing_mode'] = normalized_edit_mode
 
 
         for key in defaults:
@@ -861,7 +994,7 @@ def get_model_choices(settings):
     canonical_options: List[Dict[str, str]] = []
     seen_values: set[str] = set()
 
-    for model_type in ("flux", "sdxl", "qwen", "wan"):
+    for model_type in ("flux", "sdxl", "qwen", "qwen_edit", "wan"):
         if model_type not in MODEL_SELECTION_PREFIX:
             continue
         prefix_label = MODEL_SELECTION_PREFIX[model_type]
@@ -914,7 +1047,7 @@ def get_model_choices(settings):
     if choices and not any(o.default for o in choices):
         choices[0].default = True
 
-    return choices[:25]
+    return choices[:20]
 
 
 def _build_model_choice_options(settings, model_type: str, setting_key: str) -> List[discord.SelectOption]:
@@ -969,7 +1102,7 @@ def _build_model_choice_options(settings, model_type: str, setting_key: str) -> 
     if select_options and not any(option.default for option in select_options):
         select_options[0].default = True
 
-    return select_options[:25]
+    return select_options[:20]
 
 
 def get_default_flux_model_choices(settings):
@@ -984,6 +1117,10 @@ def get_default_qwen_model_choices(settings):
     return _build_model_choice_options(settings, "qwen", "default_qwen_checkpoint")
 
 
+def get_default_qwen_edit_model_choices(settings):
+    return _build_model_choice_options(settings, "qwen_edit", "default_qwen_edit_checkpoint")
+
+
 def get_default_wan_model_choices(settings):
     return _build_model_choice_options(settings, "wan", "default_wan_checkpoint")
 
@@ -995,9 +1132,11 @@ def get_active_model_family_choices(settings):
         'flux': 'default_flux_model',
         'sdxl': 'default_sdxl_checkpoint',
         'qwen': 'default_qwen_checkpoint',
+        'qwen_edit': 'default_qwen_edit_checkpoint',
         'wan': 'default_wan_checkpoint',
     }
-    for family_key, prefix_label in MODEL_SELECTION_PREFIX.items():
+    for family_key in GENERATION_MODEL_FAMILIES:
+        prefix_label = MODEL_SELECTION_PREFIX.get(family_key, family_key)
         default_model_name = settings.get(fallback_key_map.get(family_key, ''), None)
         if isinstance(default_model_name, str) and default_model_name.strip():
             display_name = f"[{prefix_label.upper()}] {default_model_name.strip()}"
@@ -1012,7 +1151,7 @@ def get_active_model_family_choices(settings):
         )
     if options and not any(opt.default for opt in options):
         options[0].default = True
-    return options[:25]
+    return options[:20]
 
 
 def get_wan_animation_resolution_choices(settings):
@@ -1034,7 +1173,7 @@ def get_wan_animation_resolution_choices(settings):
         )
     if options and not any(opt.default for opt in options):
         options[0].default = True
-    return options[:25]
+    return options[:20]
 
 
 def get_wan_animation_duration_choices(settings):
@@ -1058,7 +1197,7 @@ def get_wan_animation_duration_choices(settings):
         )
     if options and not any(opt.default for opt in options):
         options[0].default = True
-    return options[:25]
+    return options[:20]
 
 
 def get_wan_animation_motion_profile_choices(settings):
@@ -1075,7 +1214,7 @@ def get_wan_animation_motion_profile_choices(settings):
         )
     if options and not any(opt.default for opt in options):
         options[0].default = True
-    return options[:25]
+    return options[:20]
 
 
 def get_clip_choices(settings, clip_type_key, setting_key):
@@ -1127,13 +1266,14 @@ def get_clip_choices(settings, clip_type_key, setting_key):
         if choices:
             choices[0].default = True
 
-    return choices[:25]
+    return choices[:20]
 
 
 def get_t5_clip_choices(settings): return get_clip_choices(settings, 't5', 'selected_t5_clip')
 def get_clip_l_choices(settings): return get_clip_choices(settings, 'clip_L', 'selected_clip_l')
 def get_sdxl_clip_choices(settings): return get_clip_choices(settings, 'clip_L', 'default_sdxl_clip')
 def get_qwen_clip_choices(settings): return get_clip_choices(settings, 'qwen', 'default_qwen_clip')
+def get_qwen_edit_clip_choices(settings): return get_clip_choices(settings, 'qwen', 'default_qwen_edit_clip')
 def get_wan_clip_choices(settings): return get_clip_choices(settings, 'wan', 'default_wan_clip')
 def get_wan_vision_clip_choices(settings): return get_clip_choices(settings, 'vision', 'default_wan_vision_clip')
 
@@ -1196,7 +1336,7 @@ def get_style_choices_for_model(settings, model_type: str):
         else:
             choices[0].default = True
 
-    return choices[:25]
+    return choices[:20]
 
 
 def get_style_choices_flux(settings):
@@ -1232,7 +1372,7 @@ def get_steps_choices_for_model(settings, model_type: str):
     ]
     if choices and not any(option.default for option in choices):
         choices[0].default = True
-    return choices[:25]
+    return choices[:20]
 
 
 def get_steps_choices(settings):
@@ -1245,6 +1385,32 @@ def get_sdxl_steps_choices(settings):
 
 def get_qwen_steps_choices(settings):
     return get_steps_choices_for_model(settings, "qwen")
+
+
+def get_qwen_edit_steps_choices(settings):
+    try:
+        current_steps = int(float(settings.get('qwen_edit_steps', 28)))
+    except (ValueError, TypeError):
+        current_steps = 28
+
+    base_options = DEFAULT_STEP_OPTIONS.get('qwen_edit', DEFAULT_STEP_OPTIONS['qwen'])
+    steps_options = sorted({int(step) for step in base_options + [current_steps]})
+    label = "Steps (Qwen Edit)"
+
+    choices: List[discord.SelectOption] = []
+    for step in steps_options:
+        choices.append(
+            discord.SelectOption(
+                label=f"{step} {label}",
+                value=str(step),
+                default=(step == current_steps),
+            )
+        )
+
+    if choices and not any(option.default for option in choices):
+        choices[0].default = True
+
+    return choices[:20]
 
 
 def get_wan_steps_choices(settings):
@@ -1276,7 +1442,7 @@ def get_guidance_choices_for_model(settings, model_type: str):
     ]
     if choices and not any(option.default for option in choices):
         choices[0].default = True
-    return choices[:25]
+    return choices[:20]
 
 
 def get_guidance_choices(settings):
@@ -1291,8 +1457,100 @@ def get_qwen_guidance_choices(settings):
     return get_guidance_choices_for_model(settings, "qwen")
 
 
+def get_qwen_edit_guidance_choices(settings):
+    try:
+        current_guidance = float(settings.get('default_guidance_qwen_edit', 5.5))
+    except (ValueError, TypeError):
+        current_guidance = 5.5
+
+    config = GUIDANCE_CONFIG.get('qwen_edit', GUIDANCE_CONFIG['qwen'])
+    values = [round(value, 1) for value in np.arange(config['start'], config['stop'] + config['step'], config['step'])]
+    if round(current_guidance, 1) not in values:
+        values.append(round(current_guidance, 1))
+        values = sorted(set(values))
+
+    label_prefix = "Guidance (Qwen Edit)"
+    choices: List[discord.SelectOption] = []
+    for value in values:
+        value_str = f"{value:.1f}"
+        choices.append(
+            discord.SelectOption(
+                label=f"{label_prefix}: {value_str}",
+                value=value_str,
+                default=(abs(value - current_guidance) < 0.05),
+            )
+        )
+
+    if choices and not any(option.default for option in choices):
+        choices[0].default = True
+
+    return choices[:20]
+
+
 def get_wan_guidance_choices(settings):
     return get_guidance_choices_for_model(settings, "wan")
+
+
+def get_qwen_edit_shift_choices(settings):
+    try:
+        current_shift = float(settings.get('qwen_edit_shift', 0.0))
+    except (ValueError, TypeError):
+        current_shift = 0.0
+
+    base_values = [0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+    rounded_current = round(current_shift, 2)
+    rounded_set = {round(v, 2) for v in base_values}
+    if rounded_current not in rounded_set:
+        rounded_set.add(rounded_current)
+    ordered_values = sorted(rounded_set)
+
+    choices: List[discord.SelectOption] = []
+    for value in ordered_values:
+        if value.is_integer():
+            display = f"{int(value)}"
+        else:
+            display = f"{value:.2f}".rstrip('0').rstrip('.')
+        choices.append(
+            discord.SelectOption(
+                label=f"Shift: {display}",
+                value=str(value),
+                default=(abs(value - current_shift) < 0.05),
+            )
+        )
+
+    if choices and not any(option.default for option in choices):
+        choices[0].default = True
+
+    return choices[:20]
+
+
+def get_qwen_edit_denoise_choices(settings):
+    try:
+        current_denoise = float(settings.get('qwen_edit_denoise', 0.6))
+    except (ValueError, TypeError):
+        current_denoise = 0.6
+
+    base_values = [round(step, 2) for step in np.linspace(0.0, 1.0, 11)]
+    if round(current_denoise, 2) not in base_values:
+        base_values.append(round(current_denoise, 2))
+        base_values = sorted({round(v, 2) for v in base_values})
+
+    choices: List[discord.SelectOption] = []
+    for value in base_values:
+        display = f"{value:.2f}".rstrip('0').rstrip('.') if value not in (0.0, 1.0) else f"{value:.1f}"
+        choices.append(
+            discord.SelectOption(
+                label=f"Denoise: {display}",
+                value=f"{value:.2f}",
+                default=(abs(value - current_denoise) < 0.05),
+            )
+        )
+
+    if choices and not any(option.default for option in choices):
+        choices[0].default = True
+
+    return choices[:20]
+
 
 def get_wan_low_noise_unet_choices(settings):
     return _build_model_choice_options(settings, "wan", "default_wan_low_noise_unet")
@@ -1327,7 +1585,7 @@ def get_upscale_factor_choices(settings):
         factor_values_formatted.append(current_factor_str); factor_values_formatted.sort(key=float)
     choices = [discord.SelectOption(label=f"Upscale Factor: {f}x", value=f, default=(abs(float(f) - current_factor) < 0.01)) for f in factor_values_formatted]
     if choices and not any(o.default for o in choices): choices[0].default = True
-    return choices[:25]
+    return choices[:20]
 
 def get_llm_enhancer_choices(settings):
     current_value = settings.get('llm_enhancer_enabled', False)
@@ -1341,7 +1599,7 @@ def get_llm_provider_choices(settings):
         if any(opt.value == current_provider for opt in options):
             next(opt for opt in options if opt.value == current_provider).default = True
         elif options: options[0].default = True
-    return options
+    return options[:20]
 
 def get_llm_model_choices(settings, provider=None):
     if provider is None: provider = settings.get('llm_provider', 'gemini')
@@ -1351,8 +1609,8 @@ def get_llm_model_choices(settings, provider=None):
     favorites_raw = provider_data.get('favorites', [])
     favorites = [m.strip() for m in favorites_raw if isinstance(m, str)]
     if not models:
-         provider_display = provider_data.get("display_name", provider.capitalize())
-         return [discord.SelectOption(label=f"No models for {provider_display}", value="none", default=True)]
+        provider_display = provider_data.get("display_name", provider.capitalize())
+        return [discord.SelectOption(label=f"No models for {provider_display}", value="none", default=True)]
     current_model_key = f"llm_model_{provider}"; current_model_setting = settings.get(current_model_key)
     current_model = current_model_setting.strip() if isinstance(current_model_setting, str) else None
 
@@ -1380,7 +1638,7 @@ def get_llm_model_choices(settings, provider=None):
     if choices and not any(o.default for o in choices): 
         choices[0].default = True
 
-    return choices[:25]
+    return choices[:20]
 
 def get_mp_size_choices(settings):
     try:
@@ -1390,10 +1648,11 @@ def get_mp_size_choices(settings):
 
     allowed_sizes = ["0.25", "0.5", "1.0", "1.25", "1.5", "1.75", "2.0", "2.5", "3.0", "4.0"]
     current_size_str = f"{current_size_float:.2f}".rstrip('0').rstrip('.')
-    if current_size_str + ".0" in allowed_sizes: current_size_str += ".0" # Normalize for matching
+    if f"{current_size_str}.0" in allowed_sizes:
+        current_size_str += ".0"
     if current_size_str not in allowed_sizes:
-         allowed_sizes.append(current_size_str)
-         allowed_sizes.sort(key=float)
+        allowed_sizes.append(current_size_str)
+        allowed_sizes.sort(key=float)
 
     size_labels = {
         "0.25": "0.25MP (~512x512)", "0.5": "0.5MP (~768x768)", "1.0": "1.0MP (~1024x1024)",
@@ -1410,7 +1669,7 @@ def get_mp_size_choices(settings):
     if choices and not any(o.default for o in choices):
         choices[0].default = True
 
-    return choices[:25]
+    return choices[:20]
 
 def get_upscale_model_choices(settings):
     choices = []; models_data = {}; # Changed var name to avoid conflict
@@ -1443,7 +1702,7 @@ def get_upscale_model_choices(settings):
 
     if not choices: choices.append(discord.SelectOption(label="None Available/Selected", value="None", default=True if not current_upscale_model else False))
     elif choices and not any(c.default for c in choices): choices[0].default = True
-    return choices[:25]
+    return choices[:20]
 
 
 def _build_vae_choices(settings, setting_key: str):
@@ -1492,7 +1751,7 @@ def _build_vae_choices(settings, setting_key: str):
     elif choices and not any(c.default for c in choices):
         choices[0].default = True
 
-    return choices[:25]
+    return choices[:20]
 
 
 def get_vae_choices(settings):
@@ -1501,6 +1760,10 @@ def get_vae_choices(settings):
 
 def get_qwen_vae_choices(settings):
     return _build_vae_choices(settings, 'default_qwen_vae')
+
+
+def get_qwen_edit_vae_choices(settings):
+    return _build_vae_choices(settings, 'default_qwen_edit_vae')
 
 
 def get_wan_vae_choices(settings):
@@ -1523,7 +1786,7 @@ def get_editing_mode_choices(settings):
     current_mode = str(settings.get('default_editing_mode', 'kontext') or 'kontext').lower()
     options = [
         ("Kontext Editing", 'kontext'),
-        ("Qwen Edit", 'qwen'),
+        ("Qwen Edit", 'qwen_edit'),
     ]
     return [
         discord.SelectOption(label=label, value=value, default=(value == current_mode))
@@ -1574,7 +1837,7 @@ def get_kontext_model_choices(settings):
     if choices and not any(opt.default for opt in choices):
         choices[0].default = True
 
-    return choices[:25]
+    return choices[:20]
 
 
 def resolve_model_for_type(settings: Dict[str, object], desired_type: str) -> Optional[str]:
@@ -1593,6 +1856,7 @@ def resolve_model_for_type(settings: Dict[str, object], desired_type: str) -> Op
         'flux': 'default_flux_model',
         'sdxl': 'default_sdxl_checkpoint',
         'qwen': 'default_qwen_checkpoint',
+        'qwen_edit': 'default_qwen_edit_checkpoint',
         'wan': 'default_wan_checkpoint',
     }
 
@@ -1602,6 +1866,11 @@ def resolve_model_for_type(settings: Dict[str, object], desired_type: str) -> Op
         fallback_setting_value = settings.get(fallback_setting_key)
         if isinstance(fallback_setting_value, str) and fallback_setting_value.strip():
             fallback_model = fallback_setting_value.strip()
+
+    if not fallback_model and desired_key == 'qwen_edit':
+        legacy_setting = settings.get('default_qwen_checkpoint')
+        if isinstance(legacy_setting, str) and legacy_setting.strip():
+            fallback_model = legacy_setting.strip()
 
     if not fallback_model:
         fallback_model = _get_first_model_from_catalog(desired_key)

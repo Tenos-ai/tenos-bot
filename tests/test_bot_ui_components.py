@@ -67,9 +67,10 @@ def _create_view(loop, job_id):
 def test_generation_actions_view_shows_animation_button_for_single_image(monkeypatch, _event_loop_fixture):
     job_payload = {
         "type": "generate",
-        "supports_animation": True,
-        "followup_animation_workflow": "wan_image_to_video",
+        "supports_animation": False,
+        "followup_animation_workflow": None,
         "batch_size": 1,
+        "image_paths": ["result.png"],
     }
     _patch_queue_lookup(monkeypatch, job_payload)
     view = _create_view(_event_loop_fixture, "job-single")
@@ -81,21 +82,34 @@ def test_generation_actions_view_shows_animation_button_for_single_image(monkeyp
 def test_generation_actions_view_hides_animation_button_for_batches(monkeypatch, _event_loop_fixture):
     job_payload = {
         "type": "generate",
-        "supports_animation": True,
-        "followup_animation_workflow": "wan_image_to_video",
+        "supports_animation": False,
+        "followup_animation_workflow": None,
         "batch_size": 3,
+        "image_paths": ["one.png", "two.png", "three.png"],
     }
     _patch_queue_lookup(monkeypatch, job_payload)
     view = _create_view(_event_loop_fixture, "job-batch")
     assert all(not getattr(btn, "custom_id", "").startswith("animate_") for btn in view.children)
 
 
+def test_generation_actions_view_hides_animation_button_for_animation_jobs(monkeypatch, _event_loop_fixture):
+    job_payload = {
+        "type": "wan_animation",
+        "batch_size": 1,
+        "image_paths": ["clip.mp4"],
+    }
+    _patch_queue_lookup(monkeypatch, job_payload)
+    view = _create_view(_event_loop_fixture, "job-wan-animation")
+    assert all(not getattr(btn, "custom_id", "").startswith("animate_") for btn in view.children)
+
+
 def test_process_action_results_includes_animation_note(monkeypatch, _event_loop_fixture):
     job_payload = {
         "type": "generate",
-        "supports_animation": True,
-        "followup_animation_workflow": "wan_image_to_video",
+        "supports_animation": False,
+        "followup_animation_workflow": None,
         "batch_size": 1,
+        "image_paths": ["final.png"],
     }
     _patch_queue_lookup(monkeypatch, job_payload)
 
@@ -133,7 +147,7 @@ def test_process_action_results_includes_animation_note(monkeypatch, _event_loop
             "img_strength_percent": 0,
             "negative_prompt": None,
             "supports_animation": True,
-            "followup_animation_workflow": "wan_image_to_video",
+            "followup_animation_workflow": None,
         },
         "job_data_for_qm": {"type": "generate"},
         "job_id": "job-single",
@@ -143,7 +157,7 @@ def test_process_action_results_includes_animation_note(monkeypatch, _event_loop
     }]
 
     _event_loop_fixture.run_until_complete(view._process_and_send_action_results(interaction, animation_result, "Generate"))
-    assert any("**Animate:**" in message for message in captured_messages)
+    assert any("wan_image_to_video" in message for message in captured_messages)
 
     captured_messages.clear()
     no_animation_result = [{

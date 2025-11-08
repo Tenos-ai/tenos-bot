@@ -56,27 +56,34 @@ class EditKontextModal(Modal, title='Image Edit Workflow'):
             required=True,
         )
 
-        # Optional fields for additional images
-        self.image2_input = TextInput(label="Image 2 (Optional URL)", required=False, placeholder="Paste another image URL to stitch...")
-        self.image3_input = TextInput(label="Image 3 (Optional URL)", required=False, placeholder="Paste another image URL to stitch...")
-        self.image4_input = TextInput(label="Image 4 (Optional URL)", required=False, placeholder="Paste another image URL to stitch...")
+        # Optional field for additional images (up to 3, one per line)
+        self.additional_images_input = TextInput(
+            label="Extra Images (Optional, 1 URL per line)",
+            required=False,
+            style=discord.TextStyle.paragraph,
+            placeholder="https://... (up to 3 additional images)",
+            max_length=1500,
+        )
 
         self.add_item(self.instruction_input)
         self.add_item(self.mode_input)
         self.add_item(self.image1_input)
-        self.add_item(self.image2_input)
-        self.add_item(self.image3_input)
-        self.add_item(self.image4_input)
+        self.add_item(self.additional_images_input)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False, thinking=True)
 
         instruction = self.instruction_input.value
         
-        image_urls = [self.image1_input.value] 
-        if self.image2_input.value: image_urls.append(self.image2_input.value)
-        if self.image3_input.value: image_urls.append(self.image3_input.value)
-        if self.image4_input.value: image_urls.append(self.image4_input.value)
+        image_urls = [self.image1_input.value]
+
+        if self.additional_images_input.value:
+            extra_urls = [
+                url.strip()
+                for url in self.additional_images_input.value.splitlines()
+                if url and url.strip()
+            ][:3]
+            image_urls.extend(extra_urls)
         
         mode_value = self.mode_input.value.strip().lower() if self.mode_input.value else None
 
@@ -289,17 +296,27 @@ class GenerationActionsView(View):
         job_data_snapshot = queue_manager.get_job_data_by_id(job_id) or {}
         job_type_snapshot = str(job_data_snapshot.get('type', 'generate')).lower()
         self._animation_available = False
-        if job_type_snapshot in {'generate', 'upscale'}:
-            supports_animation = bool(job_data_snapshot.get('supports_animation'))
-            has_followup = bool(job_data_snapshot.get('followup_animation_workflow'))
-            batch_size_val = job_data_snapshot.get('batch_size', 1)
-            try:
-                batch_size_int = int(batch_size_val)
-            except (TypeError, ValueError):
-                batch_size_int = 1
-            is_single = (job_type_snapshot == 'upscale') or batch_size_int == 1
-            if supports_animation and has_followup and is_single:
-                self._animation_available = True
+        batch_size_val = job_data_snapshot.get('batch_size', 1)
+        try:
+            batch_size_int = int(batch_size_val)
+        except (TypeError, ValueError):
+            batch_size_int = 1
+
+        image_paths_snapshot = job_data_snapshot.get('image_paths')
+        image_count_snapshot = (
+            len(image_paths_snapshot)
+            if isinstance(image_paths_snapshot, list)
+            else 0
+        )
+
+        is_single_result = (
+            job_type_snapshot == 'upscale'
+            or batch_size_int == 1
+            or image_count_snapshot == 1
+        )
+
+        if job_type_snapshot != 'wan_animation' and is_single_result:
+            self._animation_available = True
 
         buttons_def = [
             Button(label="Upscale ⬆️", style=discord.ButtonStyle.primary, custom_id=f"upscale_1_{job_id}", row=0),
@@ -367,8 +384,10 @@ class GenerationActionsView(View):
                                    f"> **Seed:** `{msg_details_item['seed']}`, **Style:** `{msg_details_item['style']}`, **Orig AR:** `{msg_details_item['aspect_ratio']}`\n"
                                    f"> **Factor:** `{msg_details_item['upscale_factor']}`, **Denoise:** `{msg_details_item['denoise']}`\n"
                                    f"> **Status:** Queued... ")
-                    if msg_details_item.get('supports_animation') and msg_details_item.get('followup_animation_workflow'):
-                        content_str += f"\n> **Animate:** Use `{msg_details_item['followup_animation_workflow']}` to animate this upscale."
+                    if msg_details_item.get('supports_animation'):
+                        workflow_name = msg_details_item.get('followup_animation_workflow') or 'wan_image_to_video'
+                        if workflow_name:
+                            content_str += f"\n> **Animate:** Use `{workflow_name}` to animate this upscale."
                 elif job_type_item == "variation":
                     model_display = msg_details_item.get('model_type_display') or msg_details_item.get('model_type')
                     content_str = (f"{msg_details_item['user_mention']}: `{textwrap.shorten(msg_details_item['prompt_to_display'], 50, placeholder='...')}` ({msg_details_item['description']} on img #{msg_details_item['image_index']} from `{msg_details_item['original_job_id']}` - {model_display})\n"
@@ -377,8 +396,10 @@ class GenerationActionsView(View):
                     enhancer_text_val = msg_details_item.get('enhancer_reference_text')
                     if enhancer_text_val: content_str += f"\n{enhancer_text_val.strip()}"
                     content_str += "\n> **Status:** Queued... "
-                    if msg_details_item.get('supports_animation') and msg_details_item.get('followup_animation_workflow'):
-                        content_str += f"\n> **Animate:** Use `{msg_details_item['followup_animation_workflow']}` to animate this variation."
+                    if msg_details_item.get('supports_animation'):
+                        workflow_name = msg_details_item.get('followup_animation_workflow') or 'wan_image_to_video'
+                        if workflow_name:
+                            content_str += f"\n> **Animate:** Use `{workflow_name}` to animate this variation."
                 elif job_type_item == "generate":
                     content_str = (f"{msg_details_item['user_mention']}: `{textwrap.shorten(msg_details_item['prompt_to_display'], 1000, placeholder='...')}`")
                     if msg_details_item.get('enhancer_used') and msg_details_item.get('display_preference') == 'enhanced': content_str += " ✨"
@@ -399,9 +420,10 @@ class GenerationActionsView(View):
                     if msg_details_item.get('negative_prompt'): content_str += f"\n> **No:** `{textwrap.shorten(msg_details_item['negative_prompt'], 100, placeholder='...')}`"
                     content_str += "\n> **Status:** Queued... "
                     if msg_details_item.get("enhancer_applied_message_for_first_run"): content_str += msg_details_item["enhancer_applied_message_for_first_run"]
-                    if msg_details_item.get('supports_animation') and msg_details_item.get('followup_animation_workflow'):
-                        workflow_name = msg_details_item['followup_animation_workflow']
-                        content_str += f"\n> **Animate:** Use `{workflow_name}` to create motion from this result."
+                    if msg_details_item.get('supports_animation'):
+                        workflow_name = msg_details_item.get('followup_animation_workflow') or 'wan_image_to_video'
+                        if workflow_name:
+                            content_str += f"\n> **Animate:** Use `{workflow_name}` to create motion from this result."
                 elif job_type_item == "wan_animation":
                     prompt_snippet = textwrap.shorten(msg_details_item.get('prompt_to_display', ''), 160, placeholder='...')
                     content_str = (
