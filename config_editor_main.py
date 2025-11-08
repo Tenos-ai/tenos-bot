@@ -1908,6 +1908,7 @@ class ConfigEditor:
             ("flux", "Flux"),
             ("sdxl", "SDXL"),
             ("qwen", "Qwen"),
+            ("qwen_edit", "Qwen Edit"),
             ("wan", "WAN"),
             ("kontext", "Kontext"),
             ("llm", "LLM"),
@@ -1920,6 +1921,7 @@ class ConfigEditor:
         self.flux_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_nav.get_section_frame("flux"))
         self.sdxl_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_nav.get_section_frame("sdxl"))
         self.qwen_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_nav.get_section_frame("qwen"))
+        self.qwen_edit_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_nav.get_section_frame("qwen_edit"))
         self.wan_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_nav.get_section_frame("wan"))
         self.kontext_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_nav.get_section_frame("kontext"))
         self.llm_settings_content_frame = self._create_scrollable_sub_tab_frame(self.bot_settings_nav.get_section_frame("llm"))
@@ -2128,22 +2130,20 @@ class ConfigEditor:
             'active_model_family',
             section_key='general'
         )
-        create_setting_row_ui(general_models_section.body(), "Selected T5 Clip", ttk.Combobox, self.available_clips_t5, 'selected_t5_clip', section_key='general')
-        create_setting_row_ui(general_models_section.body(), "Selected Clip-L", ttk.Combobox, self.available_clips_l, 'selected_clip_l', section_key='general')
+        create_setting_row_ui(
+            general_models_section.body(),
+            "Default Editing Workflow",
+            ttk.Combobox,
+            ['kontext', 'qwen'],
+            'default_editing_mode',
+            section_key='general'
+        )
         create_setting_row_ui(
             general_models_section.body(),
             "Selected Upscale Model",
             ttk.Combobox,
             self.available_upscale_models,
             'selected_upscale_model',
-            section_key='general'
-        )
-        create_setting_row_ui(
-            general_models_section.body(),
-            "Selected VAE",
-            ttk.Combobox,
-            self.available_vaes,
-            'selected_vae',
             section_key='general'
         )
 
@@ -2161,6 +2161,9 @@ class ConfigEditor:
         flux_section = CollapsibleSection(self.flux_settings_content_frame, "Flux Defaults", self.color)
         flux_section.pack(fill=tk.X, padx=4, pady=(0, 6))
         create_setting_row_ui(flux_section.body(), "Default Model", ttk.Combobox, self.available_models, 'default_flux_model', section_key='flux')
+        create_setting_row_ui(flux_section.body(), "Selected T5 Clip", ttk.Combobox, self.available_clips_t5, 'selected_t5_clip', section_key='flux')
+        create_setting_row_ui(flux_section.body(), "Selected Clip-L", ttk.Combobox, self.available_clips_l, 'selected_clip_l', section_key='flux')
+        create_setting_row_ui(flux_section.body(), "Default Flux VAE", ttk.Combobox, self.available_vaes, 'default_flux_vae', section_key='flux')
         create_setting_row_ui(flux_section.body(), "Default Style", ttk.Combobox, flux_styles, 'default_style_flux', section_key='flux')
         create_setting_row_ui(flux_section.body(), "Default Steps", ttk.Spinbox, var_key_name='steps', section_key='flux', from_=4, to=128, increment=4)
         create_setting_row_ui(flux_section.body(), "Default Guidance", ttk.Spinbox, var_key_name='default_guidance', section_key='flux', from_=0.0, to=20.0, increment=0.1, format="%.1f")
@@ -2171,6 +2174,8 @@ class ConfigEditor:
         sdxl_section.pack(fill=tk.X, padx=4, pady=(0, 6))
         create_setting_row_ui(sdxl_section.body(), "Default Checkpoint", ttk.Combobox, self.available_checkpoints, 'default_sdxl_checkpoint', section_key='sdxl')
         create_setting_row_ui(sdxl_section.body(), "Default Style", ttk.Combobox, sdxl_styles, 'default_style_sdxl', section_key='sdxl')
+        create_setting_row_ui(sdxl_section.body(), "Default SDXL CLIP", ttk.Combobox, self.available_clips_l, 'default_sdxl_clip', section_key='sdxl')
+        create_setting_row_ui(sdxl_section.body(), "Default SDXL VAE", ttk.Combobox, self.available_vaes, 'default_sdxl_vae', section_key='sdxl')
         create_setting_row_ui(sdxl_section.body(), "Default Steps", ttk.Spinbox, var_key_name='sdxl_steps', section_key='sdxl', from_=4, to=128, increment=2)
         create_setting_row_ui(sdxl_section.body(), "Default Guidance", ttk.Spinbox, var_key_name='default_guidance_sdxl', section_key='sdxl', from_=0.0, to=20.0, increment=0.1, format="%.1f")
         create_setting_row_ui(sdxl_section.body(), "Default Negative Prompt", scrolledtext.ScrolledText, var_key_name='default_sdxl_negative_prompt', section_key='sdxl', is_text_area_field=True)
@@ -2186,6 +2191,12 @@ class ConfigEditor:
         qwen_clip_options = list(dict.fromkeys(['None'] + self.available_qwen_clips))
         create_setting_row_ui(qwen_section.body(), "Default Qwen CLIP", ttk.Combobox, qwen_clip_options, 'default_qwen_clip', section_key='qwen')
         create_setting_row_ui(qwen_section.body(), "Default Qwen VAE", ttk.Combobox, self.available_qwen_vaes, 'default_qwen_vae', section_key='qwen')
+        create_setting_row_ui(qwen_section.body(), "Default Qwen Shift", ttk.Spinbox, var_key_name='default_qwen_shift', section_key='qwen', from_=-10.0, to=10.0, increment=0.1, format="%.2f")
+
+        qwen_edit_section = CollapsibleSection(self.qwen_edit_settings_content_frame, "Qwen Edit Defaults", self.color)
+        qwen_edit_section.pack(fill=tk.X, padx=4, pady=(0, 6))
+        create_setting_row_ui(qwen_edit_section.body(), "Qwen Edit Denoise", ttk.Spinbox, var_key_name='qwen_edit_denoise', section_key='qwen_edit', from_=0.0, to=1.0, increment=0.01, format="%.2f")
+        create_setting_row_ui(qwen_edit_section.body(), "Qwen Edit Shift", ttk.Spinbox, var_key_name='qwen_edit_shift', section_key='qwen_edit', from_=-10.0, to=10.0, increment=0.1, format="%.2f")
 
         wan_styles = sorted([name for name, data in self.styles_config.items() if data.get('model_type', 'all') in ['all', 'wan']])
         wan_section = CollapsibleSection(self.wan_settings_content_frame, "WAN Defaults", self.color)
@@ -2201,6 +2212,7 @@ class ConfigEditor:
         create_setting_row_ui(wan_section.body(), "Default WAN CLIP", ttk.Combobox, wan_clip_options, 'default_wan_clip', section_key='wan')
         create_setting_row_ui(wan_section.body(), "Default WAN VAE", ttk.Combobox, self.available_wan_vaes, 'default_wan_vae', section_key='wan')
         create_setting_row_ui(wan_section.body(), "Default Vision Encoder", ttk.Combobox, wan_vision_options, 'default_wan_vision_clip', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Default WAN Shift", ttk.Spinbox, var_key_name='default_wan_shift', section_key='wan', from_=-10.0, to=10.0, increment=0.1, format="%.2f")
         create_setting_row_ui(wan_section.body(), "Animation Resolution", ttk.Entry, var_key_name='wan_animation_resolution', section_key='wan')
         create_setting_row_ui(wan_section.body(), "Animation Duration (frames)", ttk.Spinbox, var_key_name='wan_animation_duration', section_key='wan', from_=8, to=480, increment=1)
         create_setting_row_ui(wan_section.body(), "Animation Motion Profile", ttk.Combobox, ['slowmo', 'low', 'medium', 'high'], 'wan_animation_motion_profile', section_key='wan')
@@ -2209,6 +2221,7 @@ class ConfigEditor:
         kontext_section = CollapsibleSection(self.kontext_settings_content_frame, "Kontext Defaults", self.color)
         kontext_section.pack(fill=tk.X, padx=4, pady=(0, 6))
         create_setting_row_ui(kontext_section.body(), "Selected Kontext Model", ttk.Combobox, self.available_models, 'selected_kontext_model', section_key='kontext')
+        create_setting_row_ui(kontext_section.body(), "Kontext VAE", ttk.Combobox, self.available_vaes, 'selected_vae', section_key='kontext')
         create_setting_row_ui(kontext_section.body(), "Default Steps", ttk.Spinbox, var_key_name='kontext_steps', section_key='kontext', from_=4, to=128, increment=4)
         create_setting_row_ui(kontext_section.body(), "Default Guidance", ttk.Spinbox, var_key_name='kontext_guidance', section_key='kontext', from_=0.0, to=20.0, increment=0.1, format="%.1f")
         create_setting_row_ui(kontext_section.body(), "Default MP Size", ttk.Spinbox, var_key_name='kontext_mp_size', section_key='kontext', from_=0.1, to=8.0, increment=0.05, format="%.2f")

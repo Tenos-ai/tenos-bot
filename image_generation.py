@@ -141,6 +141,27 @@ def _apply_flux_generation_inputs(
         ksampler_inputs["latent_image"] = [latent_node, 0]
 
 
+def _apply_sampling_shift_overrides(prompt: dict, shift_value: float | None) -> None:
+    if shift_value is None:
+        return
+
+    for node_data in prompt.values():
+        if not isinstance(node_data, dict):
+            continue
+        if node_data.get("class_type") not in {"ModelSamplingAuraFlow", "ModelSamplingSD3"}:
+            continue
+        inputs = node_data.setdefault("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+        inputs.pop("clip", None)
+        inputs.pop("model_b", None)
+        inputs.pop("cfg_rescale", None)
+        try:
+            inputs["shift"] = float(shift_value)
+        except (TypeError, ValueError):
+            inputs["shift"] = 0.0
+
+
 def _apply_checkpoint_generation_inputs(
     modified_prompt: dict,
     gen_spec,
@@ -549,6 +570,15 @@ async def modify_prompt(
                 secondary_node_id,
                 file_name=secondary_override,
             )
+
+        shift_value = None
+        if model_type in {"qwen", "wan"}:
+            shift_candidate = settings.get(f"default_{model_type}_shift", 0.0)
+            try:
+                shift_value = float(shift_candidate)
+            except (TypeError, ValueError):
+                shift_value = 0.0
+        _apply_sampling_shift_overrides(modified_prompt, shift_value)
     except Exception as e_model_clip:
         print(f"ERROR during model/CLIP application: {e_model_clip}"); traceback.print_exc()
         return None, None, "Internal Error: Failed during model/CLIP setup.", None

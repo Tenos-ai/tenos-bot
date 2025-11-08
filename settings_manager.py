@@ -294,7 +294,7 @@ def load_settings():
                 settings[key] = default_value
                 updated = True
 
-        numeric_keys_float = ['default_guidance', 'default_guidance_sdxl', 'default_guidance_qwen', 'default_guidance_wan', 'upscale_factor', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']
+        numeric_keys_float = ['default_guidance', 'default_guidance_sdxl', 'default_guidance_qwen', 'default_guidance_wan', 'upscale_factor', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size', 'default_qwen_shift', 'default_wan_shift', 'qwen_edit_denoise', 'qwen_edit_shift']
         numeric_keys_int = ['steps', 'sdxl_steps', 'qwen_steps', 'wan_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size', 'wan_animation_duration']
         bool_keys = ['remix_mode', 'llm_enhancer_enabled']
         display_prompt_key = 'display_prompt_preference'
@@ -680,15 +680,20 @@ def _get_default_settings():
         "selected_model": default_model_setting,
         "selected_kontext_model": default_flux_model_raw,
         "default_flux_model": default_flux_model_raw,
+        "default_flux_vae": None,
         "default_sdxl_checkpoint": default_sdxl_checkpoint_raw,
+        "default_sdxl_clip": None,
+        "default_sdxl_vae": None,
         "default_qwen_checkpoint": default_qwen_checkpoint_raw,
         "default_qwen_clip": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
         "default_qwen_vae": "qwen_image_vae.safetensors",
+        "default_qwen_shift": 0.0,
         "default_wan_checkpoint": default_wan_checkpoint_raw,
         "default_wan_low_noise_unet": "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
         "default_wan_clip": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
         "default_wan_vae": "wan_2.1_vae.safetensors",
         "default_wan_vision_clip": "clip_vision_h.safetensors",
+        "default_wan_shift": 0.0,
         "steps": 32,
         "sdxl_steps": 26,
         "qwen_steps": 28,
@@ -712,6 +717,8 @@ def _get_default_settings():
         "default_qwen_negative_prompt": "",
         "default_wan_negative_prompt": "",
         "default_mp_size": 1.0,
+        "qwen_edit_denoise": 0.6,
+        "qwen_edit_shift": 0.0,
         "kontext_guidance": 3.0,
         "kontext_steps": 32,
         "kontext_mp_size": 1.15,
@@ -723,6 +730,7 @@ def _get_default_settings():
         "llm_model_groq": default_groq_model_raw.strip() if default_groq_model_raw else "llama3-8b-8192",
         "llm_model_openai": default_openai_model_raw.strip() if default_openai_model_raw else "gpt-3.5-turbo",
         "display_prompt_preference": "enhanced",
+        "default_editing_mode": "kontext",
         "wan_animation_resolution": "512x512",
         "wan_animation_duration": 33,
         "wan_animation_motion_profile": "medium",
@@ -741,8 +749,8 @@ def save_settings(settings):
             'selected_vae', 'default_style_flux', 'default_style_sdxl', 'default_style_qwen', 'default_style_wan',
             'default_sdxl_negative_prompt', 'default_qwen_negative_prompt', 'default_wan_negative_prompt',
             'selected_kontext_model', 'default_flux_model', 'default_sdxl_checkpoint', 'default_qwen_checkpoint', 'default_wan_checkpoint',
-            'default_qwen_clip', 'default_qwen_vae', 'default_wan_low_noise_unet', 'default_wan_clip', 'default_wan_vae', 'default_wan_vision_clip',
-            'wan_animation_motion_profile', 'wan_animation_resolution', 'active_model_family'
+            'default_flux_vae', 'default_sdxl_clip', 'default_sdxl_vae', 'default_qwen_clip', 'default_qwen_vae', 'default_wan_low_noise_unet', 'default_wan_clip', 'default_wan_vae', 'default_wan_vision_clip',
+            'wan_animation_motion_profile', 'wan_animation_resolution', 'active_model_family', 'default_editing_mode'
         ]
         display_prompt_key = 'display_prompt_preference'
         allowed_display_prompt_options = ['enhanced', 'original']
@@ -1124,6 +1132,7 @@ def get_clip_choices(settings, clip_type_key, setting_key):
 
 def get_t5_clip_choices(settings): return get_clip_choices(settings, 't5', 'selected_t5_clip')
 def get_clip_l_choices(settings): return get_clip_choices(settings, 'clip_L', 'selected_clip_l')
+def get_sdxl_clip_choices(settings): return get_clip_choices(settings, 'clip_L', 'default_sdxl_clip')
 def get_qwen_clip_choices(settings): return get_clip_choices(settings, 'qwen', 'default_qwen_clip')
 def get_wan_clip_choices(settings): return get_clip_choices(settings, 'wan', 'default_wan_clip')
 def get_wan_vision_clip_choices(settings): return get_clip_choices(settings, 'vision', 'default_wan_vision_clip')
@@ -1497,9 +1506,29 @@ def get_qwen_vae_choices(settings):
 def get_wan_vae_choices(settings):
     return _build_vae_choices(settings, 'default_wan_vae')
 
+
+def get_flux_vae_choices(settings):
+    return _build_vae_choices(settings, 'default_flux_vae')
+
+
+def get_sdxl_vae_choices(settings):
+    return _build_vae_choices(settings, 'default_sdxl_vae')
+
 def get_display_prompt_preference_choices(settings):
     current_preference = settings.get('display_prompt_preference', 'enhanced')
     return [discord.SelectOption(label="Show Enhanced Prompt ✨", value="enhanced", default=(current_preference == 'enhanced')), discord.SelectOption(label="Show Original Prompt ✍️", value="original", default=(current_preference == 'original'))]
+
+
+def get_editing_mode_choices(settings):
+    current_mode = str(settings.get('default_editing_mode', 'kontext') or 'kontext').lower()
+    options = [
+        ("Kontext Editing", 'kontext'),
+        ("Qwen Edit", 'qwen'),
+    ]
+    return [
+        discord.SelectOption(label=label, value=value, default=(value == current_mode))
+        for label, value in options
+    ]
 
 def get_kontext_model_choices(settings):
     choices = []

@@ -5,6 +5,8 @@ import re
 import traceback
 import uuid
 
+from typing import Iterable, Optional
+
 import requests
 from io import BytesIO
 from PIL import Image
@@ -20,6 +22,133 @@ from utils.seed_utils import parse_seed_from_message, generate_seed
 from settings_manager import load_settings, load_styles_config, _get_default_settings
 from modelnodes import get_model_node
 from comfyui_api import get_available_comfyui_models as check_available_models_api
+
+
+def _sanitize_override(value: Optional[str]) -> Optional[str]:
+    """Normalize optional model overrides, stripping whitespace and sentinel values."""
+
+    if not value:
+        return None
+
+    normalized = value.strip()
+    if not normalized:
+        return None
+
+    lowered = normalized.lower()
+    if lowered in {"none", "auto", "automatic", "default"}:
+        return None
+
+    return normalized
+
+
+def _normalize_comfy_option(value: str) -> str:
+    """Return a normalized representation for comparing ComfyUI model entries."""
+
+    return os.path.normpath(value).replace("\\", "/").lower()
+
+
+def _find_matching_model_option(requested: str, options: Iterable[str]) -> Optional[str]:
+    """Find an option that matches the requested name, ignoring case and path differences."""
+
+    requested_norm = _normalize_comfy_option(requested)
+    requested_basename = os.path.basename(requested_norm)
+
+    normalized_options = []
+    for option in options:
+        if not isinstance(option, str):
+            continue
+        option_clean = option.strip()
+        if not option_clean:
+            continue
+        option_norm = _normalize_comfy_option(option_clean)
+        normalized_options.append((option_clean, option_norm))
+
+    for option_clean, option_norm in normalized_options:
+        if option_norm == requested_norm:
+            return option_clean
+
+    if requested_basename:
+        for option_clean, option_norm in normalized_options:
+            if os.path.basename(option_norm) == requested_basename:
+                return option_clean
+
+    return None
+
+
+def _match_available_option(requested: Optional[str], options: Iterable[str]) -> tuple[Optional[str], bool]:
+    """Return the closest available option and whether it was an exact match."""
+
+    if not requested:
+        return None, False
+
+    valid_options = [opt for opt in options if isinstance(opt, str) and opt.strip()]
+    match = _find_matching_model_option(requested, valid_options)
+    if match is not None:
+        return match, True
+
+    if not valid_options:
+        return requested, False
+
+    return valid_options[0], False
+
+
+def _select_preferred_option(
+    candidates: Iterable[Optional[str]],
+    options: Iterable[str],
+    *,
+    description: str,
+    message_prefix: str = "Upscaling",
+) -> Optional[str]:
+    """Pick the best available option for a loader based on ordered preferences.
+
+    The helper iterates through the provided ``candidates`` (already sanitized) in
+    order. It returns the first candidate that resolves to a valid ComfyUI option,
+    logging when a requested name is unavailable and a fallback is chosen. If no
+    candidates resolve but ComfyUI exposes alternatives, the first available
+    option is returned; otherwise the first non-empty candidate is returned.
+    """
+
+    valid_options = [opt for opt in options if isinstance(opt, str) and opt.strip()]
+    if not valid_options:
+        for candidate in candidates:
+            if candidate:
+                return candidate
+        return None
+
+    missing_requests: list[str] = []
+    seen_candidates: set[str] = set()
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        normalized = _normalize_comfy_option(candidate)
+        if normalized in seen_candidates:
+            continue
+        seen_candidates.add(normalized)
+
+        resolved, exact = _match_available_option(candidate, valid_options)
+        if resolved:
+            if missing_requests:
+                print(
+                    f"{message_prefix}: Requested {description} '{missing_requests[0]}' "
+                    f"not available; using '{resolved}' instead."
+                )
+            elif not exact:
+                print(
+                    f"{message_prefix}: Requested {description} '{candidate}' "
+                    f"not available; using '{resolved}' instead."
+                )
+            return resolved
+
+        missing_requests.append(candidate)
+
+    fallback_choice = valid_options[0]
+    if missing_requests:
+        print(
+            f"{message_prefix}: Requested {description} '{missing_requests[0]}' "
+            f"not available; defaulting to '{fallback_choice}'."
+        )
+    return fallback_choice
 
 
 try:
@@ -86,6 +215,41 @@ def _update_model_loader_filename(modified_prompt: dict, node_id, *, file_name) 
         widgets[0] = file_name
 
 
+def _get_loader_default_name(
+    prompt: dict,
+    node_id: Optional[str],
+    *,
+    keys: Iterable[str] = ("model_name", "unet_name", "vae_name", "clip_name"),
+) -> Optional[str]:
+    """Return the default model name configured on a loader node."""
+
+    if not node_id:
+        return None
+
+    node_entry = prompt.get(node_id)
+    if not isinstance(node_entry, dict):
+        return None
+
+    inputs = node_entry.get("inputs")
+    if isinstance(inputs, dict):
+        for key in keys:
+            value = inputs.get(key)
+            if isinstance(value, str):
+                cleaned = value.strip()
+                if cleaned:
+                    return cleaned
+
+    widgets = node_entry.get("widgets_values")
+    if isinstance(widgets, list) and widgets:
+        first = widgets[0]
+        if isinstance(first, str):
+            cleaned = first.strip()
+            if cleaned:
+                return cleaned
+
+    return None
+
+
 def _apply_flux_upscale_inputs(
     modified_prompt: dict,
     upscale_spec,
@@ -118,6 +282,27 @@ def _apply_flux_upscale_inputs(
     final_steps = ultimate_inputs.get("steps", default_steps)
     final_denoise = ultimate_inputs.get("denoise", default_denoise)
     return final_denoise, final_steps, ultimate_inputs.get("cfg", guidance)
+
+
+def _apply_sampling_shift_overrides(prompt: dict, shift_value: float | None) -> None:
+    if shift_value is None:
+        return
+
+    for node_data in prompt.values():
+        if not isinstance(node_data, dict):
+            continue
+        if node_data.get("class_type") not in {"ModelSamplingAuraFlow", "ModelSamplingSD3"}:
+            continue
+        inputs = node_data.setdefault("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+        inputs.pop("clip", None)
+        inputs.pop("model_b", None)
+        inputs.pop("cfg_rescale", None)
+        try:
+            inputs["shift"] = float(shift_value)
+        except (TypeError, ValueError):
+            inputs["shift"] = 0.0
 
 
 def _apply_checkpoint_upscale_inputs(
@@ -198,13 +383,32 @@ def get_image_dimensions(url):
 
 def modify_upscale_prompt(
     message_content_or_obj,
-    referenced_message,    
-    target_image_url: str, 
-    image_index: int = 1   
+    referenced_message,
+    target_image_url: str,
+    image_index: int = 1
 ):
     settings = load_settings()
-    styles_config = load_styles_config() 
+    styles_config = load_styles_config()
     upscale_job_id = str(uuid.uuid4())[:8]
+
+    models_data_fetch_error = False
+    try:
+        available_models_data = check_available_models_api(suppress_summary_print=True)
+    except Exception as comfy_error:
+        print(f"Upscaling: Unable to fetch model availability from ComfyUI: {comfy_error}")
+        available_models_data = {}
+        models_data_fetch_error = True
+
+    def _extract_available_list(key: str) -> list[str]:
+        if isinstance(available_models_data, dict):
+            return [item for item in available_models_data.get(key, []) if isinstance(item, str)]
+        return []
+
+    available_unet_options = _extract_available_list("unet")
+    available_checkpoint_options = _extract_available_list("checkpoint")
+    available_clip_options = _extract_available_list("clip")
+    available_vae_options = _extract_available_list("vae")
+    available_upscaler_options = _extract_available_list("upscaler")
 
     selected_base_model_setting = settings.get('selected_model')
     current_base_model_type, actual_base_model_filename = resolve_model_type_from_prefix(
@@ -220,6 +424,29 @@ def modify_upscale_prompt(
 
     spec = get_model_spec(current_base_model_type)
     upscale_spec = spec.upscale
+
+    available_models_for_type = (
+        available_checkpoint_options if current_base_model_type == 'sdxl' else available_unet_options
+    )
+
+    sanitized_base_model = _sanitize_override(actual_base_model_filename)
+    resolved_base_model = None
+    base_match_exact = False
+    if sanitized_base_model:
+        resolved_base_model, base_match_exact = _match_available_option(sanitized_base_model, available_models_for_type)
+        if (
+            resolved_base_model
+            and available_models_for_type
+            and not base_match_exact
+        ):
+            print(
+                f"Upscaling: Requested base model '{sanitized_base_model}' not available; using '{resolved_base_model}' instead."
+            )
+    elif available_models_for_type:
+        resolved_base_model = available_models_for_type[0]
+
+    if resolved_base_model:
+        actual_base_model_filename = resolved_base_model
 
     model_name_to_print_in_log = actual_base_model_filename if actual_base_model_filename else "Settings Default (or ComfyUI Default)"
     print(f"Upscale job {upscale_job_id}: Using CURRENTLY SELECTED model type '{current_base_model_type.upper()}' and model '{model_name_to_print_in_log}'.")
@@ -321,9 +548,16 @@ def modify_upscale_prompt(
             print(f"Style Warning for upscale job {upscale_job_id}: {style_warning_message_ups}")
             style_for_this_upscale = 'off'
 
-    selected_upscaler_model_file = settings.get('selected_upscale_model')
-    if not selected_upscaler_model_file or selected_upscaler_model_file.lower() == "none":
-        selected_upscaler_model_file = "4x-UltraSharp.pth" 
+    effective_selected_model_entry = None
+    if isinstance(selected_base_model_setting, str) and selected_base_model_setting.strip():
+        effective_selected_model_entry = selected_base_model_setting.strip()
+
+    if actual_base_model_filename:
+        prefixed_default_entry = f"{current_base_model_type.upper()}: {actual_base_model_filename}"
+        if not effective_selected_model_entry or _find_matching_model_option(
+            actual_base_model_filename, [effective_selected_model_entry]
+        ) is None:
+            effective_selected_model_entry = prefixed_default_entry
     try:
         upscale_factor_setting = float(settings.get('upscale_factor', 1.85))
         if not (1.5 <= upscale_factor_setting <= 4.0): upscale_factor_setting = 1.85
@@ -334,6 +568,19 @@ def modify_upscale_prompt(
     except Exception as template_error:
         print(f"ERROR copying upscale template for model '{current_base_model_type}': {template_error}")
         return None, "Internal error preparing upscale template.", None
+
+    template_upscaler_default = _get_loader_default_name(
+        modified_upscale_prompt,
+        upscale_spec.upscale_model_loader_node,
+    )
+
+    requested_upscaler = _sanitize_override(settings.get('selected_upscale_model'))
+    selected_upscaler_model_file = _select_preferred_option(
+        [requested_upscaler, template_upscaler_default],
+        available_upscaler_options,
+        description="upscaler",
+    )
+
 
     default_negative_prompt = ""
     if spec.generation.supports_negative_prompt:
@@ -388,55 +635,117 @@ def modify_upscale_prompt(
         base_model_loader_node_id_ups = upscale_spec.model_loader_node
         if base_model_loader_node_id_ups in modified_upscale_prompt:
             try:
-                prefixed_base_model_name_ups = selected_base_model_setting if isinstance(selected_base_model_setting, str) else None
-                if not prefixed_base_model_name_ups:
-                    prefixed_base_model_name_ups = f"{current_base_model_type.upper()}: {actual_base_model_filename}"
+                prefixed_base_model_name_ups = effective_selected_model_entry or f"{current_base_model_type.upper()}: {actual_base_model_filename}"
                 model_node_update_dict_ups = get_model_node(prefixed_base_model_name_ups, base_model_loader_node_id_ups)
                 if base_model_loader_node_id_ups in model_node_update_dict_ups:
                     modified_upscale_prompt[base_model_loader_node_id_ups] = model_node_update_dict_ups[base_model_loader_node_id_ups]
             except Exception as e_base_model_ups:
                 print(f"Error setting upscale base model ('{actual_base_model_filename}'): {e_base_model_ups}")
 
-    if upscale_spec.upscale_model_loader_node and upscale_spec.upscale_model_loader_node in modified_upscale_prompt and selected_upscaler_model_file:
+    if (
+        upscale_spec.upscale_model_loader_node
+        and upscale_spec.upscale_model_loader_node in modified_upscale_prompt
+        and selected_upscaler_model_file
+    ):
         modified_upscale_prompt[upscale_spec.upscale_model_loader_node]["inputs"]["model_name"] = selected_upscaler_model_file
 
     if upscale_spec.family == "flux":
-        sel_t5_clip_ups = settings.get('selected_t5_clip')
-        sel_clip_l_ups = settings.get('selected_clip_l')
-        comfy_clips_data_ups = check_available_models_api(suppress_summary_print=True)
-        comfy_clip_list_lower_ups = {m.lower() for m in comfy_clips_data_ups.get("clip", []) if isinstance(m, str)}
         flux_clip_node_id_ups = upscale_spec.clip_loader_node
-        if sel_t5_clip_ups and sel_clip_l_ups and flux_clip_node_id_ups in modified_upscale_prompt:
-            if sel_t5_clip_ups.lower() in comfy_clip_list_lower_ups and sel_clip_l_ups.lower() in comfy_clip_list_lower_ups:
-                if "inputs" in modified_upscale_prompt[flux_clip_node_id_ups]:
-                    modified_upscale_prompt[flux_clip_node_id_ups]["inputs"].update({"clip_name1": sel_t5_clip_ups, "clip_name2": sel_clip_l_ups})
+        if flux_clip_node_id_ups and flux_clip_node_id_ups in modified_upscale_prompt:
+            clip_inputs = modified_upscale_prompt[flux_clip_node_id_ups].setdefault("inputs", {})
+
+            template_t5_clip = clip_inputs.get("clip_name1") if isinstance(clip_inputs, dict) else None
+            template_clip_l = clip_inputs.get("clip_name2") if isinstance(clip_inputs, dict) else None
+
+            resolved_t5_clip = _select_preferred_option(
+                [
+                    _sanitize_override(settings.get('selected_t5_clip')),
+                    template_t5_clip,
+                ],
+                available_clip_options,
+                description="Flux T5 clip",
+            )
+
+            resolved_clip_l = _select_preferred_option(
+                [
+                    _sanitize_override(settings.get('selected_clip_l')),
+                    template_clip_l,
+                ],
+                available_clip_options,
+                description="Flux CLIP-L",
+            )
+
+            if resolved_t5_clip:
+                clip_inputs["clip_name1"] = resolved_t5_clip
+            if resolved_clip_l:
+                clip_inputs["clip_name2"] = resolved_clip_l
     else:
         clip_setting_key_ups = f"default_{current_base_model_type}_clip"
-        clip_override_ups = settings.get(clip_setting_key_ups)
         clip_loader_node_id_ups = upscale_spec.clip_loader_node
-        if clip_override_ups and clip_loader_node_id_ups and clip_loader_node_id_ups in modified_upscale_prompt:
-            clip_inputs_ups = modified_upscale_prompt[clip_loader_node_id_ups].setdefault("inputs", {})
-            clip_inputs_ups["clip_name"] = clip_override_ups
+        template_clip_default = _get_loader_default_name(
+            modified_upscale_prompt,
+            clip_loader_node_id_ups,
+            keys=("clip_name",),
+        )
+        clip_override_ups = _sanitize_override(settings.get(clip_setting_key_ups))
+        if clip_loader_node_id_ups and clip_loader_node_id_ups in modified_upscale_prompt:
+            resolved_clip_override = _select_preferred_option(
+                [clip_override_ups, template_clip_default],
+                available_clip_options,
+                description=f"{current_base_model_type.upper()} clip",
+            )
+            if resolved_clip_override:
+                clip_inputs_ups = modified_upscale_prompt[clip_loader_node_id_ups].setdefault("inputs", {})
+                clip_inputs_ups["clip_name"] = resolved_clip_override
 
     vae_setting_key_ups = f"default_{current_base_model_type}_vae"
-    vae_override_ups = settings.get(vae_setting_key_ups)
     vae_loader_node_id_ups = upscale_spec.vae_loader_node
-    if vae_override_ups and vae_loader_node_id_ups and vae_loader_node_id_ups in modified_upscale_prompt:
-        vae_inputs_ups = modified_upscale_prompt[vae_loader_node_id_ups].setdefault("inputs", {})
-        vae_inputs_ups["vae_name"] = vae_override_ups
+    template_vae_default = _get_loader_default_name(
+        modified_upscale_prompt,
+        vae_loader_node_id_ups,
+        keys=("vae_name",),
+    )
+    vae_override_ups = _sanitize_override(settings.get(vae_setting_key_ups))
+    if vae_loader_node_id_ups and vae_loader_node_id_ups in modified_upscale_prompt:
+        resolved_vae_override = _select_preferred_option(
+            [vae_override_ups, template_vae_default],
+            available_vae_options,
+            description=f"{current_base_model_type.upper()} VAE",
+        )
+        if resolved_vae_override:
+            vae_inputs_ups = modified_upscale_prompt[vae_loader_node_id_ups].setdefault("inputs", {})
+            vae_inputs_ups["vae_name"] = resolved_vae_override
 
     secondary_node_id_ups = getattr(upscale_spec, "secondary_model_loader_node", None)
     secondary_setting_key_ups = getattr(upscale_spec, "secondary_model_setting_key", None)
     if secondary_setting_key_ups:
-        secondary_override_ups = settings.get(secondary_setting_key_ups)
+        secondary_override_ups = _sanitize_override(settings.get(secondary_setting_key_ups))
     else:
         secondary_override_ups = None
-    if secondary_override_ups:
+    template_secondary_default = _get_loader_default_name(
+        modified_upscale_prompt,
+        secondary_node_id_ups,
+    )
+    resolved_secondary_override = _select_preferred_option(
+        [secondary_override_ups, template_secondary_default],
+        available_unet_options,
+        description="secondary model",
+    )
+    if resolved_secondary_override:
         _update_model_loader_filename(
             modified_upscale_prompt,
             secondary_node_id_ups,
-            file_name=secondary_override_ups,
+            file_name=resolved_secondary_override,
         )
+
+    shift_value_ups = None
+    if current_base_model_type in {'qwen', 'wan'}:
+        shift_candidate_ups = settings.get(f"default_{current_base_model_type}_shift", 0.0)
+        try:
+            shift_value_ups = float(shift_candidate_ups)
+        except (TypeError, ValueError):
+            shift_value_ups = 0.0
+    _apply_sampling_shift_overrides(modified_upscale_prompt, shift_value_ups)
 
     lora_loader_node_id_for_ups_style = upscale_spec.lora_node
     if lora_loader_node_id_for_ups_style in modified_upscale_prompt:
@@ -499,7 +808,7 @@ def modify_upscale_prompt(
         "type": "upscale",
         "model_type_for_enhancer": current_base_model_type,
         "model_used": actual_base_model_filename or "Unknown/Template Default",
-        "selected_model": selected_base_model_setting if isinstance(selected_base_model_setting, str) else None,
+        "selected_model": effective_selected_model_entry,
         "batch_size": 1,
         "style_warning_message": style_warning_message_ups,
         "supports_animation": runtime_animation_supported,

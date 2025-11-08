@@ -33,6 +33,27 @@ def _normalize_path_for_comfyui(path: str | None) -> str | None:
     return normalized
 
 
+def _apply_sampling_shift_overrides(prompt: Dict[str, Any], shift_value: float | None) -> None:
+    if shift_value is None:
+        return
+
+    for node_data in prompt.values():
+        if not isinstance(node_data, dict):
+            continue
+        if node_data.get("class_type") not in {"ModelSamplingAuraFlow", "ModelSamplingSD3"}:
+            continue
+        inputs = node_data.setdefault("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+        inputs.pop("clip", None)
+        inputs.pop("model_b", None)
+        inputs.pop("cfg_rescale", None)
+        try:
+            inputs["shift"] = float(shift_value)
+        except (TypeError, ValueError):
+            inputs["shift"] = 0.0
+
+
 def _apply_loader_filename(node: Dict[str, Any], *, field_name: str, file_name: str | None) -> None:
     """Update loader node inputs and widgets with a new filename."""
 
@@ -225,6 +246,13 @@ async def prepare_wan_animation_prompt(
         save_video_node = template.get("wan_i2v_save")
         if save_video_node and isinstance(save_video_node.get("widgets_values"), list) and save_video_node["widgets_values"]:
             save_video_node["widgets_values"][0] = save_prefix or "wanbot/ANIMATION"
+
+        shift_candidate_anim = settings.get("default_wan_shift", 0.0)
+        try:
+            shift_value_anim = float(shift_candidate_anim)
+        except (TypeError, ValueError):
+            shift_value_anim = 0.0
+        _apply_sampling_shift_overrides(template, shift_value_anim)
     except Exception as template_error:
         print(f"Error while configuring WAN animation template: {template_error}")
         traceback.print_exc()

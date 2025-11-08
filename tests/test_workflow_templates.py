@@ -140,20 +140,32 @@ class WorkflowTemplateTests(unittest.TestCase):
 
         img2img_template = copy_generation_template(qwen_spec.generation, is_img2img=True)
         sampling_inputs = img2img_template[str(prompt_templates.QWEN_SAMPLING_NODE)]["inputs"]
-        self.assertEqual(
-            sampling_inputs.get("clip"),
-            [str(prompt_templates.QWEN_LORA_NODE), 1],
-            msg="Qwen img2img sampling node must receive the LoRA clip output",
+        self.assertNotIn(
+            "clip",
+            sampling_inputs,
+            msg="Qwen img2img sampling node should no longer take a direct clip input",
         )
         self.assertEqual(
-            sampling_inputs.get("cfg_rescale"),
-            3.1,
-            msg="Qwen img2img sampling node should seed cfg_rescale to 3.1",
+            sampling_inputs.get("model"),
+            [str(prompt_templates.QWEN_LORA_NODE), 0],
+            msg="Qwen img2img sampling node must still receive the LoRA model output",
+        )
+        self.assertNotIn(
+            "cfg_rescale",
+            sampling_inputs,
+            msg="Qwen img2img sampling node should no longer define cfg_rescale",
         )
         self.assertEqual(
             sampling_inputs.get("shift"),
             0.0,
             msg="Qwen img2img sampling node should seed shift to 0.0",
+        )
+
+        pos_prompt_inputs = img2img_template[str(prompt_templates.QWEN_POS_PROMPT_NODE)]["inputs"]
+        self.assertEqual(
+            pos_prompt_inputs.get("clip"),
+            [str(prompt_templates.QWEN_LORA_NODE), 1],
+            msg="Qwen positive prompt must continue to consume the LoRA clip output",
         )
 
     def test_wan_templates_include_loader_nodes(self) -> None:
@@ -163,9 +175,15 @@ class WorkflowTemplateTests(unittest.TestCase):
         self.assertTrue(_contains_class(gen_template, "CLIPLoader"))
         self.assertTrue(_contains_class(gen_template, "VAELoader"))
         sampling_inputs = gen_template[str(prompt_templates.WAN_SAMPLING_NODE)]["inputs"]
-        self.assertEqual(
-            sampling_inputs.get("model_b"),
-            [str(prompt_templates.WAN_SECOND_UNET_LOADER_NODE), 0],
+        self.assertNotIn(
+            "model_b",
+            sampling_inputs,
+            msg="WAN sampling should now rely on a single combined model input",
+        )
+        self.assertNotIn(
+            "clip",
+            sampling_inputs,
+            msg="WAN sampling node should not request a direct clip input",
         )
         self.assertEqual(
             sampling_inputs.get("shift"),
@@ -178,9 +196,15 @@ class WorkflowTemplateTests(unittest.TestCase):
         self.assertTrue(_contains_class(var_template, "CLIPLoader"))
         self.assertTrue(_contains_class(var_template, "VAELoader"))
         var_sampling_inputs = var_template[str(prompt_templates.WAN_VAR_SAMPLING_NODE)]["inputs"]
-        self.assertEqual(
-            var_sampling_inputs.get("model_b"),
-            [str(prompt_templates.WAN_SECOND_UNET_LOADER_NODE), 0],
+        self.assertNotIn(
+            "model_b",
+            var_sampling_inputs,
+            msg="WAN variation sampling should only depend on the primary model output",
+        )
+        self.assertNotIn(
+            "clip",
+            var_sampling_inputs,
+            msg="WAN variation sampling should not take a clip input",
         )
         self.assertEqual(
             var_sampling_inputs.get("shift"),
@@ -193,9 +217,15 @@ class WorkflowTemplateTests(unittest.TestCase):
         self.assertTrue(_contains_class(upscale_template, "CLIPLoader"))
         self.assertTrue(_contains_class(upscale_template, "VAELoader"))
         upscale_sampling_inputs = upscale_template[str(prompt_templates.WAN_UPSCALE_SAMPLING_NODE)]["inputs"]
-        self.assertEqual(
-            upscale_sampling_inputs.get("model_b"),
-            [str(prompt_templates.WAN_SECOND_UNET_LOADER_NODE), 0],
+        self.assertNotIn(
+            "model_b",
+            upscale_sampling_inputs,
+            msg="WAN upscale sampling should only reference the upstream model",
+        )
+        self.assertNotIn(
+            "clip",
+            upscale_sampling_inputs,
+            msg="WAN upscale sampling should not include a clip input",
         )
         self.assertEqual(
             upscale_sampling_inputs.get("shift"),
@@ -210,9 +240,15 @@ class WorkflowTemplateTests(unittest.TestCase):
         self.assertTrue(_contains_class(wan_template, "TenosResizeToTargetPixels"))
         self.assertTrue(_contains_class(wan_template, "SaveVideo"))
         sampling_inputs = wan_template[str(prompt_templates.WAN_I2V_SAMPLING_NODE)]["inputs"]
-        self.assertEqual(
-            sampling_inputs.get("model_b"),
-            [str(prompt_templates.WAN_SECOND_UNET_LOADER_NODE), 0],
+        self.assertNotIn(
+            "model_b",
+            sampling_inputs,
+            msg="WAN animation sampling should only rely on the upstream model",
+        )
+        self.assertNotIn(
+            "clip",
+            sampling_inputs,
+            msg="WAN animation sampling should not include a clip input",
         )
         self.assertEqual(
             sampling_inputs.get("shift"),
@@ -251,9 +287,10 @@ class WorkflowTemplateTests(unittest.TestCase):
                 sampling_inputs.get("model"),
                 [str(prompt_templates.QWEN_UNET_LOADER_NODE), 0],
             )
-            self.assertEqual(
-                sampling_inputs.get("clip"),
-                [str(prompt_templates.QWEN_CLIP_LOADER_NODE), 0],
+            self.assertNotIn(
+                "clip",
+                sampling_inputs,
+                msg="Qwen edit sampling node should not require a clip input",
             )
 
             pos_inputs = workflow[str(QWEN_POS_PROMPT_NODE)]["inputs"]
