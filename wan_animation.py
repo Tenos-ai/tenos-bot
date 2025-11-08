@@ -69,6 +69,35 @@ def _apply_loader_filename(node: Dict[str, Any], *, field_name: str, file_name: 
         widgets[0] = file_name
 
 
+def _extract_loader_default(template: Dict[str, Any], node_key: str, field_name: str) -> str | None:
+    node = template.get(node_key)
+    if not isinstance(node, dict):
+        return None
+
+    inputs = node.get("inputs")
+    if isinstance(inputs, dict):
+        candidate = inputs.get(field_name)
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+
+    widgets = node.get("widgets_values")
+    if isinstance(widgets, list) and widgets:
+        widget_candidate = widgets[0]
+        if isinstance(widget_candidate, str) and widget_candidate.strip():
+            return widget_candidate.strip()
+
+    return None
+
+
+def _pick_animation_asset(*candidates: Any) -> str | None:
+    for candidate in candidates:
+        if isinstance(candidate, str):
+            value = candidate.strip()
+            if value and "." in value:
+                return value
+    return None
+
+
 async def prepare_wan_animation_prompt(
     source_job_data: Dict[str, Any],
     *,
@@ -79,6 +108,18 @@ async def prepare_wan_animation_prompt(
     settings = load_settings()
     wan_spec = get_model_spec("wan")
     template = copy_animation_template(wan_spec)
+
+    source_model_type = str(
+        source_job_data.get("model_type_for_enhancer")
+        or source_job_data.get("model_type")
+        or ""
+    ).lower()
+
+    default_high_unet = _extract_loader_default(template, "wan_unet_high", "unet_name")
+    default_low_unet = _extract_loader_default(template, "wan_unet_low", "unet_name")
+    default_clip_name = _extract_loader_default(template, "wan_clip", "clip_name")
+    default_vision_clip = _extract_loader_default(template, "wan_i2v_vision_clip", "clip_name")
+    default_vae_name = _extract_loader_default(template, "wan_vae", "vae_name")
 
     motion_profile = str(
         source_job_data.get(
@@ -157,11 +198,27 @@ async def prepare_wan_animation_prompt(
         or ""
     )
 
-    high_noise_unet = source_job_data.get("model_used") or settings.get("default_wan_checkpoint")
-    low_noise_unet = settings.get("default_wan_low_noise_unet")
-    clip_name = settings.get("default_wan_clip")
-    vision_clip = settings.get("default_wan_vision_clip")
-    vae_name = settings.get("default_wan_vae")
+    high_noise_unet = _pick_animation_asset(
+        source_job_data.get("model_used") if source_model_type == "wan" else None,
+        settings.get("default_wan_checkpoint"),
+        default_high_unet,
+    )
+    low_noise_unet = _pick_animation_asset(
+        settings.get("default_wan_low_noise_unet"),
+        default_low_unet,
+    )
+    clip_name = _pick_animation_asset(
+        settings.get("default_wan_clip"),
+        default_clip_name,
+    )
+    vision_clip = _pick_animation_asset(
+        settings.get("default_wan_vision_clip"),
+        default_vision_clip,
+    )
+    vae_name = _pick_animation_asset(
+        settings.get("default_wan_vae"),
+        default_vae_name,
+    )
 
     animation_seed = generate_seed()
     sampler_steps = int(settings.get("wan_steps", 30) or 30)

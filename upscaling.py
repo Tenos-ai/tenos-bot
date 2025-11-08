@@ -41,6 +41,87 @@ def _sanitize_override(value: Optional[str]) -> Optional[str]:
     return normalized
 
 
+_UPSCALE_MODEL_EXTENSIONS = {'.pth', '.pt', '.onnx', '.safetensors', '.ckpt', '.bin'}
+
+
+def _looks_like_upscale_model(name: Optional[str]) -> bool:
+    if not name or not isinstance(name, str):
+        return False
+    base = os.path.basename(name.strip())
+    stem, ext = os.path.splitext(base)
+    if not stem or not ext:
+        return False
+    return ext.lower() in _UPSCALE_MODEL_EXTENSIONS
+
+
+def _upscale_model_exists(name: Optional[str]) -> bool:
+    if not _looks_like_upscale_model(name):
+        return False
+    if not UPSCALE_MODELS_ROOT or not os.path.isdir(UPSCALE_MODELS_ROOT):
+        return True
+    candidate_path = os.path.join(UPSCALE_MODELS_ROOT, os.path.basename(name.strip()))
+    return os.path.exists(candidate_path)
+
+
+def _resolve_upscale_model_choice(
+    preferred: Optional[str],
+    template_default: Optional[str],
+    available_options: Iterable[str] | None = None,
+) -> Optional[str]:
+    """Pick the best usable upscale model, falling back to available options."""
+
+    ordered_candidates: list[str] = []
+
+    def _add_candidate(candidate: Optional[str]) -> None:
+        if not candidate or not isinstance(candidate, str):
+            return
+        cleaned = candidate.strip()
+        if not cleaned:
+            return
+        if cleaned not in ordered_candidates:
+            ordered_candidates.append(cleaned)
+
+    _add_candidate(preferred)
+    _add_candidate(template_default)
+
+    if available_options:
+        for option in available_options:
+            if not isinstance(option, str):
+                continue
+            cleaned_option = option.strip()
+            if not cleaned_option:
+                continue
+            if cleaned_option in ordered_candidates:
+                continue
+            ordered_candidates.append(cleaned_option)
+
+    if UPSCALE_MODELS_ROOT and os.path.isdir(UPSCALE_MODELS_ROOT):
+        try:
+            for entry in os.listdir(UPSCALE_MODELS_ROOT):
+                entry_path = os.path.join(UPSCALE_MODELS_ROOT, entry)
+                if not os.path.isfile(entry_path):
+                    continue
+                if not _looks_like_upscale_model(entry):
+                    continue
+                if entry not in ordered_candidates:
+                    ordered_candidates.append(entry)
+        except OSError as os_error:
+            print(
+                "Upscaling: Unable to read local upscale model directory "
+                f"'{UPSCALE_MODELS_ROOT}': {os_error}"
+            )
+
+    for candidate in ordered_candidates:
+        if _upscale_model_exists(candidate):
+            return candidate
+
+    for candidate in ordered_candidates:
+        if _looks_like_upscale_model(candidate):
+            return candidate
+
+    return None
+
+
 def _normalize_comfy_option(value: str) -> str:
     """Return a normalized representation for comparing ComfyUI model entries."""
 
@@ -164,15 +245,22 @@ try:
         UPSCALES_DIR = os.path.join('output','TENOSAI-BOT','UPSCALES')
     if not os.path.isabs(UPSCALES_DIR):
         UPSCALES_DIR = os.path.abspath(UPSCALES_DIR)
+    UPSCALE_MODELS_ROOT = config_data.get('MODELS', {}).get('UPSCALE_MODELS')
+    if isinstance(UPSCALE_MODELS_ROOT, str) and UPSCALE_MODELS_ROOT.strip():
+        UPSCALE_MODELS_ROOT = os.path.abspath(UPSCALE_MODELS_ROOT.strip())
+    else:
+        UPSCALE_MODELS_ROOT = None
 except (FileNotFoundError, json.JSONDecodeError, ValueError, TypeError) as e:
     print(f"Error loading config.json in upscaling.py: {e}")
     config_data = {"OUTPUTS": {}}
     UPSCALES_DIR = os.path.abspath(os.path.join('output','TENOSAI-BOT','UPSCALES'))
+    UPSCALE_MODELS_ROOT = None
 except Exception as e:
     print(f"Unexpected error loading config.json in upscaling.py: {e}")
     traceback.print_exc()
     config_data = {"OUTPUTS": {}}
     UPSCALES_DIR = os.path.abspath(os.path.join('output','TENOSAI-BOT','UPSCALES'))
+    UPSCALE_MODELS_ROOT = None
 
 def normalize_path_for_comfyui(path):
     if not path or not isinstance(path, str): return path
@@ -581,6 +669,20 @@ def modify_upscale_prompt(
         description="upscaler",
     )
 
+    resolved_upscaler_choice = _resolve_upscale_model_choice(
+        selected_upscaler_model_file,
+        template_upscaler_default,
+        available_upscaler_options,
+    )
+    if resolved_upscaler_choice != selected_upscaler_model_file:
+        if selected_upscaler_model_file:
+            fallback_notice = resolved_upscaler_choice or template_upscaler_default or "template default"
+            print(
+                f"Upscaling: Requested upscaler '{selected_upscaler_model_file}' "
+                f"not available; using '{fallback_notice}'."
+            )
+    selected_upscaler_model_file = resolved_upscaler_choice
+
 
     default_negative_prompt = ""
     if spec.generation.supports_negative_prompt:
@@ -783,7 +885,7 @@ def modify_upscale_prompt(
 
     response_status_msg_ups = f"Upscaling image #{image_index} by {upscale_factor_setting:.2f}x (workflow: {current_base_model_type.upper()}). Seed: {upscale_seed}, Style: {style_for_this_upscale}."
     
-    runtime_animation_supported = bool(spec.supports_animation)
+    runtime_animation_supported = True
 
     job_details_dict_ups = {
         "job_id": upscale_job_id,

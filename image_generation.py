@@ -646,11 +646,8 @@ async def modify_prompt(
         else: 
             final_batch_size_for_job_details = default_batch_size_from_settings
 
-    runtime_animation_supported = bool(
-        spec.supports_animation
-        and not is_img2img
-        and final_batch_size_for_job_details == 1
-    )
+    single_result_job = final_batch_size_for_job_details == 1
+    runtime_animation_supported = bool(single_result_job)
 
     job_details_dict = {
         "job_id": job_id,

@@ -1,6 +1,9 @@
+import os
 import sys
+import tempfile
 import types
 import unittest
+from unittest import mock
 
 if "PIL" not in sys.modules:
     pil_stub = types.ModuleType("PIL")
@@ -55,7 +58,14 @@ if "websocket_client" not in sys.modules:
     websocket_stub.WebsocketClient = _StubWebsocketClient
     sys.modules["websocket_client"] = websocket_stub
 
-from upscaling import _sanitize_override, _match_available_option, _select_preferred_option
+import upscaling
+
+from upscaling import (
+    _match_available_option,
+    _resolve_upscale_model_choice,
+    _sanitize_override,
+    _select_preferred_option,
+)
 
 
 class UpscalingHelperTests(unittest.TestCase):
@@ -129,6 +139,65 @@ class UpscalingHelperTests(unittest.TestCase):
             description="model",
         )
         self.assertEqual(resolved, "preferred.safetensors")
+
+
+class UpscaleModelResolutionTests(unittest.TestCase):
+    def test_resolve_upscale_model_choice_falls_back_to_template(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            template_path = os.path.join(tmp_dir, "4x-UltraSharp.pth")
+            with open(template_path, "w", encoding="utf-8"):
+                pass
+
+            with mock.patch.object(upscaling, "UPSCALE_MODELS_ROOT", tmp_dir, create=True):
+                choice = _resolve_upscale_model_choice("COMBO", "4x-UltraSharp.pth", [])
+                self.assertEqual(choice, "4x-UltraSharp.pth")
+
+    def test_resolve_upscale_model_choice_prefers_existing_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            preferred_path = os.path.join(tmp_dir, "RealESRGAN_x4plus.pth")
+            template_path = os.path.join(tmp_dir, "4x-UltraSharp.pth")
+            for path in (preferred_path, template_path):
+                with open(path, "w", encoding="utf-8"):
+                    pass
+
+            with mock.patch.object(upscaling, "UPSCALE_MODELS_ROOT", tmp_dir, create=True):
+                choice = _resolve_upscale_model_choice(
+                    "RealESRGAN_x4plus.pth",
+                    "4x-UltraSharp.pth",
+                    [],
+                )
+                self.assertEqual(choice, "RealESRGAN_x4plus.pth")
+
+    def test_resolve_upscale_model_choice_returns_none_when_no_valid_candidates(self) -> None:
+        with mock.patch.object(upscaling, "UPSCALE_MODELS_ROOT", None, create=True):
+            choice = _resolve_upscale_model_choice("COMBO", None, [])
+            self.assertIsNone(choice)
+
+    def test_resolve_upscale_model_choice_uses_available_options_when_candidates_invalid(self) -> None:
+        available = [
+            "COMBO",
+            "4x-UltraSharp.pth",
+            "RealESRGAN_x4plus.pth",
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            fallback_path = os.path.join(tmp_dir, "4x-UltraSharp.pth")
+            with open(fallback_path, "w", encoding="utf-8"):
+                pass
+
+            with mock.patch.object(upscaling, "UPSCALE_MODELS_ROOT", tmp_dir, create=True):
+                choice = _resolve_upscale_model_choice("COMBO", "COMBO", available)
+                self.assertEqual(choice, "4x-UltraSharp.pth")
+
+    def test_resolve_upscale_model_choice_reads_local_directory_when_no_api_data(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            local_model = os.path.join(tmp_dir, "4x-UltraSharp.pth")
+            with open(local_model, "w", encoding="utf-8"):
+                pass
+
+            with mock.patch.object(upscaling, "UPSCALE_MODELS_ROOT", tmp_dir, create=True):
+                choice = _resolve_upscale_model_choice("COMBO", "COMBO", [])
+                self.assertEqual(choice, "4x-UltraSharp.pth")
 
 
 if __name__ == "__main__":

@@ -708,10 +708,32 @@ async def process_wan_animation_request(context_user, context_channel, source_jo
     if not source_job_data:
         return [{"status": "error", "error_message_text": "Original job data not found for animation."}]
 
-    if not source_job_data.get("supports_animation") or not source_job_data.get("followup_animation_workflow"):
-        return [{"status": "error", "error_message_text": "This job is not eligible for WAN animation."}]
+    job_type_snapshot = str(source_job_data.get("type", "generate")).lower()
+    batch_size_val = source_job_data.get("batch_size", 1)
+    try:
+        batch_size_int = int(batch_size_val)
+    except (TypeError, ValueError):
+        batch_size_int = 1
 
-    image_paths = source_job_data.get("image_paths") or []
+    image_paths = source_job_data.get("image_paths")
+    if isinstance(image_paths, list):
+        image_count = len(image_paths)
+    else:
+        image_paths = []
+        image_count = 0
+
+    if job_type_snapshot == "wan_animation":
+        return [{"status": "error", "error_message_text": "Animated results cannot be re-animated."}]
+
+    is_single_result = (
+        job_type_snapshot == "upscale"
+        or batch_size_int == 1
+        or image_count == 1
+    )
+
+    if not is_single_result:
+        return [{"status": "error", "error_message_text": "WAN animation is only available for single-image jobs."}]
+
     if not image_paths:
         return [{"status": "error", "error_message_text": "Completed image file not available for animation."}]
 
@@ -913,20 +935,22 @@ async def process_kontext_edit_request(
     )
     resolved_mode = next((candidate for candidate in mode_candidates if candidate), None)
 
+    if 'qwen_edit' in params_dict and resolved_mode is None:
+        resolved_mode = 'qwen_edit'
     if 'qwen' in params_dict and resolved_mode is None:
-        resolved_mode = 'qwen'
+        resolved_mode = 'qwen_edit'
     if 'kontext' in params_dict and resolved_mode is None:
         resolved_mode = 'kontext'
 
     default_edit_mode = str(settings.get('default_editing_mode', 'kontext') or 'kontext').lower()
-    qwen_aliases = {'qwen', 'qwen_edit', 'qwen-image-edit', 'qwen_image_edit', 'qwenedit'}
+    qwen_aliases = {'qwen_edit', 'qwen', 'qwen-image-edit', 'qwen_image_edit', 'qwenedit'}
     kontext_aliases = {'kontext', 'kontext_edit', 'kontext-edit'}
 
     edit_mode = default_edit_mode
     if resolved_mode:
         resolved_norm = str(resolved_mode).lower()
         if resolved_norm in qwen_aliases:
-            edit_mode = 'qwen'
+            edit_mode = 'qwen_edit'
         elif resolved_norm in kontext_aliases:
             edit_mode = 'kontext'
 
@@ -934,10 +958,10 @@ async def process_kontext_edit_request(
     enhanced_instruction = clean_instruction
 
     if settings.get('llm_enhancer_enabled', False):
-        enhancer_target = 'qwen' if edit_mode == 'qwen' else 'kontext'
+        enhancer_target = 'qwen_edit' if edit_mode == 'qwen_edit' else 'kontext'
         enhancer_info['provider'] = settings.get('llm_provider', 'gemini')
         system_prompt_override = (
-            QWEN_ENHANCER_SYSTEM_PROMPT if enhancer_target == 'qwen'
+            QWEN_ENHANCER_SYSTEM_PROMPT if enhancer_target == 'qwen_edit'
             else KONTEXT_ENHANCER_SYSTEM_PROMPT
         )
         enhanced_res, err_msg = await util_enhance_prompt(
@@ -969,8 +993,8 @@ async def process_kontext_edit_request(
     final_mp_size = None
     final_denoise = None
 
-    if edit_mode == 'qwen':
-        final_steps = settings.get('qwen_steps', 28)
+    if edit_mode == 'qwen_edit':
+        final_steps = settings.get('qwen_edit_steps', 28)
         try:
             final_steps = int(float(final_steps))
         except (ValueError, TypeError):
@@ -981,7 +1005,7 @@ async def process_kontext_edit_request(
             except (ValueError, TypeError):
                 pass
 
-        final_guidance = settings.get('default_guidance_qwen', 5.5)
+        final_guidance = settings.get('default_guidance_qwen_edit', 5.5)
         try:
             final_guidance = float(final_guidance)
         except (ValueError, TypeError):
@@ -1040,7 +1064,7 @@ async def process_kontext_edit_request(
     if initial_interaction_obj and initial_interaction_obj.message and initial_interaction_obj.message.attachments:
         source_job_id = extract_job_id(initial_interaction_obj.message.attachments[0].filename) or "unknown"
 
-    if edit_mode == 'qwen':
+    if edit_mode == 'qwen_edit':
         job_id, workflow_payload, status_msg, job_details = modify_qwen_edit_prompt(
             image_urls=image_urls,
             instruction=enhanced_instruction,
@@ -1055,6 +1079,7 @@ async def process_kontext_edit_request(
             job_details.setdefault('aspect_ratio_str', final_aspect_ratio)
             job_details.setdefault('mp_size', final_mp_size)
             job_details.setdefault('guidance_qwen', final_guidance)
+            job_details.setdefault('guidance_qwen_edit', final_guidance)
             job_details.setdefault('guidance', final_guidance)
             job_details.setdefault('denoise', final_denoise)
             if 'model_used' not in job_details and job_details.get('qwen_model_used'):
@@ -1096,7 +1121,7 @@ async def process_kontext_edit_request(
             return str(value)
 
     shortened_instruction = textwrap.shorten(instruction, 100, placeholder='...')
-    if edit_mode == 'qwen':
+    if edit_mode == 'qwen_edit':
         guidance_display = _fmt_float(final_guidance, 1)
         denoise_display = _fmt_float(final_denoise, 2) if final_denoise is not None else '0.60'
         content = (

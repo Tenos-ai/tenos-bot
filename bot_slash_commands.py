@@ -58,12 +58,12 @@ def setup_slash_commands(tree: app_commands.CommandTree, bot_ref):
         image2="(Optional) A second image for stitching/editing.",
         image3="(Optional) A third image for stitching/editing.",
         image4="(Optional) A fourth image for stitching/editing.",
-        mode="Select 'qwen' to use Qwen Image Edit instead of Flux Kontext."
+        mode="Select \"Qwen Image Edit\" to use the Qwen Edit workflow instead of Flux Kontext."
     )
     @app_commands.choices(
         mode=[
             app_commands.Choice(name="Flux Kontext", value="kontext"),
-            app_commands.Choice(name="Qwen Image Edit", value="qwen"),
+            app_commands.Choice(name="Qwen Image Edit", value="qwen_edit"),
         ]
     )
     async def edit(

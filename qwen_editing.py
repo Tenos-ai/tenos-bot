@@ -84,9 +84,9 @@ def modify_qwen_edit_prompt(
     if len(image_urls) > 1:
         return None, None, "Qwen Image Edit currently supports a single base image.", None
 
-    model_setting = resolve_model_for_type(user_settings, "qwen")
+    model_setting = resolve_model_for_type(user_settings, "qwen_edit")
     if not model_setting:
-        return None, None, "Configure a Qwen checkpoint in settings before running an edit.", None
+        return None, None, "Configure a Qwen Edit checkpoint in settings before running an edit.", None
 
     actual_model_name = model_setting.split(":", 1)[-1].strip()
     try:
@@ -99,7 +99,7 @@ def modify_qwen_edit_prompt(
 
     clip_key = str(QWEN_CLIP_LOADER_NODE)
     clip_inputs = workflow.setdefault(clip_key, {}).setdefault("inputs", {})
-    clip_override = user_settings.get("default_qwen_clip")
+    clip_override = user_settings.get("default_qwen_edit_clip")
     if isinstance(clip_override, str) and clip_override.strip():
         clip_inputs["clip_name"] = clip_override.strip()
     else:
@@ -107,7 +107,7 @@ def modify_qwen_edit_prompt(
 
     vae_key = str(QWEN_VAE_LOADER_NODE)
     vae_inputs = workflow.setdefault(vae_key, {}).setdefault("inputs", {})
-    vae_override = user_settings.get("default_qwen_vae")
+    vae_override = user_settings.get("default_qwen_edit_vae")
     if isinstance(vae_override, str) and vae_override.strip():
         vae_inputs["vae_name"] = vae_override.strip()
     else:
@@ -124,7 +124,7 @@ def modify_qwen_edit_prompt(
     if sampling_key in workflow and "inputs" in workflow[sampling_key]:
         sampling_inputs = workflow[sampling_key]["inputs"]
         sampling_inputs["model"] = [lora_key, 0] if has_lora_node else [unet_key, 0]
-        edit_shift = user_settings.get("qwen_edit_shift", user_settings.get("default_qwen_shift", 0.0))
+        edit_shift = user_settings.get("qwen_edit_shift", 0.0)
         try:
             sampling_inputs["shift"] = float(edit_shift)
         except (TypeError, ValueError):
@@ -146,7 +146,11 @@ def modify_qwen_edit_prompt(
     workflow.setdefault(pos_key, {}).setdefault("inputs", {})["text"] = instruction.strip()
     workflow[pos_key]["inputs"]["clip"] = [lora_key, 1] if has_lora_node else [clip_key, 0]
 
-    neg_prompt = user_settings.get("default_qwen_negative_prompt", "") or ""
+    neg_prompt = (
+        user_settings.get("default_qwen_edit_negative_prompt")
+        or user_settings.get("default_qwen_negative_prompt")
+        or ""
+    )
     neg_key = str(QWEN_NEG_PROMPT_NODE)
     workflow.setdefault(neg_key, {}).setdefault("inputs", {})["text"] = neg_prompt
     workflow[neg_key]["inputs"]["clip"] = [lora_key, 1] if has_lora_node else [clip_key, 0]
@@ -187,6 +191,7 @@ def modify_qwen_edit_prompt(
         "seed": base_seed,
         "steps": steps_override,
         "guidance_qwen": guidance_override,
+        "guidance_qwen_edit": guidance_override,
         "guidance": guidance_override,
         "denoise": denoise_override,
         "image_urls": image_urls,

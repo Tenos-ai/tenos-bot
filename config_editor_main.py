@@ -935,11 +935,29 @@ class ConfigEditor:
         tk_var = self.settings_vars.get(var_key)
         if tk_var is None:
             return True
+
+        def _coerce_numeric(raw):
+            if is_float:
+                return float(raw)
+            return int(float(raw))
+
         try:
-            numeric = float(value) if is_float else int(value)
+            numeric = _coerce_numeric(value)
         except (ValueError, TypeError):
-            numeric = minimum
-        numeric = max(minimum, min(maximum, numeric))
+            try:
+                current_val = tk_var.get()
+                numeric = _coerce_numeric(current_val)
+            except (tk.TclError, ValueError, TypeError):
+                if minimum is not None:
+                    numeric = minimum
+                else:
+                    numeric = 0.0 if is_float else 0
+
+        if minimum is not None:
+            numeric = max(minimum, numeric)
+        if maximum is not None:
+            numeric = min(maximum, numeric)
+
         try:
             tk_var.set(numeric)
         except tk.TclError:
@@ -1996,7 +2014,20 @@ class ConfigEditor:
             help_label = ttk.Label(container, text="?", style="Help.TLabel")
 
             tk_var_instance = None
-            if var_key_name in ['default_guidance', 'upscale_factor', 'default_guidance_sdxl', 'default_guidance_qwen', 'default_guidance_wan', 'default_mp_size', 'kontext_guidance', 'kontext_mp_size']:
+            if var_key_name in [
+                'default_guidance',
+                'upscale_factor',
+                'default_guidance_sdxl',
+                'default_guidance_qwen',
+                'default_guidance_wan',
+                'default_mp_size',
+                'kontext_guidance',
+                'kontext_mp_size',
+                'default_qwen_shift',
+                'default_wan_shift',
+                'qwen_edit_denoise',
+                'qwen_edit_shift',
+            ]:
                 tk_var_instance = tk.DoubleVar()
             elif var_key_name in ['steps', 'sdxl_steps', 'qwen_steps', 'wan_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size', 'wan_animation_duration']:
                 tk_var_instance = tk.IntVar()
@@ -2066,9 +2097,16 @@ class ConfigEditor:
                 if display_options and len(display_options) > 15:
                     actions.append(("Search", lambda opts=display_options, var=tk_var_instance: self._open_search_dialog(label_txt, opts, var)))
             elif widget_class == ttk.Spinbox:
-                ui_element = ttk.Spinbox(container, textvariable=tk_var_instance, wrap=True, width=12, style="Tenos.TSpinbox", **widget_kwargs)
-                min_val = widget_kwargs.get('from_', 0)
-                max_val = widget_kwargs.get('to', 999999)
+                spinbox_kwargs = {
+                    "textvariable": tk_var_instance,
+                    "wrap": False,
+                    "width": 12,
+                    "style": "Tenos.TSpinbox",
+                }
+                spinbox_kwargs.update(widget_kwargs)
+                ui_element = ttk.Spinbox(container, **spinbox_kwargs)
+                min_val = widget_kwargs.get('from_', None)
+                max_val = widget_kwargs.get('to', None)
                 validator_cmd = self._get_spinbox_validator_command(
                     var_key_name,
                     min_val,
@@ -2191,12 +2229,12 @@ class ConfigEditor:
         qwen_clip_options = list(dict.fromkeys(['None'] + self.available_qwen_clips))
         create_setting_row_ui(qwen_section.body(), "Default Qwen CLIP", ttk.Combobox, qwen_clip_options, 'default_qwen_clip', section_key='qwen')
         create_setting_row_ui(qwen_section.body(), "Default Qwen VAE", ttk.Combobox, self.available_qwen_vaes, 'default_qwen_vae', section_key='qwen')
-        create_setting_row_ui(qwen_section.body(), "Default Qwen Shift", ttk.Spinbox, var_key_name='default_qwen_shift', section_key='qwen', from_=-10.0, to=10.0, increment=0.1, format="%.2f")
+        create_setting_row_ui(qwen_section.body(), "Default Qwen Shift", ttk.Spinbox, var_key_name='default_qwen_shift', section_key='qwen', from_=0.0, to=10.0, increment=0.1, format="%.2f")
 
         qwen_edit_section = CollapsibleSection(self.qwen_edit_settings_content_frame, "Qwen Edit Defaults", self.color)
         qwen_edit_section.pack(fill=tk.X, padx=4, pady=(0, 6))
         create_setting_row_ui(qwen_edit_section.body(), "Qwen Edit Denoise", ttk.Spinbox, var_key_name='qwen_edit_denoise', section_key='qwen_edit', from_=0.0, to=1.0, increment=0.01, format="%.2f")
-        create_setting_row_ui(qwen_edit_section.body(), "Qwen Edit Shift", ttk.Spinbox, var_key_name='qwen_edit_shift', section_key='qwen_edit', from_=-10.0, to=10.0, increment=0.1, format="%.2f")
+        create_setting_row_ui(qwen_edit_section.body(), "Qwen Edit Shift", ttk.Spinbox, var_key_name='qwen_edit_shift', section_key='qwen_edit', from_=0.0, to=10.0, increment=0.1, format="%.2f")
 
         wan_styles = sorted([name for name, data in self.styles_config.items() if data.get('model_type', 'all') in ['all', 'wan']])
         wan_section = CollapsibleSection(self.wan_settings_content_frame, "WAN Defaults", self.color)
@@ -2212,7 +2250,7 @@ class ConfigEditor:
         create_setting_row_ui(wan_section.body(), "Default WAN CLIP", ttk.Combobox, wan_clip_options, 'default_wan_clip', section_key='wan')
         create_setting_row_ui(wan_section.body(), "Default WAN VAE", ttk.Combobox, self.available_wan_vaes, 'default_wan_vae', section_key='wan')
         create_setting_row_ui(wan_section.body(), "Default Vision Encoder", ttk.Combobox, wan_vision_options, 'default_wan_vision_clip', section_key='wan')
-        create_setting_row_ui(wan_section.body(), "Default WAN Shift", ttk.Spinbox, var_key_name='default_wan_shift', section_key='wan', from_=-10.0, to=10.0, increment=0.1, format="%.2f")
+        create_setting_row_ui(wan_section.body(), "Default WAN Shift", ttk.Spinbox, var_key_name='default_wan_shift', section_key='wan', from_=0.0, to=10.0, increment=0.1, format="%.2f")
         create_setting_row_ui(wan_section.body(), "Animation Resolution", ttk.Entry, var_key_name='wan_animation_resolution', section_key='wan')
         create_setting_row_ui(wan_section.body(), "Animation Duration (frames)", ttk.Spinbox, var_key_name='wan_animation_duration', section_key='wan', from_=8, to=480, increment=1)
         create_setting_row_ui(wan_section.body(), "Animation Motion Profile", ttk.Combobox, ['slowmo', 'low', 'medium', 'high'], 'wan_animation_motion_profile', section_key='wan')

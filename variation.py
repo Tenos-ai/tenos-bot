@@ -488,7 +488,7 @@ def modify_variation_prompt(
             provider_enh = source_job_data_enh.get('llm_provider', "LLM").capitalize()
             enhancer_ref_text = f"\n> `(Based on Enhanced Prompt via {provider_enh})`"
 
-    runtime_animation_supported = bool(spec.supports_animation and batch_size == 1)
+    runtime_animation_supported = bool(batch_size == 1)
 
     job_details_dict_var = {
         "job_id": variation_job_id,
