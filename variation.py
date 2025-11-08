@@ -110,6 +110,27 @@ def _apply_flux_variation_inputs(
         modified_prompt[var_spec.batch_node]["inputs"]["amount"] = batch_size
 
 
+def _apply_sampling_shift_overrides(prompt: dict, shift_value: float | None) -> None:
+    if shift_value is None:
+        return
+
+    for node_data in prompt.values():
+        if not isinstance(node_data, dict):
+            continue
+        if node_data.get("class_type") not in {"ModelSamplingAuraFlow", "ModelSamplingSD3"}:
+            continue
+        inputs = node_data.setdefault("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+        inputs.pop("clip", None)
+        inputs.pop("model_b", None)
+        inputs.pop("cfg_rescale", None)
+        try:
+            inputs["shift"] = float(shift_value)
+        except (TypeError, ValueError):
+            inputs["shift"] = 0.0
+
+
 def _apply_checkpoint_variation_inputs(
     modified_prompt: dict,
     var_spec,
@@ -413,6 +434,15 @@ def modify_variation_prompt(
             secondary_node_id_var,
             file_name=secondary_override_var,
         )
+
+    shift_value_var = None
+    if base_model_type_for_variation_workflow in {'qwen', 'wan'}:
+        shift_candidate_var = settings.get(f"default_{base_model_type_for_variation_workflow}_shift", 0.0)
+        try:
+            shift_value_var = float(shift_candidate_var)
+        except (TypeError, ValueError):
+            shift_value_var = 0.0
+    _apply_sampling_shift_overrides(modified_variation_prompt, shift_value_var)
 
     lora_loader_node_id_for_var_style = var_spec.lora_node
     if lora_loader_node_id_for_var_style in modified_variation_prompt:

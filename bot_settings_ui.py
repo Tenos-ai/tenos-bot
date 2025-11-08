@@ -7,13 +7,13 @@ from settings_manager import (
     load_settings, save_settings,
     get_steps_choices, get_sdxl_steps_choices, get_qwen_steps_choices, get_wan_steps_choices,
     get_guidance_choices, get_sdxl_guidance_choices, get_qwen_guidance_choices, get_wan_guidance_choices,
-    get_t5_clip_choices, get_clip_l_choices, get_qwen_clip_choices, get_wan_clip_choices, get_wan_vision_clip_choices,
+    get_t5_clip_choices, get_clip_l_choices, get_sdxl_clip_choices, get_qwen_clip_choices, get_wan_clip_choices, get_wan_vision_clip_choices,
     get_style_choices_flux, get_style_choices_sdxl, get_style_choices_qwen, get_style_choices_wan,
     get_variation_mode_choices, get_batch_size_choices, get_variation_batch_size_choices,
     get_remix_mode_choices, get_upscale_factor_choices,
     get_llm_enhancer_choices, get_llm_provider_choices, get_llm_model_choices,
     get_mp_size_choices, get_display_prompt_preference_choices,
-    get_qwen_vae_choices, get_wan_vae_choices, get_wan_low_noise_unet_choices,
+    get_editing_mode_choices, get_flux_vae_choices, get_qwen_vae_choices, get_sdxl_vae_choices, get_wan_vae_choices, get_wan_low_noise_unet_choices,
     get_default_flux_model_choices, get_default_sdxl_model_choices,
     get_default_qwen_model_choices, get_default_wan_model_choices,
     get_active_model_family_choices, get_wan_animation_resolution_choices,
@@ -101,6 +101,19 @@ class ActiveModelFamilySelect(_ModelSettingSelect):
             convert_func=lambda value: str(value).lower(),
             content_message="Select Active Model Family:",
             post_save_hook=lambda data, value: sync_active_model_selection(data, active_family=str(value)),
+        )
+
+
+class EditingModeSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Default Editing Workflow",
+            setting_key='default_editing_mode',
+            choices_func=get_editing_mode_choices,
+            view_factory=lambda data: GeneralSettingsView(data),
+            convert_func=lambda value: str(value).lower(),
+            content_message="Configure General Settings:",
         )
 
 
@@ -239,6 +252,30 @@ class SDXLGuidanceSelect(_ModelSettingSelect):
         )
 
 
+class SDXLClipSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Default SDXL CLIP",
+            setting_key='default_sdxl_clip',
+            choices_func=get_sdxl_clip_choices,
+            view_factory=lambda data: SDXLSettingsView(data),
+            content_message="Configure SDXL Model Settings:",
+        )
+
+
+class SDXLVAESelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Default SDXL VAE",
+            setting_key='default_sdxl_vae',
+            choices_func=get_sdxl_vae_choices,
+            view_factory=lambda data: SDXLSettingsView(data),
+            content_message="Configure SDXL Model Settings:",
+        )
+
+
 class QwenGuidanceSelect(_ModelSettingSelect):
     def __init__(self, settings):
         super().__init__(
@@ -355,6 +392,21 @@ class ClipLSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         if not self.values: return
         self.settings['selected_clip_l'] = self.values[0]
+        save_settings(self.settings)
+        view = FluxClipSettingsView(self.settings)
+        await interaction.response.edit_message(content="Configure Flux CLIP Settings:", view=view)
+
+
+class FluxVAESelect(discord.ui.Select):
+    def __init__(self, settings):
+        self.settings = settings
+        choices = get_flux_vae_choices(self.settings)
+        super().__init__(options=choices, placeholder="Select Default Flux VAE")
+
+    async def callback(self, interaction: discord.Interaction):
+        if not self.values:
+            return
+        self.settings['default_flux_vae'] = self.values[0]
         save_settings(self.settings)
         view = FluxClipSettingsView(self.settings)
         await interaction.response.edit_message(content="Configure Flux CLIP Settings:", view=view)
@@ -677,6 +729,7 @@ class ModelClipSettingsView(BaseSettingsView):
 class GeneralSettingsView(BaseSettingsView):
     def __init__(self, settings_ref):
         super().__init__(settings_ref)
+        self.add_item(EditingModeSelect(self.settings))
         self.add_item(MPSizeSelect(self.settings))
         self.add_item(UpscaleFactorSelect(self.settings))
         self.add_item(BatchSizeSelect(self.settings))
@@ -707,12 +760,19 @@ class FluxClipSettingsView(BaseSettingsView):
         super().__init__(settings_ref)
         self.add_item(T5ClipSelect(self.settings))
         self.add_item(ClipLSelect(self.settings))
+        self.add_item(FluxVAESelect(self.settings))
 
 class SDXLSettingsView(BaseSettingsView):
     def __init__(self, settings_ref):
         super().__init__(settings_ref)
         default_select = DefaultSDXLModelSelect(self.settings)
         self.add_item(default_select)
+
+        clip_select = SDXLClipSelect(self.settings)
+        self.add_item(clip_select)
+
+        vae_select = SDXLVAESelect(self.settings)
+        self.add_item(vae_select)
 
         style_select = DefaultStyleSelectSDXL(self.settings)
         self.add_item(style_select)

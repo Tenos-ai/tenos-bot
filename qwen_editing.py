@@ -124,7 +124,11 @@ def modify_qwen_edit_prompt(
     if sampling_key in workflow and "inputs" in workflow[sampling_key]:
         sampling_inputs = workflow[sampling_key]["inputs"]
         sampling_inputs["model"] = [lora_key, 0] if has_lora_node else [unet_key, 0]
-        sampling_inputs["clip"] = [lora_key, 1] if has_lora_node else [clip_key, 0]
+        edit_shift = user_settings.get("qwen_edit_shift", user_settings.get("default_qwen_shift", 0.0))
+        try:
+            sampling_inputs["shift"] = float(edit_shift)
+        except (TypeError, ValueError):
+            sampling_inputs["shift"] = 0.0
 
     load_key = str(QWEN_IMG2IMG_LOAD_IMAGE_NODE)
     workflow.setdefault(load_key, {}).setdefault("inputs", {})["url_or_path"] = image_urls[0]

@@ -244,9 +244,13 @@ class FavoritesTab:
             print(f"EditorFavorites: Error loading {WAN_MODELS_FILE_NAME}: {e}")
             wan_data = {}
         wan_models = wan_data.get('checkpoints', []) if isinstance(wan_data, dict) else []
-        wan_models = sorted([m for m in wan_models if isinstance(m, str)], key=str.lower)
+        wan_models = [m for m in wan_models if isinstance(m, str)]
         wan_video_models = wan_data.get('video', []) if isinstance(wan_data, dict) else []
         wan_video_models = sorted([m for m in wan_video_models if isinstance(m, str)], key=str.lower)
+        if wan_video_models:
+            video_model_set = {name.lower() for name in wan_video_models}
+            wan_models = [m for m in wan_models if m.lower() not in video_model_set]
+        wan_models = sorted(wan_models, key=str.lower)
         row = 0
         for model_name in wan_models:
             var = tk.BooleanVar(value=(model_name in wan_favorites))

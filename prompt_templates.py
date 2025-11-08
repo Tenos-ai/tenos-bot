@@ -535,12 +535,10 @@ qwen_prompt = {
   str(QWEN_SAMPLING_NODE): {
       "inputs": {
           "model": [str(QWEN_LORA_NODE), 0],
-          "clip": [str(QWEN_LORA_NODE), 1],
-          "cfg_rescale": 3.1,
           "shift": 0.0,
       },
       "class_type": "ModelSamplingAuraFlow",
-      "widgets_values": [3.1, 0.0],
+      "widgets_values": [0.0],
       "_meta": {"title": "Qwen Model Sampling"},
   },
   str(QWEN_KSAMPLER_NODE): {
@@ -639,12 +637,10 @@ qwen_img2img_prompt = {
   str(QWEN_SAMPLING_NODE): {
       "inputs": {
           "model": [str(QWEN_LORA_NODE), 0],
-          "clip": [str(QWEN_LORA_NODE), 1],
-          "cfg_rescale": 3.1,
           "shift": 0.0,
       },
       "class_type": "ModelSamplingAuraFlow",
-      "widgets_values": [3.1, 0.0],
+      "widgets_values": [0.0],
       "_meta": {"title": "Qwen Model Sampling"},
   },
   str(QWEN_KSAMPLER_NODE): {
@@ -735,12 +731,10 @@ qwen_variation_prompt = {
   str(QWEN_VAR_SAMPLING_NODE): {
       "inputs": {
           "model": [str(QWEN_LORA_NODE), 0],
-          "clip": [str(QWEN_LORA_NODE), 1],
-          "cfg_rescale": 3.1,
           "shift": 0.0,
       },
       "class_type": "ModelSamplingAuraFlow",
-      "widgets_values": [3.1, 0.0],
+      "widgets_values": [0.0],
       "_meta": {"title": "Qwen Variation Model Sampling"},
   },
   str(QWEN_VAR_KSAMPLER_NODE): {
@@ -827,12 +821,10 @@ qwen_upscale_prompt = {
   str(QWEN_UPSCALE_SAMPLING_NODE): {
       "inputs": {
           "model": [str(QWEN_LORA_NODE), 0],
-          "clip": [str(QWEN_LORA_NODE), 1],
-          "cfg_rescale": 3.1,
           "shift": 0.0,
       },
       "class_type": "ModelSamplingAuraFlow",
-      "widgets_values": [3.1, 0.0],
+      "widgets_values": [0.0],
       "_meta": {"title": "Qwen Upscale Model Sampling"},
   },
   str(QWEN_UPSCALE_LOAD_IMAGE_NODE): {
@@ -944,12 +936,10 @@ qwen_edit_prompt = {
   str(QWEN_EDIT_SAMPLING_NODE): {
       "inputs": {
           "model": [str(QWEN_LORA_NODE), 0],
-          "clip": [str(QWEN_LORA_NODE), 1],
-          "cfg_rescale": 3.1,
           "shift": 0.0,
       },
       "class_type": "ModelSamplingAuraFlow",
-      "widgets_values": [3.1, 0.0],
+      "widgets_values": [0.0],
       "_meta": {"title": "Qwen Edit Model Sampling"},
   },
   str(QWEN_KSAMPLER_NODE): {
@@ -1036,13 +1026,10 @@ wan_prompt = {
   str(WAN_SAMPLING_NODE): {
       "inputs": {
           "model": [str(WAN_LORA_NODE), 0],
-          "model_b": [str(WAN_SECOND_UNET_LOADER_NODE), 0],
-          "clip": [str(WAN_LORA_NODE), 1],
-          "cfg_rescale": 8.0,
           "shift": 0.0,
       },
       "class_type": "ModelSamplingSD3",
-      "widgets_values": [8.0, 0.0],
+      "widgets_values": [0.0],
       "_meta": {"title": "WAN Model Sampling"},
   },
   str(WAN_KSAMPLER_NODE): {
@@ -1157,13 +1144,10 @@ wan_img2img_prompt = {
   str(WAN_SAMPLING_NODE): {
       "inputs": {
           "model": [str(WAN_LORA_NODE), 0],
-          "model_b": [str(WAN_SECOND_UNET_LOADER_NODE), 0],
-          "clip": [str(WAN_LORA_NODE), 1],
-          "cfg_rescale": 6.0,
           "shift": 0.0,
       },
       "class_type": "ModelSamplingSD3",
-      "widgets_values": [6.0, 0.0],
+      "widgets_values": [0.0],
       "_meta": {"title": "WAN Model Sampling"},
   },
   str(WAN_KSAMPLER_NODE): {
@@ -1278,13 +1262,10 @@ wan_variation_prompt = {
   str(WAN_VAR_SAMPLING_NODE): {
       "inputs": {
           "model": [str(WAN_LORA_NODE), 0],
-          "model_b": [str(WAN_SECOND_UNET_LOADER_NODE), 0],
-          "clip": [str(WAN_LORA_NODE), 1],
-          "cfg_rescale": 6.0,
           "shift": 0.0,
       },
       "class_type": "ModelSamplingSD3",
-      "widgets_values": [6.0, 0.0],
+      "widgets_values": [0.0],
       "_meta": {"title": "WAN Variation Model Sampling"},
   },
   str(WAN_VAR_KSAMPLER_NODE): {
@@ -1377,13 +1358,10 @@ wan_upscale_prompt = {
   str(WAN_UPSCALE_SAMPLING_NODE): {
       "inputs": {
           "model": [str(WAN_LORA_NODE), 0],
-          "model_b": [str(WAN_SECOND_UNET_LOADER_NODE), 0],
-          "clip": [str(WAN_LORA_NODE), 1],
-          "cfg_rescale": 6.0,
           "shift": 0.0,
       },
       "class_type": "ModelSamplingSD3",
-      "widgets_values": [6.0, 0.0],
+      "widgets_values": [0.0],
       "_meta": {"title": "WAN Upscale Model Sampling"},
   },
   str(WAN_UPSCALE_LOAD_IMAGE_NODE): {
@@ -1512,13 +1490,10 @@ wan_image_to_video_prompt = {
   str(WAN_I2V_SAMPLING_NODE): {
       "inputs": {
           "model": [str(WAN_LORA_NODE), 0],
-          "model_b": [str(WAN_SECOND_UNET_LOADER_NODE), 0],
-          "clip": [str(WAN_LORA_NODE), 1],
-          "cfg_rescale": 8.0,
           "shift": 0.0,
       },
       "class_type": "ModelSamplingSD3",
-      "widgets_values": [8.0, 0.0],
+      "widgets_values": [0.0],
       "_meta": {"title": "WAN Video Sampling"},
   },
   str(WAN_IMAGE_TO_VIDEO_NODE): {
