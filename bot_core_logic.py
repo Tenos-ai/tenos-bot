@@ -922,16 +922,13 @@ async def process_kontext_edit_request(
     qwen_aliases = {'qwen', 'qwen_edit', 'qwen-image-edit', 'qwen_image_edit', 'qwenedit'}
     kontext_aliases = {'kontext', 'kontext_edit', 'kontext-edit'}
 
+    edit_mode = default_edit_mode
     if resolved_mode:
         resolved_norm = str(resolved_mode).lower()
         if resolved_norm in qwen_aliases:
             edit_mode = 'qwen'
         elif resolved_norm in kontext_aliases:
             edit_mode = 'kontext'
-        else:
-            edit_mode = 'qwen' if default_edit_mode == 'qwen' else 'kontext'
-    else:
-        edit_mode = 'qwen' if default_edit_mode == 'qwen' else 'kontext'
 
     enhancer_info = {'used': False, 'provider': None, 'enhanced_text': None, 'error': None}
     enhanced_instruction = clean_instruction
