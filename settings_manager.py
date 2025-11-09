@@ -358,6 +358,23 @@ def load_settings():
 
         default_settings = _get_default_settings()
         updated = False
+
+        legacy_cfg_pairs = (
+            ("qwen_ksampler_cfg", "default_guidance_qwen"),
+            ("qwen_edit_ksampler_cfg", "default_guidance_qwen_edit"),
+        )
+        for legacy_key, guidance_key in legacy_cfg_pairs:
+            if legacy_key in settings:
+                legacy_value = settings.pop(legacy_key)
+                try:
+                    coerced = float(legacy_value)
+                except (TypeError, ValueError):
+                    coerced = None
+                if coerced is not None:
+                    current_guidance = settings.get(guidance_key)
+                    if current_guidance in (None, "") or current_guidance == default_settings.get(guidance_key):
+                        settings[guidance_key] = coerced
+                updated = True
         for key, default_value in default_settings.items():
             if key not in settings:
                 print(f"Warning: Setting '{key}' missing. Adding default value: {default_value}")
@@ -382,9 +399,7 @@ def load_settings():
             'flux_ksampler_denoise',
             'sdxl_ksampler_cfg',
             'sdxl_ksampler_denoise',
-            'qwen_ksampler_cfg',
             'qwen_ksampler_denoise',
-            'qwen_edit_ksampler_cfg',
             'qwen_edit_ksampler_denoise',
             'qwen_edit_cfg_rescale',
             'wan_stage1_cfg',
@@ -890,7 +905,7 @@ def _get_default_settings():
         "default_qwen_edit_checkpoint": default_qwen_edit_checkpoint_raw,
         "default_qwen_edit_clip": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
         "default_qwen_edit_vae": "qwen_image_vae.safetensors",
-        "default_guidance_qwen_edit": 5.5,
+        "default_guidance_qwen_edit": 2.5,
         "qwen_edit_steps": 28,
         WAN_CHECKPOINT_KEY: default_wan_checkpoint_raw,
         WAN_T2V_HIGH_NOISE_KEY: default_wan_checkpoint_raw
@@ -919,11 +934,9 @@ def _get_default_settings():
         "sdxl_ksampler_denoise": 1.0,
         "qwen_ksampler_sampler": "euler",
         "qwen_ksampler_scheduler": "normal",
-        "qwen_ksampler_cfg": 5.5,
         "qwen_ksampler_denoise": 1.0,
         "qwen_edit_ksampler_sampler": "euler",
         "qwen_edit_ksampler_scheduler": "normal",
-        "qwen_edit_ksampler_cfg": 5.5,
         "qwen_edit_ksampler_denoise": 0.6,
         "wan_stage1_add_noise": "enable",
         "wan_stage1_noise_mode": "randomize",
@@ -965,7 +978,7 @@ def _get_default_settings():
         "qwen_upscale_sampler": "euler",
         "qwen_upscale_scheduler": "normal",
         "qwen_upscale_steps": 16,
-        "qwen_upscale_cfg": 5.5,
+        "qwen_upscale_cfg": 2.5,
         "qwen_upscale_denoise": 0.2,
         "selected_vae": None,
         "default_style_flux": "off",
@@ -977,7 +990,7 @@ def _get_default_settings():
         "default_batch_size": 1,
         "default_guidance": 3.5,
         "default_guidance_sdxl": 7.0,
-        "default_guidance_qwen": 5.5,
+        "default_guidance_qwen": 2.5,
         "default_guidance_wan": 6.0,
         "default_sdxl_negative_prompt": "",
         "default_qwen_negative_prompt": "",
@@ -1029,9 +1042,7 @@ def save_settings(settings):
             'flux_ksampler_denoise',
             'sdxl_ksampler_cfg',
             'sdxl_ksampler_denoise',
-            'qwen_ksampler_cfg',
             'qwen_ksampler_denoise',
-            'qwen_edit_ksampler_cfg',
             'qwen_edit_ksampler_denoise',
             'wan_stage1_cfg',
             'wan_stage1_denoise',
@@ -1747,9 +1758,9 @@ def get_qwen_guidance_choices(settings):
 
 def get_qwen_edit_guidance_choices(settings):
     try:
-        current_guidance = float(settings.get('default_guidance_qwen_edit', 5.5))
+        current_guidance = float(settings.get('default_guidance_qwen_edit', 2.5))
     except (ValueError, TypeError):
-        current_guidance = 5.5
+        current_guidance = 2.5
 
     config = GUIDANCE_CONFIG.get('qwen_edit', GUIDANCE_CONFIG['qwen'])
     values = [round(value, 1) for value in np.arange(config['start'], config['stop'] + config['step'], config['step'])]

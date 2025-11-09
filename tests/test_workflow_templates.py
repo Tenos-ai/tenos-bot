@@ -365,7 +365,7 @@ class WorkflowTemplateTests(unittest.TestCase):
                 user_settings=settings,
                 base_seed=42,
                 steps_override=20,
-                guidance_override=5.5,
+                guidance_override=2.5,
                 denoise_override=0.6,
                 cfg_rescale_override=1.0,
             )

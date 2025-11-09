@@ -823,7 +823,7 @@ qwen_prompt = {
       "inputs": {
           "seed": 12345,
           "steps": 28,
-          "cfg": 5.5,
+          "cfg": 2.5,
           "sampler_name": "euler",
           "scheduler": "normal",
           "denoise": 1.0,
@@ -1119,7 +1119,7 @@ qwen_upscale_prompt = {
       "inputs": {
           "seed": 55555,
           "steps": 16,
-          "cfg": 5.5,
+          "cfg": 2.5,
           "sampler_name": "euler",
           "scheduler": "normal",
           "denoise": 0.2,
@@ -1225,7 +1225,7 @@ qwen_edit_prompt = {
       "inputs": {
           "seed": 24680,
           "steps": 24,
-          "cfg": 5.5,
+          "cfg": 2.5,
           "sampler_name": "euler",
           "scheduler": "normal",
           "denoise": 0.6,
