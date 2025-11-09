@@ -69,8 +69,8 @@ class WorkflowTemplateTests(unittest.TestCase):
                 template = copy_generation_template(spec.generation, is_img2img=False)
                 if key == "wan":
                     self.assertTrue(
-                        _contains_class(template, "EmptyHunyuanLatentVideo"),
-                        msg="WAN generation template must seed an EmptyHunyuanLatentVideo node",
+                        _contains_class(template, "WanVideoEmptyEmbeds"),
+                        msg="WAN generation template must seed a WanVideoEmptyEmbeds node",
                     )
                 else:
                     self.assertTrue(
@@ -172,6 +172,12 @@ class WorkflowTemplateTests(unittest.TestCase):
             _contains_class(prompt_templates.qwen_edit_prompt, "TenosResizeToTargetPixels"),
             msg="Qwen edit prompt must pass through Tenos resize",
         )
+        sampling_inputs = prompt_templates.qwen_edit_prompt[str(prompt_templates.QWEN_EDIT_SAMPLING_NODE)]["inputs"]
+        self.assertEqual(
+            sampling_inputs.get("cfg_rescale"),
+            1.0,
+            msg="Qwen edit sampling node should default cfg_rescale to 1.0",
+        )
 
     def test_animation_flag_present_for_wan_only(self) -> None:
         self.assertTrue(
@@ -234,158 +240,107 @@ class WorkflowTemplateTests(unittest.TestCase):
             msg="Qwen positive prompt must continue to consume the LoRA clip output",
         )
 
-    def test_wan_templates_include_loader_nodes(self) -> None:
+    def test_wan_templates_use_video_wrapper_nodes(self) -> None:
         wan_spec = MODEL_REGISTRY["wan"]
+
         gen_template = copy_generation_template(wan_spec.generation, is_img2img=False)
-        self.assertTrue(_contains_class(gen_template, "UNETLoader"))
-        self.assertTrue(_contains_class(gen_template, "CLIPLoader"))
-        self.assertTrue(_contains_class(gen_template, "VAELoader"))
-        self.assertTrue(
-            _contains_class(gen_template, "EmptyHunyuanLatentVideo"),
-            msg="WAN generation template should seed EmptyHunyuanLatentVideo",
+        self.assertTrue(_contains_class(gen_template, "WanVideoModelLoader"))
+        self.assertTrue(_contains_class(gen_template, "LoadWanVideoT5TextEncoder"))
+        self.assertTrue(_contains_class(gen_template, "WanVideoVAELoader"))
+        self.assertTrue(_contains_class(gen_template, "WanVideoEmptyEmbeds"))
+        loader_inputs = gen_template[str(prompt_templates.WAN_MODEL_LOADER_NODE)]["inputs"]
+        self.assertEqual(
+            loader_inputs.get("model"),
+            "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors",
+            msg="WAN t2v workflow should default to the WAN 2.2 high-noise 14B checkpoint",
         )
-        sampling_inputs = gen_template[str(prompt_templates.WAN_SAMPLING_NODE)]["inputs"]
-        self.assertNotIn(
-            "model_b",
-            sampling_inputs,
-            msg="WAN sampling should now rely on a single combined model input",
+        self.assertEqual(loader_inputs.get("base_precision"), "fp16_fast")
+        self.assertEqual(loader_inputs.get("quantization"), "fp8_e4m3fn_scaled")
+        self.assertEqual(loader_inputs.get("attention_mode"), "sageattn")
+        t5_inputs = gen_template[str(prompt_templates.WAN_T5_LOADER_NODE)]["inputs"]
+        self.assertEqual(
+            t5_inputs.get("model_name"),
+            "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+            msg="WAN workflows should load the fp8 WAN 2.2 text encoder by default",
         )
-        self.assertNotIn(
-            "clip",
-            sampling_inputs,
-            msg="WAN sampling node should not request a direct clip input",
+        vae_inputs = gen_template[str(prompt_templates.WAN_VAE_LOADER_NODE)]["inputs"]
+        self.assertEqual(
+            vae_inputs.get("model_name"),
+            "wan2.2_vae.safetensors",
+            msg="WAN workflows should load the WAN 2.2 VAE by default",
+        )
+        sampler_inputs = gen_template[str(prompt_templates.WAN_SAMPLER_NODE)]["inputs"]
+        self.assertEqual(
+            sampler_inputs.get("model"),
+            [str(prompt_templates.WAN_MODEL_LOADER_NODE), 0],
+            msg="WAN sampler should consume the WanVideoModelLoader output",
         )
         self.assertEqual(
-            sampling_inputs.get("shift"),
-            8.0,
-            msg="WAN sampling node should seed shift to 8.0",
+            sampler_inputs.get("image_embeds"),
+            [str(prompt_templates.WAN_IMAGE_EMBEDS_NODE), 0],
+            msg="WAN sampler should consume the WanVideoEmptyEmbeds output",
         )
-        self.assertIn(
-            str(prompt_templates.WAN_SECOND_SAMPLING_NODE),
-            gen_template,
-            msg="WAN workflow should include a refiner sampling node",
+        self.assertEqual(
+            sampler_inputs.get("text_embeds"),
+            [str(prompt_templates.WAN_TEXT_ENCODER_NODE), 0],
+            msg="WAN sampler should consume the WanVideoTextEncode output",
         )
-        refiner_sampling_inputs = gen_template[str(prompt_templates.WAN_SECOND_SAMPLING_NODE)]["inputs"]
+        self.assertEqual(
+            sampler_inputs.get("denoise_strength"),
+            1.0,
+            msg="WAN sampler should default denoise strength to 1.0",
+        )
         self.assertNotIn(
-            "model_b",
-            refiner_sampling_inputs,
-            msg="WAN refiner sampling should rely on the combined model output",
+            "samples",
+            sampler_inputs,
+            msg="Text-to-video template should not attach latent samples to the sampler",
         )
-        self.assertNotIn(
-            "clip",
-            refiner_sampling_inputs,
-            msg="WAN refiner sampling node should not request a direct clip input",
-        )
+
+        img2img_template = copy_generation_template(wan_spec.generation, is_img2img=True)
+        encode_node_id = str(prompt_templates.WAN_IMAGE_ENCODE_NODE)
+        img_loader_inputs = img2img_template[str(prompt_templates.WAN_MODEL_LOADER_NODE)]["inputs"]
         self.assertEqual(
-            refiner_sampling_inputs.get("shift"),
-            8.0,
-            msg="WAN refiner sampling node should seed shift to 8.0",
+            img_loader_inputs.get("model"),
+            "wan2.2_i2v_high_noise_14B_fp16.safetensors",
+            msg="WAN img2img workflow should default to the WAN 2.2 i2v high-noise checkpoint",
         )
-        initial_ksampler_node = gen_template.get(str(prompt_templates.WAN_INITIAL_KSAMPLER_NODE))
-        self.assertIsNotNone(initial_ksampler_node, "WAN workflow should include an initial KSampler stage")
-        if initial_ksampler_node:
-            self.assertEqual(
-                initial_ksampler_node.get("class_type"),
-                "KSamplerAdvanced",
-                msg="WAN initial stage should use KSamplerAdvanced",
-            )
-            initial_inputs = initial_ksampler_node.get("inputs", {})
-            self.assertEqual(
-                initial_inputs.get("model"),
-                [str(prompt_templates.WAN_SAMPLING_NODE), 1],
-                msg="WAN initial sampler must use the high-noise model shift output",
-            )
-            self.assertEqual(
-                initial_inputs.get("latent_image"),
-                [str(prompt_templates.WAN_LATENT_NODE), 0],
-                msg="WAN initial sampler must consume the latent generator output",
-            )
-        final_inputs = gen_template[str(prompt_templates.WAN_KSAMPLER_NODE)]["inputs"]
+        self.assertEqual(img_loader_inputs.get("base_precision"), "fp16_fast")
+        self.assertEqual(img_loader_inputs.get("quantization"), "disabled")
+        self.assertEqual(img_loader_inputs.get("attention_mode"), "sageattn")
+        img_sampler_inputs = img2img_template[str(prompt_templates.WAN_SAMPLER_NODE)]["inputs"]
         self.assertEqual(
-            final_inputs.get("model"),
-            [str(prompt_templates.WAN_SECOND_SAMPLING_NODE), 1],
-            msg="WAN refiner sampler must use the low-noise model shift output",
+            img_sampler_inputs.get("samples"),
+            [encode_node_id, 0],
+            msg="WAN img2img sampler should consume the WanVideoEncode output",
         )
+        embeds_inputs = img2img_template[str(prompt_templates.WAN_IMAGE_EMBEDS_NODE)]["inputs"]
         self.assertEqual(
-            final_inputs.get("latent_image"),
-            [str(prompt_templates.WAN_INITIAL_KSAMPLER_NODE), 0],
-            msg="WAN refiner should consume the first sampler output",
+            embeds_inputs.get("extra_latents"),
+            [encode_node_id, 0],
+            msg="WAN img2img embeds should forward the encoded latent",
         )
 
         var_template = copy_variation_template(wan_spec.variation)
-        self.assertTrue(_contains_class(var_template, "UNETLoader"))
-        self.assertTrue(_contains_class(var_template, "CLIPLoader"))
-        self.assertTrue(_contains_class(var_template, "VAELoader"))
-        var_sampling_inputs = var_template[str(prompt_templates.WAN_VAR_SAMPLING_NODE)]["inputs"]
-        self.assertNotIn(
-            "model_b",
-            var_sampling_inputs,
-            msg="WAN variation sampling should only depend on the primary model output",
-        )
-        self.assertNotIn(
-            "clip",
-            var_sampling_inputs,
-            msg="WAN variation sampling should not take a clip input",
-        )
+        self.assertTrue(_contains_class(var_template, "WanVideoEncode"))
+        var_sampler_inputs = var_template[str(prompt_templates.WAN_SAMPLER_NODE)]["inputs"]
         self.assertEqual(
-            var_sampling_inputs.get("shift"),
-            0.0,
-            msg="WAN variation sampling should seed shift to 0.0",
+            var_sampler_inputs.get("samples"),
+            [encode_node_id, 0],
+            msg="WAN variation sampler should reuse the encoded latent",
         )
 
-        self.assertIsNone(
-            wan_spec.upscale,
-            "WAN model should not expose a dedicated upscale workflow",
-        )
-
-    def test_wan_animation_template_contains_required_nodes(self) -> None:
-        wan_template = copy_animation_template(MODEL_REGISTRY["wan"])
-        self.assertTrue(_contains_class(wan_template, "WanImageToVideo"))
-        self.assertTrue(_contains_class(wan_template, "CLIPVisionLoader"))
-        self.assertTrue(_contains_class(wan_template, "TenosResizeToTargetPixels"))
-        self.assertTrue(_contains_class(wan_template, "SaveVideo"))
-        sampling_inputs = wan_template[str(prompt_templates.WAN_I2V_SAMPLING_NODE)]["inputs"]
-        self.assertNotIn(
-            "model_b",
-            sampling_inputs,
-            msg="WAN animation sampling should only rely on the upstream model",
-        )
-        self.assertNotIn(
-            "clip",
-            sampling_inputs,
-            msg="WAN animation sampling should not include a clip input",
-        )
+        anim_template = copy_animation_template(wan_spec)
+        anim_sampler_inputs = anim_template[str(prompt_templates.WAN_SAMPLER_NODE)]["inputs"]
         self.assertEqual(
-            sampling_inputs.get("shift"),
-            8.0,
-            msg="WAN animation sampling should seed shift to 8.0",
+            anim_sampler_inputs.get("samples"),
+            [encode_node_id, 0],
+            msg="WAN animation sampler should consume the WanVideoEncode output",
         )
-        ksampler_one_inputs = wan_template[str(prompt_templates.WAN_I2V_KSAMPLER_NODE)]["inputs"]
+        anim_embed_inputs = anim_template[str(prompt_templates.WAN_IMAGE_EMBEDS_NODE)]["inputs"]
         self.assertEqual(
-            ksampler_one_inputs.get("model"),
-            [str(prompt_templates.WAN_I2V_SAMPLING_NODE), 1],
-            msg="WAN animation stage one should use the high-noise model shift output",
-        )
-        self.assertIn(
-            str(prompt_templates.WAN_I2V_SECOND_KSAMPLER_NODE),
-            wan_template,
-            msg="WAN animation workflow should include a refiner sampler",
-        )
-        second_ksampler_inputs = wan_template[str(prompt_templates.WAN_I2V_SECOND_KSAMPLER_NODE)]["inputs"]
-        self.assertEqual(
-            second_ksampler_inputs.get("model"),
-            [str(prompt_templates.WAN_I2V_SECOND_SAMPLING_NODE), 1],
-            msg="WAN animation refiner should use the low-noise model shift output",
-        )
-        self.assertEqual(
-            second_ksampler_inputs.get("positive"),
-            [str(prompt_templates.WAN_IMAGE_TO_VIDEO_NODE), 0],
-            msg="WAN animation refiner should inherit the positive prompt from WanImageToVideo",
-        )
-        self.assertEqual(
-            second_ksampler_inputs.get("negative"),
-            [str(prompt_templates.WAN_IMAGE_TO_VIDEO_NODE), 1],
-            msg="WAN animation refiner should inherit the negative prompt from WanImageToVideo",
+            anim_embed_inputs.get("extra_latents"),
+            [encode_node_id, 0],
+            msg="WAN animation embeds should include the encoded latent",
         )
 
     def test_qwen_edit_falls_back_when_lora_missing(self) -> None:
@@ -412,6 +367,7 @@ class WorkflowTemplateTests(unittest.TestCase):
                 steps_override=20,
                 guidance_override=5.5,
                 denoise_override=0.6,
+                cfg_rescale_override=1.0,
             )
 
             sampling_inputs = workflow[str(QWEN_EDIT_SAMPLING_NODE)]["inputs"]

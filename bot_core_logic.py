@@ -1027,6 +1027,11 @@ async def process_kontext_edit_request(
             except (ValueError, TypeError):
                 pass
 
+        final_cfg_rescale = settings.get('qwen_edit_cfg_rescale', 1.0)
+        try:
+            final_cfg_rescale = float(final_cfg_rescale)
+        except (ValueError, TypeError):
+            final_cfg_rescale = 1.0
         final_mp_size = 'N/A (Qwen Edit)'
     else:
         final_steps = settings.get('kontext_steps', 32)
@@ -1073,6 +1078,7 @@ async def process_kontext_edit_request(
             steps_override=final_steps,
             guidance_override=final_guidance,
             denoise_override=final_denoise if final_denoise is not None else 0.6,
+            cfg_rescale_override=final_cfg_rescale,
             source_job_id=source_job_id,
         )
         if job_details is not None:

@@ -32,28 +32,6 @@ def _normalize_path_for_comfyui(path: str | None) -> str | None:
         normalized = "/" + normalized.lstrip("/")
     return normalized
 
-
-def _apply_sampling_shift_overrides(prompt: Dict[str, Any], shift_value: float | None) -> None:
-    if shift_value is None:
-        return
-
-    for node_data in prompt.values():
-        if not isinstance(node_data, dict):
-            continue
-        if node_data.get("class_type") not in {"ModelSamplingAuraFlow", "ModelSamplingSD3"}:
-            continue
-        inputs = node_data.setdefault("inputs", {})
-        if not isinstance(inputs, dict):
-            continue
-        inputs.pop("clip", None)
-        inputs.pop("model_b", None)
-        inputs.pop("cfg_rescale", None)
-        try:
-            inputs["shift"] = float(shift_value)
-        except (TypeError, ValueError):
-            inputs["shift"] = 0.0
-
-
 def _apply_loader_filename(node: Dict[str, Any], *, field_name: str, file_name: str | None) -> None:
     """Update loader node inputs and widgets with a new filename."""
 
@@ -108,18 +86,6 @@ async def prepare_wan_animation_prompt(
     settings = load_settings()
     wan_spec = get_model_spec("wan")
     template = copy_animation_template(wan_spec)
-
-    source_model_type = str(
-        source_job_data.get("model_type_for_enhancer")
-        or source_job_data.get("model_type")
-        or ""
-    ).lower()
-
-    default_high_unet = _extract_loader_default(template, "wan_unet_high", "unet_name")
-    default_low_unet = _extract_loader_default(template, "wan_unet_low", "unet_name")
-    default_clip_name = _extract_loader_default(template, "wan_clip", "clip_name")
-    default_vision_clip = _extract_loader_default(template, "wan_i2v_vision_clip", "clip_name")
-    default_vae_name = _extract_loader_default(template, "wan_vae", "vae_name")
 
     motion_profile = str(
         source_job_data.get(
@@ -198,23 +164,29 @@ async def prepare_wan_animation_prompt(
         or ""
     )
 
-    high_noise_unet = _pick_animation_asset(
-        settings.get("default_wan_i2v_high_noise_unet"),
+    model_loader_node_id = wan_spec.generation.model_loader_node
+    t5_loader_node_id = wan_spec.generation.t5_loader_node
+    text_encoder_node_id = wan_spec.generation.text_encoder_node
+    vae_loader_node_id = wan_spec.generation.vae_loader_node
+    image_loader_node_id = wan_spec.generation.image_loader_node
+    image_resize_node_id = wan_spec.generation.image_resize_node
+    image_encode_node_id = wan_spec.generation.image_encode_node
+    image_embeds_node_id = wan_spec.generation.latent_node
+    sampler_node_id = wan_spec.generation.ksampler_node
+    decode_node_id = getattr(wan_spec.generation, "video_decode_node", None)
+    save_node_id = wan_spec.generation.save_node
+
+    default_model_name = _extract_loader_default(template, model_loader_node_id, "model")
+    default_t5_name = _extract_loader_default(template, t5_loader_node_id, "model_name")
+    default_vae_name = _extract_loader_default(template, vae_loader_node_id, "model_name")
+
+    model_name = _pick_animation_asset(
         settings.get("default_wan_checkpoint"),
-        default_high_unet,
+        default_model_name,
     )
-    low_noise_unet = _pick_animation_asset(
-        settings.get("default_wan_i2v_low_noise_unet"),
-        settings.get("default_wan_low_noise_unet"),
-        default_low_unet,
-    )
-    clip_name = _pick_animation_asset(
+    t5_model_name = _pick_animation_asset(
         settings.get("default_wan_clip"),
-        default_clip_name,
-    )
-    vision_clip = _pick_animation_asset(
-        settings.get("default_wan_vision_clip"),
-        default_vision_clip,
+        default_t5_name,
     )
     vae_name = _pick_animation_asset(
         settings.get("default_wan_vae"),
@@ -240,111 +212,128 @@ async def prepare_wan_animation_prompt(
     save_prefix = _normalize_path_for_comfyui(os.path.join(animations_dir, f"WAN_ANIM_{job_id}"))
 
     try:
-        high_node = template.get("wan_unet_high")
-        _apply_loader_filename(high_node, field_name="unet_name", file_name=high_noise_unet)
+        model_node = template.get(model_loader_node_id)
+        _apply_loader_filename(model_node, field_name="model", file_name=model_name)
 
-        low_node = template.get("wan_unet_low")
-        _apply_loader_filename(low_node, field_name="unet_name", file_name=low_noise_unet)
+        t5_node = template.get(t5_loader_node_id)
+        _apply_loader_filename(t5_node, field_name="model_name", file_name=t5_model_name)
 
-        clip_node = template.get("wan_clip")
-        if clip_node and clip_name:
-            clip_inputs = clip_node.setdefault("inputs", {})
-            clip_inputs["clip_name"] = clip_name
-            widgets = clip_node.get("widgets_values")
-            if isinstance(widgets, list) and widgets:
-                widgets[0] = clip_name
+        vae_node = template.get(vae_loader_node_id)
+        _apply_loader_filename(vae_node, field_name="model_name", file_name=vae_name)
 
-        vision_node = template.get("wan_i2v_vision_clip")
-        _apply_loader_filename(vision_node, field_name="clip_name", file_name=vision_clip)
+        if text_encoder_node_id and text_encoder_node_id in template:
+            text_node = template[text_encoder_node_id]
+            encoder_inputs = text_node.setdefault("inputs", {})
+            encoder_inputs["positive_prompt"] = animation_prompt_text
+            encoder_inputs["negative_prompt"] = negative_prompt_text
 
-        vae_node = template.get("wan_vae")
-        _apply_loader_filename(vae_node, field_name="vae_name", file_name=vae_name)
-
-        load_image_node = template.get("wan_i2v_image")
-        if load_image_node and isinstance(load_image_node.get("widgets_values"), list):
-            load_image_node["widgets_values"][0] = start_image_norm or ""
+        if image_loader_node_id and image_loader_node_id in template:
+            load_image_node = template[image_loader_node_id]
             load_inputs = load_image_node.setdefault("inputs", {})
-            if isinstance(load_inputs, dict):
-                load_inputs["image"] = start_image_norm or ""
+            load_inputs["url_or_path"] = start_image_norm or ""
+            widgets = load_image_node.get("widgets_values")
+            if isinstance(widgets, list) and widgets:
+                widgets[0] = start_image_norm or ""
 
-        pos_prompt_node = template.get("wan_pos_prompt")
-        if pos_prompt_node:
-            inputs = pos_prompt_node.setdefault("inputs", {})
-            inputs["text"] = animation_prompt_text
+        if image_resize_node_id and image_resize_node_id in template:
+            resize_inputs = template[image_resize_node_id].setdefault("inputs", {})
+            resize_inputs["image"] = [str(image_loader_node_id), 0]
 
-        neg_prompt_node = template.get("wan_neg_prompt")
-        if neg_prompt_node:
-            inputs = neg_prompt_node.setdefault("inputs", {})
-            inputs["text"] = negative_prompt_text
+        if image_encode_node_id and image_encode_node_id in template:
+            encode_node = template[image_encode_node_id]
+            encode_inputs = encode_node.setdefault("inputs", {})
+            encode_inputs.update(
+                {
+                    "vae": [str(vae_loader_node_id), 0],
+                    "image": [str(image_resize_node_id), 0],
+                    "enable_vae_tiling": False,
+                    "tile_x": 272,
+                    "tile_y": 272,
+                    "tile_stride_x": 144,
+                    "tile_stride_y": 128,
+                    "noise_aug_strength": 0.0,
+                    "latent_strength": 1.0,
+                }
+            )
+            encode_node["widgets_values"] = [False, 272, 272, 144, 128, 0.0, 1.0]
 
-        ksampler_node = template.get("wan_i2v_ksampler")
-        if ksampler_node and isinstance(ksampler_node.get("widgets_values"), list):
-            widgets = ksampler_node["widgets_values"]
-            if widgets:
-                widgets[0] = int(animation_seed)
-            if len(widgets) > 1:
-                widgets[1] = "fixed"
-            if len(widgets) > 2:
-                widgets[2] = sampler_steps
-            if len(widgets) > 3:
-                widgets[3] = float(sampler_guidance)
-            ksampler_inputs = ksampler_node.setdefault("inputs", {})
-            if isinstance(ksampler_inputs, dict):
-                ksampler_inputs["seed"] = int(animation_seed)
-                ksampler_inputs["steps"] = sampler_steps
-                ksampler_inputs["cfg"] = float(sampler_guidance)
-                if "sampler_name" not in ksampler_inputs or not ksampler_inputs.get("sampler_name"):
-                    ksampler_inputs["sampler_name"] = "uni_pc"
-                if "scheduler" not in ksampler_inputs or not ksampler_inputs.get("scheduler"):
-                    ksampler_inputs["scheduler"] = "simple"
-                if "denoise" not in ksampler_inputs or ksampler_inputs.get("denoise") is None:
-                    ksampler_inputs["denoise"] = 1.0
+        if image_embeds_node_id and image_embeds_node_id in template:
+            embed_node = template[image_embeds_node_id]
+            embed_inputs = embed_node.setdefault("inputs", {})
+            embed_inputs.update({
+                "width": width_val,
+                "height": height_val,
+                "num_frames": duration_frames,
+                "extra_latents": [str(image_encode_node_id), 0],
+            })
+            embed_node["widgets_values"] = [width_val, height_val, duration_frames]
 
-        image_to_video_node = template.get("wan_image_to_video")
-        if image_to_video_node and isinstance(image_to_video_node.get("widgets_values"), list):
-            widgets = image_to_video_node["widgets_values"]
-            if widgets:
-                widgets[0] = width_val
-            if len(widgets) > 1:
-                widgets[1] = height_val
-            if len(widgets) > 2:
-                widgets[2] = duration_frames
-            if len(widgets) > 3:
-                widgets[3] = 1
-            image_to_video_inputs = image_to_video_node.setdefault("inputs", {})
-            if isinstance(image_to_video_inputs, dict):
-                image_to_video_inputs["width"] = width_val
-                image_to_video_inputs["height"] = height_val
-                image_to_video_inputs["length"] = duration_frames
-                image_to_video_inputs["batch_size"] = 1
+        sampler_node = template.get(sampler_node_id)
+        if sampler_node:
+            sampler_inputs = sampler_node.setdefault("inputs", {})
+            default_settings = _get_default_settings()
+            default_shift = default_settings.get("default_wan_shift", 8.0)
+            shift_candidate_anim = settings.get("default_wan_shift", default_shift)
+            try:
+                shift_value_anim = float(shift_candidate_anim)
+            except (TypeError, ValueError):
+                shift_value_anim = float(default_shift)
 
-        create_video_node = template.get("wan_i2v_create")
-        if create_video_node and isinstance(create_video_node.get("widgets_values"), list) and create_video_node["widgets_values"]:
-            # Keep fps default but ensure integer formatting
-            create_video_node["widgets_values"][0] = int(create_video_node["widgets_values"][0] or 16)
-            create_inputs = create_video_node.setdefault("inputs", {})
-            if isinstance(create_inputs, dict):
-                create_inputs["fps"] = int(create_video_node["widgets_values"][0])
+            sampler_inputs.update(
+                {
+                    "seed": int(animation_seed),
+                    "steps": sampler_steps,
+                    "cfg": float(sampler_guidance),
+                    "shift": float(shift_value_anim),
+                    "denoise_strength": 1.0,
+                    "samples": [str(image_encode_node_id), 0],
+                    "add_noise_to_samples": False,
+                }
+            )
 
-        save_video_node = template.get("wan_i2v_save")
-        if save_video_node and isinstance(save_video_node.get("widgets_values"), list) and save_video_node["widgets_values"]:
-            save_video_node["widgets_values"][0] = save_prefix or "wanbot/ANIMATION"
+            widgets = sampler_node.setdefault("widgets_values", [])
+            default_widgets = [
+                sampler_steps,
+                float(sampler_guidance),
+                float(shift_value_anim),
+                int(animation_seed),
+                "fixed",
+                True,
+                sampler_inputs.get("scheduler", "unipc"),
+                sampler_inputs.get("riflex_freq_index", 0),
+                1.0,
+                sampler_inputs.get("batched_cfg", False),
+                sampler_inputs.get("rope_function", "comfy"),
+                sampler_inputs.get("start_step", 0),
+                sampler_inputs.get("end_step", -1),
+                False,
+                "",
+            ]
+            if not widgets:
+                widgets.extend(default_widgets)
+            else:
+                while len(widgets) < len(default_widgets):
+                    widgets.append(default_widgets[len(widgets)])
+                widgets[0] = sampler_steps
+                widgets[1] = float(sampler_guidance)
+                widgets[2] = float(shift_value_anim)
+                widgets[3] = int(animation_seed)
+                widgets[8] = 1.0
+                widgets[13] = False
+
+        if decode_node_id and decode_node_id in template:
+            decode_entry = template[decode_node_id]
+            decode_inputs = decode_entry.setdefault("inputs", {})
+            decode_inputs["samples"] = [str(sampler_node_id), 0]
+            decode_inputs.setdefault("vae", [str(vae_loader_node_id), 0])
+
+        save_video_node = template.get(save_node_id)
+        if save_video_node:
+            widgets = save_video_node.get("widgets_values")
+            if isinstance(widgets, dict):
+                widgets["filename_prefix"] = save_prefix or "wanbot/ANIMATION"
             save_inputs = save_video_node.setdefault("inputs", {})
-            if isinstance(save_inputs, dict):
-                save_inputs["filename_prefix"] = save_prefix or "wanbot/ANIMATION"
-                if "format" not in save_inputs or not save_inputs.get("format"):
-                    save_inputs["format"] = save_video_node["widgets_values"][1] if len(save_video_node["widgets_values"]) > 1 else "auto"
-                if "codec" not in save_inputs or not save_inputs.get("codec"):
-                    save_inputs["codec"] = save_video_node["widgets_values"][2] if len(save_video_node["widgets_values"]) > 2 else "auto"
-
-        default_settings = _get_default_settings()
-        default_shift = default_settings.get("default_wan_shift", 8.0)
-        shift_candidate_anim = settings.get("default_wan_shift", default_shift)
-        try:
-            shift_value_anim = float(shift_candidate_anim)
-        except (TypeError, ValueError):
-            shift_value_anim = float(default_shift)
-        _apply_sampling_shift_overrides(template, shift_value_anim)
+            save_inputs["filename_prefix"] = save_prefix or "wanbot/ANIMATION"
     except Exception as template_error:
         print(f"Error while configuring WAN animation template: {template_error}")
         traceback.print_exc()
@@ -363,7 +352,7 @@ async def prepare_wan_animation_prompt(
         "width": width_val,
         "height": height_val,
         "aspect_ratio_str": resolution_value,
-        "mp_size": "N/A",
+        "mp_size": f"{width_val}x{height_val}",
         "image_url": start_image_norm,
         "img_strength_percent": None,
         "denoise": None,
@@ -371,7 +360,7 @@ async def prepare_wan_animation_prompt(
         "batch_size": 1,
         "image_index": 1,
         "selected_model": source_job_data.get("selected_model"),
-        "model_used": high_noise_unet,
+        "model_used": model_name,
         "type": "wan_animation",
         "model_type_for_enhancer": "wan",
         "enhancer_used": llm_used,
