@@ -68,19 +68,36 @@ def _get_guidance_display(job_details: dict, model_key: str, spec) -> tuple[Opti
 
 
 async def _ensure_ws_client_id():
-    """Waits up to 5 seconds for the websocket client to get its session ID."""
+    """Ensure the shared websocket client is connected and has an ID."""
     ws_client = WebsocketClient()
-    if ws_client.client_id:
+
+    # Make sure we have an active websocket connection so ComfyUI recognises
+    # the client.  Without this the API can enqueue jobs under an anonymous
+    # client which ComfyUI then runs immediately, skipping the in-flight job.
+    if not ws_client.is_connected:
+        try:
+            await ws_client.ensure_connected()
+        except Exception as ensure_err:
+            print(f"Warning: Failed to ensure websocket connection before queueing: {ensure_err}")
+
+    if getattr(ws_client, "client_id_confirmed", False) and ws_client.client_id:
         return
-    
-    print("WebSocket client_id not yet available. Waiting up to 5 seconds...")
-    for _ in range(10): # 10 * 0.5s = 5s
-        if ws_client.client_id:
-            print(f"WebSocket client_id acquired: {ws_client.client_id}")
-            return
-        await asyncio.sleep(0.5)
-    
-    print("Warning: WebSocket client_id still not available after waiting. Progress updates may fail for this job.")
+
+    print("WebSocket client_id not confirmed yet. Waiting up to 5 seconds...")
+    try:
+        ready = await ws_client.wait_for_client_id(timeout=5.0)
+    except Exception as wait_err:
+        print(f"Warning: Exception while waiting for websocket client_id: {wait_err}")
+        ready = False
+
+    if ready:
+        print(f"WebSocket client_id confirmed: {ws_client.client_id}")
+        return
+
+    print(
+        "Warning: WebSocket client_id could not be confirmed. "
+        "Progress updates may fail and ComfyUI may execute jobs immediately."
+    )
 
 
 async def _get_preview_image_from_comfyui(image_data):
