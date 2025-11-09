@@ -29,6 +29,32 @@ from comfyui_api import get_available_comfyui_models
 from settings_manager import load_settings, load_styles_config
 from bot_ui_components import QueuedJobView
 
+
+def _option_matches(selected_option: str, available_options):
+    """Return True if *selected_option* matches any value in *available_options*.
+
+    Comparison is case-insensitive and also tolerates situations where ComfyUI
+    reports fully-qualified paths while our stored selection only contains a
+    base filename (or vice versa).
+    """
+
+    if not selected_option or not available_options:
+        return False
+
+    selected_normalized = selected_option.strip().lower()
+    selected_basename = os.path.basename(selected_normalized)
+
+    for option in available_options:
+        if not isinstance(option, str):
+            continue
+        option_normalized = option.strip().lower()
+        if selected_normalized == option_normalized:
+            return True
+        if selected_basename and selected_basename == os.path.basename(option_normalized):
+            return True
+
+    return False
+
 BLOCKED_USER_IDS = set()
 BLOCKLIST_FILE = "blocklist.json"
 
@@ -59,16 +85,19 @@ async def validate_models_against_comfyui(bot):
         settings = load_settings(); selected_model_prefix = settings.get('selected_model'); sel_t5 = settings.get('selected_t5_clip'); sel_l = settings.get('selected_clip_l'); sel_upscaler = settings.get('selected_upscale_model'); issues = False
         if selected_model_prefix:
             m_type, m_name = (selected_model_prefix.split(":",1)[0].strip().lower(), selected_model_prefix.split(":",1)[1].strip()) if ":" in selected_model_prefix else (None, selected_model_prefix.strip())
-            if m_type == "flux" and m_name.lower() not in {m.lower() for m in available_models.get("unet",[])}: print(f"⚠️ WARNING: Selected Flux Model '{m_name}' not found in ComfyUI UNET list!"); issues=True
-            elif m_type == "sdxl" and m_name.lower() not in {m.lower() for m in available_models.get("checkpoint",[])}: print(f"⚠️ WARNING: Selected SDXL Checkpoint '{m_name}' not found in ComfyUI CHECKPOINT list!"); issues=True
+            if m_type == "flux" and not _option_matches(m_name, available_models.get("unet", [])):
+                print(f"⚠️ WARNING: Selected Flux Model '{m_name}' not found in ComfyUI UNET list!"); issues=True
+            elif m_type == "sdxl" and not _option_matches(m_name, available_models.get("checkpoint", [])):
+                print(f"⚠️ WARNING: Selected SDXL Checkpoint '{m_name}' not found in ComfyUI CHECKPOINT list!"); issues=True
             elif not m_type : print(f"❓ Info: Selected model '{selected_model_prefix}' has missing type prefix.")
         else: print("❓ Info: No default model selected.")
-        clips_lower = {m.lower() for m in available_models.get("clip",[])}
-        if sel_t5 and sel_t5.lower() not in clips_lower: print(f"⚠️ WARNING: Selected T5 CLIP '{sel_t5}' not found!"); issues=True
+        available_clips = available_models.get("clip", [])
+        if sel_t5 and not _option_matches(sel_t5, available_clips): print(f"⚠️ WARNING: Selected T5 CLIP '{sel_t5}' not found!"); issues=True
         elif not sel_t5: print("❓ Info: No T5 CLIP selected.")
-        if sel_l and sel_l.lower() not in clips_lower: print(f"⚠️ WARNING: Selected CLIP-L '{sel_l}' not found!"); issues=True
+        if sel_l and not _option_matches(sel_l, available_clips): print(f"⚠️ WARNING: Selected CLIP-L '{sel_l}' not found!"); issues=True
         elif not sel_l: print("❓ Info: No CLIP-L selected.")
-        if sel_upscaler and sel_upscaler != "None" and sel_upscaler.lower() not in {m.lower() for m in available_models.get("upscaler",[])}: print(f"⚠️ WARNING: Selected Upscaler '{sel_upscaler}' not found!"); issues=True
+        if sel_upscaler and sel_upscaler != "None" and not _option_matches(sel_upscaler, available_models.get("upscaler", [])):
+            print(f"⚠️ WARNING: Selected Upscaler '{sel_upscaler}' not found!"); issues=True
         elif not sel_upscaler or sel_upscaler == "None": print("❓ Info: No Upscaler selected.")
         if issues: print("‼️-> Please update settings or check ComfyUI models.")
         else: print("✅ Configured models appear valid according to ComfyUI API.")
