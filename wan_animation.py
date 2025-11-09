@@ -61,7 +61,7 @@ def _apply_loader_filename(node: Dict[str, Any], *, field_name: str, file_name: 
         return
 
     inputs = node.setdefault("inputs", {})
-    if isinstance(inputs, dict) and field_name in inputs:
+    if isinstance(inputs, dict):
         inputs[field_name] = file_name
 
     widgets = node.get("widgets_values")
@@ -262,6 +262,9 @@ async def prepare_wan_animation_prompt(
         load_image_node = template.get("wan_i2v_image")
         if load_image_node and isinstance(load_image_node.get("widgets_values"), list):
             load_image_node["widgets_values"][0] = start_image_norm or ""
+            load_inputs = load_image_node.setdefault("inputs", {})
+            if isinstance(load_inputs, dict):
+                load_inputs["image"] = start_image_norm or ""
 
         pos_prompt_node = template.get("wan_pos_prompt")
         if pos_prompt_node:
@@ -284,6 +287,17 @@ async def prepare_wan_animation_prompt(
                 widgets[2] = sampler_steps
             if len(widgets) > 3:
                 widgets[3] = float(sampler_guidance)
+            ksampler_inputs = ksampler_node.setdefault("inputs", {})
+            if isinstance(ksampler_inputs, dict):
+                ksampler_inputs["seed"] = int(animation_seed)
+                ksampler_inputs["steps"] = sampler_steps
+                ksampler_inputs["cfg"] = float(sampler_guidance)
+                if "sampler_name" not in ksampler_inputs or not ksampler_inputs.get("sampler_name"):
+                    ksampler_inputs["sampler_name"] = "uni_pc"
+                if "scheduler" not in ksampler_inputs or not ksampler_inputs.get("scheduler"):
+                    ksampler_inputs["scheduler"] = "simple"
+                if "denoise" not in ksampler_inputs or ksampler_inputs.get("denoise") is None:
+                    ksampler_inputs["denoise"] = 1.0
 
         image_to_video_node = template.get("wan_image_to_video")
         if image_to_video_node and isinstance(image_to_video_node.get("widgets_values"), list):
@@ -294,15 +308,33 @@ async def prepare_wan_animation_prompt(
                 widgets[1] = height_val
             if len(widgets) > 2:
                 widgets[2] = duration_frames
+            if len(widgets) > 3:
+                widgets[3] = 1
+            image_to_video_inputs = image_to_video_node.setdefault("inputs", {})
+            if isinstance(image_to_video_inputs, dict):
+                image_to_video_inputs["width"] = width_val
+                image_to_video_inputs["height"] = height_val
+                image_to_video_inputs["length"] = duration_frames
+                image_to_video_inputs["batch_size"] = 1
 
         create_video_node = template.get("wan_i2v_create")
         if create_video_node and isinstance(create_video_node.get("widgets_values"), list) and create_video_node["widgets_values"]:
             # Keep fps default but ensure integer formatting
             create_video_node["widgets_values"][0] = int(create_video_node["widgets_values"][0] or 16)
+            create_inputs = create_video_node.setdefault("inputs", {})
+            if isinstance(create_inputs, dict):
+                create_inputs["fps"] = int(create_video_node["widgets_values"][0])
 
         save_video_node = template.get("wan_i2v_save")
         if save_video_node and isinstance(save_video_node.get("widgets_values"), list) and save_video_node["widgets_values"]:
             save_video_node["widgets_values"][0] = save_prefix or "wanbot/ANIMATION"
+            save_inputs = save_video_node.setdefault("inputs", {})
+            if isinstance(save_inputs, dict):
+                save_inputs["filename_prefix"] = save_prefix or "wanbot/ANIMATION"
+                if "format" not in save_inputs or not save_inputs.get("format"):
+                    save_inputs["format"] = save_video_node["widgets_values"][1] if len(save_video_node["widgets_values"]) > 1 else "auto"
+                if "codec" not in save_inputs or not save_inputs.get("codec"):
+                    save_inputs["codec"] = save_video_node["widgets_values"][2] if len(save_video_node["widgets_values"]) > 2 else "auto"
 
         shift_candidate_anim = settings.get("default_wan_shift", 0.0)
         try:
