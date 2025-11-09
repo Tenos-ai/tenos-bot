@@ -39,6 +39,11 @@ except (FileNotFoundError, json.JSONDecodeError, ValueError, TypeError) as e:
     print(f"ERROR loading config.json in image_generation: {e}")
     config = {"OUTPUTS": {}, "LLM_ENHANCER": {}}
     GENERATIONS_DIR = os.path.abspath(os.path.join('output','TENOSAI-BOT','GENERATIONS'))
+except Exception as e:
+    print(f"UNEXPECTED ERROR loading config.json in image_generation: {e}")
+    traceback.print_exc()
+    config = {"OUTPUTS": {}, "LLM_ENHANCER": {}}
+    GENERATIONS_DIR = os.path.abspath(os.path.join('output','TENOSAI-BOT','GENERATIONS'))
 
 
 KSAMPLER_SETTING_OVERRIDES = {
@@ -92,11 +97,6 @@ WAN_STAGE_SETTING_OVERRIDES = {
         "denoise": "wan_stage2_denoise",
     },
 }
-except Exception as e:
-    print(f"UNEXPECTED ERROR loading config.json in image_generation: {e}")
-    traceback.print_exc()
-    config = {"OUTPUTS": {}, "LLM_ENHANCER": {}} 
-    GENERATIONS_DIR = os.path.abspath(os.path.join('output','TENOSAI-BOT','GENERATIONS')) 
 
 
 def normalize_path_for_comfyui(path):

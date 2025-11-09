@@ -19,6 +19,61 @@ import difflib
 import shutil
 
 
+KSAMPLER_SAMPLER_OPTIONS = [
+    "euler",
+    "euler_cfg_pp",
+    "euler_ancestral",
+    "euler_ancestral_cfg_pp",
+    "heun",
+    "heunpp2",
+    "dpm_2",
+    "dpm_2_ancestral",
+    "lms",
+    "dpm_fast",
+    "dpm_adaptive",
+    "dpmpp_2s_ancestral",
+    "dpmpp_2s_ancestral_cfg_pp",
+    "dpmpp_sde",
+    "dpmpp_sde_gpu",
+    "dpmpp_2m",
+    "dpmpp_2m_cfg_pp",
+    "dpmpp_2m_sde",
+    "dpmpp_2m_sde_gpu",
+    "dpmpp_2m_sde_heun",
+    "dpmpp_2m_sde_heun_gpu",
+    "dpmpp_3m_sde",
+    "dpmpp_3m_sde_gpu",
+    "ddpm",
+    "lcm",
+    "ipndm",
+    "ipndm_v",
+    "deis",
+    "res_multistep",
+    "res_multistep_cfg_pp",
+    "res_multistep_ancestral",
+    "res_multistep_ancestral_cfg_pp",
+    "gradient_estimation",
+    "gradient_estimation_cfg_pp",
+    "er_sde",
+    "seeds_2",
+    "seeds_3",
+    "sa_solver",
+    "sa_solver_pece",
+]
+
+KSAMPLER_SCHEDULER_OPTIONS = [
+    "simple",
+    "sgm_uniform",
+    "karras",
+    "exponential",
+    "ddim_uniform",
+    "beta",
+    "normal",
+    "linear_quadratic",
+    "kl_optimal",
+]
+
+
 DEFAULT_STATUS_DURATION = object()
 
 
@@ -2291,13 +2346,13 @@ class ConfigEditor:
         create_setting_row_ui(flux_section.body(), "Default Style", ttk.Combobox, flux_styles, 'default_style_flux', section_key='flux')
         create_setting_row_ui(flux_section.body(), "Default Steps", ttk.Spinbox, var_key_name='steps', section_key='flux', from_=4, to=128, increment=4)
         create_setting_row_ui(flux_section.body(), "Default Guidance", ttk.Spinbox, var_key_name='default_guidance', section_key='flux', from_=0.0, to=20.0, increment=0.1, format="%.1f")
-        create_setting_row_ui(flux_section.body(), "KSampler Sampler", ttk.Entry, var_key_name='flux_ksampler_sampler', section_key='flux')
-        create_setting_row_ui(flux_section.body(), "KSampler Scheduler", ttk.Entry, var_key_name='flux_ksampler_scheduler', section_key='flux')
+        create_setting_row_ui(flux_section.body(), "KSampler Sampler", ttk.Combobox, KSAMPLER_SAMPLER_OPTIONS, 'flux_ksampler_sampler', section_key='flux')
+        create_setting_row_ui(flux_section.body(), "KSampler Scheduler", ttk.Combobox, KSAMPLER_SCHEDULER_OPTIONS, 'flux_ksampler_scheduler', section_key='flux')
         create_setting_row_ui(flux_section.body(), "KSampler CFG", ttk.Spinbox, var_key_name='flux_ksampler_cfg', section_key='flux', from_=0.0, to=20.0, increment=0.1, format="%.1f")
         create_setting_row_ui(flux_section.body(), "KSampler Denoise", ttk.Spinbox, var_key_name='flux_ksampler_denoise', section_key='flux', from_=0.0, to=1.0, increment=0.01, format="%.2f")
         create_setting_row_ui(flux_section.body(), "Upscale Model", ttk.Combobox, self.available_upscale_models, 'flux_upscale_model', section_key='flux')
-        create_setting_row_ui(flux_section.body(), "Upscale Sampler", ttk.Entry, var_key_name='flux_upscale_sampler', section_key='flux')
-        create_setting_row_ui(flux_section.body(), "Upscale Scheduler", ttk.Entry, var_key_name='flux_upscale_scheduler', section_key='flux')
+        create_setting_row_ui(flux_section.body(), "Upscale Sampler", ttk.Combobox, KSAMPLER_SAMPLER_OPTIONS, 'flux_upscale_sampler', section_key='flux')
+        create_setting_row_ui(flux_section.body(), "Upscale Scheduler", ttk.Combobox, KSAMPLER_SCHEDULER_OPTIONS, 'flux_upscale_scheduler', section_key='flux')
         create_setting_row_ui(flux_section.body(), "Upscale Steps", ttk.Spinbox, var_key_name='flux_upscale_steps', section_key='flux', from_=1, to=256, increment=1)
         create_setting_row_ui(flux_section.body(), "Upscale CFG", ttk.Spinbox, var_key_name='flux_upscale_cfg', section_key='flux', from_=0.0, to=20.0, increment=0.1, format="%.1f")
         create_setting_row_ui(flux_section.body(), "Upscale Denoise", ttk.Spinbox, var_key_name='flux_upscale_denoise', section_key='flux', from_=0.0, to=1.0, increment=0.01, format="%.2f")
@@ -2312,13 +2367,13 @@ class ConfigEditor:
         create_setting_row_ui(sdxl_section.body(), "Default SDXL VAE", ttk.Combobox, self.available_vaes, 'default_sdxl_vae', section_key='sdxl')
         create_setting_row_ui(sdxl_section.body(), "Default Steps", ttk.Spinbox, var_key_name='sdxl_steps', section_key='sdxl', from_=4, to=128, increment=2)
         create_setting_row_ui(sdxl_section.body(), "Default Guidance", ttk.Spinbox, var_key_name='default_guidance_sdxl', section_key='sdxl', from_=0.0, to=20.0, increment=0.1, format="%.1f")
-        create_setting_row_ui(sdxl_section.body(), "KSampler Sampler", ttk.Entry, var_key_name='sdxl_ksampler_sampler', section_key='sdxl')
-        create_setting_row_ui(sdxl_section.body(), "KSampler Scheduler", ttk.Entry, var_key_name='sdxl_ksampler_scheduler', section_key='sdxl')
+        create_setting_row_ui(sdxl_section.body(), "KSampler Sampler", ttk.Combobox, KSAMPLER_SAMPLER_OPTIONS, 'sdxl_ksampler_sampler', section_key='sdxl')
+        create_setting_row_ui(sdxl_section.body(), "KSampler Scheduler", ttk.Combobox, KSAMPLER_SCHEDULER_OPTIONS, 'sdxl_ksampler_scheduler', section_key='sdxl')
         create_setting_row_ui(sdxl_section.body(), "KSampler CFG", ttk.Spinbox, var_key_name='sdxl_ksampler_cfg', section_key='sdxl', from_=0.0, to=20.0, increment=0.1, format="%.1f")
         create_setting_row_ui(sdxl_section.body(), "KSampler Denoise", ttk.Spinbox, var_key_name='sdxl_ksampler_denoise', section_key='sdxl', from_=0.0, to=1.0, increment=0.01, format="%.2f")
         create_setting_row_ui(sdxl_section.body(), "Upscale Model", ttk.Combobox, self.available_upscale_models, 'sdxl_upscale_model', section_key='sdxl')
-        create_setting_row_ui(sdxl_section.body(), "Upscale Sampler", ttk.Entry, var_key_name='sdxl_upscale_sampler', section_key='sdxl')
-        create_setting_row_ui(sdxl_section.body(), "Upscale Scheduler", ttk.Entry, var_key_name='sdxl_upscale_scheduler', section_key='sdxl')
+        create_setting_row_ui(sdxl_section.body(), "Upscale Sampler", ttk.Combobox, KSAMPLER_SAMPLER_OPTIONS, 'sdxl_upscale_sampler', section_key='sdxl')
+        create_setting_row_ui(sdxl_section.body(), "Upscale Scheduler", ttk.Combobox, KSAMPLER_SCHEDULER_OPTIONS, 'sdxl_upscale_scheduler', section_key='sdxl')
         create_setting_row_ui(sdxl_section.body(), "Upscale Steps", ttk.Spinbox, var_key_name='sdxl_upscale_steps', section_key='sdxl', from_=1, to=256, increment=1)
         create_setting_row_ui(sdxl_section.body(), "Upscale CFG", ttk.Spinbox, var_key_name='sdxl_upscale_cfg', section_key='sdxl', from_=0.0, to=20.0, increment=0.1, format="%.1f")
         create_setting_row_ui(sdxl_section.body(), "Upscale Denoise", ttk.Spinbox, var_key_name='sdxl_upscale_denoise', section_key='sdxl', from_=0.0, to=1.0, increment=0.01, format="%.2f")
@@ -2336,13 +2391,13 @@ class ConfigEditor:
         create_setting_row_ui(qwen_section.body(), "Default Qwen CLIP", ttk.Combobox, qwen_clip_options, 'default_qwen_clip', section_key='qwen')
         create_setting_row_ui(qwen_section.body(), "Default Qwen VAE", ttk.Combobox, self.available_qwen_vaes, 'default_qwen_vae', section_key='qwen')
         create_setting_row_ui(qwen_section.body(), "Default Qwen Shift", ttk.Spinbox, var_key_name='default_qwen_shift', section_key='qwen', from_=0.0, to=10.0, increment=0.1, format="%.2f")
-        create_setting_row_ui(qwen_section.body(), "KSampler Sampler", ttk.Entry, var_key_name='qwen_ksampler_sampler', section_key='qwen')
-        create_setting_row_ui(qwen_section.body(), "KSampler Scheduler", ttk.Entry, var_key_name='qwen_ksampler_scheduler', section_key='qwen')
+        create_setting_row_ui(qwen_section.body(), "KSampler Sampler", ttk.Combobox, KSAMPLER_SAMPLER_OPTIONS, 'qwen_ksampler_sampler', section_key='qwen')
+        create_setting_row_ui(qwen_section.body(), "KSampler Scheduler", ttk.Combobox, KSAMPLER_SCHEDULER_OPTIONS, 'qwen_ksampler_scheduler', section_key='qwen')
         create_setting_row_ui(qwen_section.body(), "KSampler CFG", ttk.Spinbox, var_key_name='qwen_ksampler_cfg', section_key='qwen', from_=0.0, to=20.0, increment=0.1, format="%.1f")
         create_setting_row_ui(qwen_section.body(), "KSampler Denoise", ttk.Spinbox, var_key_name='qwen_ksampler_denoise', section_key='qwen', from_=0.0, to=1.0, increment=0.01, format="%.2f")
         create_setting_row_ui(qwen_section.body(), "Upscale Model", ttk.Combobox, self.available_upscale_models, 'qwen_upscale_model', section_key='qwen')
-        create_setting_row_ui(qwen_section.body(), "Upscale Sampler", ttk.Entry, var_key_name='qwen_upscale_sampler', section_key='qwen')
-        create_setting_row_ui(qwen_section.body(), "Upscale Scheduler", ttk.Entry, var_key_name='qwen_upscale_scheduler', section_key='qwen')
+        create_setting_row_ui(qwen_section.body(), "Upscale Sampler", ttk.Combobox, KSAMPLER_SAMPLER_OPTIONS, 'qwen_upscale_sampler', section_key='qwen')
+        create_setting_row_ui(qwen_section.body(), "Upscale Scheduler", ttk.Combobox, KSAMPLER_SCHEDULER_OPTIONS, 'qwen_upscale_scheduler', section_key='qwen')
         create_setting_row_ui(qwen_section.body(), "Upscale Steps", ttk.Spinbox, var_key_name='qwen_upscale_steps', section_key='qwen', from_=1, to=256, increment=1)
         create_setting_row_ui(qwen_section.body(), "Upscale CFG", ttk.Spinbox, var_key_name='qwen_upscale_cfg', section_key='qwen', from_=0.0, to=20.0, increment=0.1, format="%.1f")
         create_setting_row_ui(qwen_section.body(), "Upscale Denoise", ttk.Spinbox, var_key_name='qwen_upscale_denoise', section_key='qwen', from_=0.0, to=1.0, increment=0.01, format="%.2f")
@@ -2358,8 +2413,8 @@ class ConfigEditor:
         create_setting_row_ui(qwen_edit_section.body(), "Default Qwen Edit VAE", ttk.Combobox, self.available_qwen_vaes, 'default_qwen_edit_vae', section_key='qwen_edit')
         create_setting_row_ui(qwen_edit_section.body(), "Qwen Edit Denoise", ttk.Spinbox, var_key_name='qwen_edit_denoise', section_key='qwen_edit', from_=0.0, to=1.0, increment=0.01, format="%.2f")
         create_setting_row_ui(qwen_edit_section.body(), "Qwen Edit Shift", ttk.Spinbox, var_key_name='qwen_edit_shift', section_key='qwen_edit', from_=0.0, to=10.0, increment=0.1, format="%.2f")
-        create_setting_row_ui(qwen_edit_section.body(), "KSampler Sampler", ttk.Entry, var_key_name='qwen_edit_ksampler_sampler', section_key='qwen_edit')
-        create_setting_row_ui(qwen_edit_section.body(), "KSampler Scheduler", ttk.Entry, var_key_name='qwen_edit_ksampler_scheduler', section_key='qwen_edit')
+        create_setting_row_ui(qwen_edit_section.body(), "KSampler Sampler", ttk.Combobox, KSAMPLER_SAMPLER_OPTIONS, 'qwen_edit_ksampler_sampler', section_key='qwen_edit')
+        create_setting_row_ui(qwen_edit_section.body(), "KSampler Scheduler", ttk.Combobox, KSAMPLER_SCHEDULER_OPTIONS, 'qwen_edit_ksampler_scheduler', section_key='qwen_edit')
         create_setting_row_ui(qwen_edit_section.body(), "KSampler CFG", ttk.Spinbox, var_key_name='qwen_edit_ksampler_cfg', section_key='qwen_edit', from_=0.0, to=20.0, increment=0.1, format="%.1f")
         create_setting_row_ui(qwen_edit_section.body(), "KSampler Denoise", ttk.Spinbox, var_key_name='qwen_edit_ksampler_denoise', section_key='qwen_edit', from_=0.0, to=1.0, increment=0.01, format="%.2f")
 
@@ -2386,8 +2441,8 @@ class ConfigEditor:
         create_setting_row_ui(wan_section.body(), "Stage 1 Seed", ttk.Entry, var_key_name='wan_stage1_seed', section_key='wan')
         create_setting_row_ui(wan_section.body(), "Stage 1 Steps", ttk.Spinbox, var_key_name='wan_stage1_steps', section_key='wan', from_=1, to=256, increment=1)
         create_setting_row_ui(wan_section.body(), "Stage 1 CFG", ttk.Spinbox, var_key_name='wan_stage1_cfg', section_key='wan', from_=0.0, to=20.0, increment=0.1, format="%.1f")
-        create_setting_row_ui(wan_section.body(), "Stage 1 Sampler", ttk.Entry, var_key_name='wan_stage1_sampler', section_key='wan')
-        create_setting_row_ui(wan_section.body(), "Stage 1 Scheduler", ttk.Entry, var_key_name='wan_stage1_scheduler', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Stage 1 Sampler", ttk.Combobox, KSAMPLER_SAMPLER_OPTIONS, 'wan_stage1_sampler', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Stage 1 Scheduler", ttk.Combobox, KSAMPLER_SCHEDULER_OPTIONS, 'wan_stage1_scheduler', section_key='wan')
         create_setting_row_ui(wan_section.body(), "Stage 1 Start Step", ttk.Spinbox, var_key_name='wan_stage1_start', section_key='wan', from_=0, to=1000, increment=1)
         create_setting_row_ui(wan_section.body(), "Stage 1 End Step", ttk.Spinbox, var_key_name='wan_stage1_end', section_key='wan', from_=0, to=1000, increment=1)
         create_setting_row_ui(wan_section.body(), "Stage 1 Return Leftover", ttk.Combobox, ['enable', 'disable'], 'wan_stage1_return_with_leftover_noise', section_key='wan')
@@ -2398,8 +2453,8 @@ class ConfigEditor:
         create_setting_row_ui(wan_section.body(), "Stage 2 Seed", ttk.Entry, var_key_name='wan_stage2_seed', section_key='wan')
         create_setting_row_ui(wan_section.body(), "Stage 2 Steps", ttk.Spinbox, var_key_name='wan_stage2_steps', section_key='wan', from_=1, to=256, increment=1)
         create_setting_row_ui(wan_section.body(), "Stage 2 CFG", ttk.Spinbox, var_key_name='wan_stage2_cfg', section_key='wan', from_=0.0, to=20.0, increment=0.1, format="%.1f")
-        create_setting_row_ui(wan_section.body(), "Stage 2 Sampler", ttk.Entry, var_key_name='wan_stage2_sampler', section_key='wan')
-        create_setting_row_ui(wan_section.body(), "Stage 2 Scheduler", ttk.Entry, var_key_name='wan_stage2_scheduler', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Stage 2 Sampler", ttk.Combobox, KSAMPLER_SAMPLER_OPTIONS, 'wan_stage2_sampler', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Stage 2 Scheduler", ttk.Combobox, KSAMPLER_SCHEDULER_OPTIONS, 'wan_stage2_scheduler', section_key='wan')
         create_setting_row_ui(wan_section.body(), "Stage 2 Start Step", ttk.Spinbox, var_key_name='wan_stage2_start', section_key='wan', from_=0, to=1000, increment=1)
         create_setting_row_ui(wan_section.body(), "Stage 2 End Step", ttk.Spinbox, var_key_name='wan_stage2_end', section_key='wan', from_=0, to=1000, increment=1)
         create_setting_row_ui(wan_section.body(), "Stage 2 Return Leftover", ttk.Combobox, ['enable', 'disable'], 'wan_stage2_return_with_leftover_noise', section_key='wan')
@@ -2556,6 +2611,9 @@ class ConfigEditor:
                     self.available_qwen_edit_models = sorted({m for m in edit_models if isinstance(m, str)}, key=str.lower)
         except Exception:
             pass
+
+        if not self.available_qwen_edit_models and self.available_qwen_models:
+            self.available_qwen_edit_models = list(self.available_qwen_models)
 
         try:
             if os.path.exists(WAN_MODELS_FILE_NAME):

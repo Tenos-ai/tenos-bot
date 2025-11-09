@@ -208,6 +208,63 @@ def update_qwen_models_list(config_path, output_file):
         traceback.print_exc()
 
 
+def update_qwen_edit_models_list(config_path, output_file):
+    """Update the Qwen Image Edit checkpoints list from the configured directory."""
+
+    print(f"ModelScanner: Updating Qwen Edit models list ({output_file})...")
+    favorites = _load_existing_favorites_list(output_file)
+
+    edit_keyword_candidates = ("edit", "image_edit", "image-edit", "img2img")
+
+    try:
+        with open(config_path, 'r') as config_file:
+            config = json.load(config_file)
+
+        models_section = config.get('MODELS', {}) if isinstance(config.get('MODELS'), dict) else {}
+        checkpoint_directory = (
+            models_section.get('QWEN_EDIT_MODELS')
+            or models_section.get('QWEN_MODELS')
+            or models_section.get('CHECKPOINTS_FOLDER')
+        )
+        if not checkpoint_directory:
+            print("ModelScanner Error: No Qwen Edit model directory configured (QWEN_EDIT_MODELS, QWEN_MODELS, or CHECKPOINTS_FOLDER).")
+            return
+
+        qwen_candidates = _scan_keyword_models(
+            checkpoint_directory,
+            include_keywords=("qwen",),
+            exclude_keywords=("vae", "clip", "vision"),
+        )
+
+        edit_models = [
+            model_name
+            for model_name in qwen_candidates
+            if any(tag in model_name.lower() for tag in edit_keyword_candidates)
+        ]
+
+        if not edit_models:
+            edit_models = qwen_candidates
+
+        payload = {
+            "favorites": favorites,
+            "checkpoints": edit_models,
+        }
+
+        try:
+            with open(output_file, 'w') as f:
+                json.dump(payload, f, indent=2)
+            print(f"ModelScanner: Successfully updated Qwen Edit models list in {output_file}")
+        except OSError as exc:
+            print(f"ModelScanner Error writing Qwen Edit models file {output_file}: {exc}")
+        except Exception as exc:  # pragma: no cover - defensive logging only
+            print(f"ModelScanner Unexpected error writing {output_file} (Qwen Edit models): {exc}")
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
+        print(f"ModelScanner Error reading config file {config_path} for Qwen Edit models: {exc}")
+    except Exception as exc:  # pragma: no cover - defensive logging only
+        print(f"ModelScanner Unexpected error updating Qwen Edit models: {exc}")
+        traceback.print_exc()
+
+
 def update_wan_models_list(config_path, output_file):
     """Update the WAN 2.2 checkpoints list from the configured directory."""
 
@@ -233,7 +290,7 @@ def update_wan_models_list(config_path, output_file):
         video_models = [
             model_name
             for model_name in wan_candidates
-            if any(tag in model_name.lower() for tag in ("video", "i2v"))
+            if any(tag in model_name.lower() for tag in ("video", "i2v", "t2v"))
         ]
         text_models = [model_name for model_name in wan_candidates if model_name not in video_models]
 
@@ -469,6 +526,7 @@ if __name__ == "__main__":
     update_models_list('config.json', 'modelslist.json')
     update_checkpoints_list('config.json', 'checkpointslist.json')
     update_qwen_models_list('config.json', 'qwenmodels.json')
+    update_qwen_edit_models_list('config.json', 'qweneditmodels.json')
     update_wan_models_list('config.json', 'wanmodels.json')
     scan_clip_files('config.json', 'cliplist.json')
     print("Model Scanner finished.")
