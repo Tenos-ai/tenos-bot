@@ -5,9 +5,10 @@ import uuid
 import re
 import math
 import os
-import requests 
+import requests
 import traceback
-import asyncio 
+import asyncio
+from typing import Optional
 
 from model_registry import (
     copy_generation_template,
@@ -36,8 +37,61 @@ try:
         GENERATIONS_DIR = os.path.abspath(GENERATIONS_DIR)
 except (FileNotFoundError, json.JSONDecodeError, ValueError, TypeError) as e:
     print(f"ERROR loading config.json in image_generation: {e}")
-    config = {"OUTPUTS": {}, "LLM_ENHANCER": {}} 
-    GENERATIONS_DIR = os.path.abspath(os.path.join('output','TENOSAI-BOT','GENERATIONS')) 
+    config = {"OUTPUTS": {}, "LLM_ENHANCER": {}}
+    GENERATIONS_DIR = os.path.abspath(os.path.join('output','TENOSAI-BOT','GENERATIONS'))
+
+
+KSAMPLER_SETTING_OVERRIDES = {
+    "flux": {
+        "sampler_key": "flux_ksampler_sampler",
+        "scheduler_key": "flux_ksampler_scheduler",
+        "cfg_key": "flux_ksampler_cfg",
+        "denoise_key": "flux_ksampler_denoise",
+    },
+    "sdxl": {
+        "sampler_key": "sdxl_ksampler_sampler",
+        "scheduler_key": "sdxl_ksampler_scheduler",
+        "cfg_key": "sdxl_ksampler_cfg",
+        "denoise_key": "sdxl_ksampler_denoise",
+    },
+    "qwen": {
+        "sampler_key": "qwen_ksampler_sampler",
+        "scheduler_key": "qwen_ksampler_scheduler",
+        "cfg_key": "qwen_ksampler_cfg",
+        "denoise_key": "qwen_ksampler_denoise",
+    },
+}
+
+WAN_STAGE_SETTING_OVERRIDES = {
+    "initial": {
+        "add_noise": "wan_stage1_add_noise",
+        "noise_mode": "wan_stage1_noise_mode",
+        "noise_seed": "wan_stage1_noise_seed",
+        "seed": "wan_stage1_seed",
+        "steps": "wan_stage1_steps",
+        "cfg": "wan_stage1_cfg",
+        "sampler_name": "wan_stage1_sampler",
+        "scheduler": "wan_stage1_scheduler",
+        "start_at_step": "wan_stage1_start",
+        "end_at_step": "wan_stage1_end",
+        "return_with_leftover_noise": "wan_stage1_return_with_leftover_noise",
+        "denoise": "wan_stage1_denoise",
+    },
+    "refiner": {
+        "add_noise": "wan_stage2_add_noise",
+        "noise_mode": "wan_stage2_noise_mode",
+        "noise_seed": "wan_stage2_noise_seed",
+        "seed": "wan_stage2_seed",
+        "steps": "wan_stage2_steps",
+        "cfg": "wan_stage2_cfg",
+        "sampler_name": "wan_stage2_sampler",
+        "scheduler": "wan_stage2_scheduler",
+        "start_at_step": "wan_stage2_start",
+        "end_at_step": "wan_stage2_end",
+        "return_with_leftover_noise": "wan_stage2_return_with_leftover_noise",
+        "denoise": "wan_stage2_denoise",
+    },
+}
 except Exception as e:
     print(f"UNEXPECTED ERROR loading config.json in image_generation: {e}")
     traceback.print_exc()
@@ -67,8 +121,54 @@ def normalize_path_for_comfyui(path):
 _CHECKPOINT_MODEL_SETTING_KEYS = {
     "sdxl": "default_sdxl_checkpoint",
     "qwen": "default_qwen_checkpoint",
-    "wan": "default_wan_checkpoint",
+    "wan": "default_wan_t2v_high_noise_unet",
 }
+
+
+WAN_DIMENSION_PRESETS = {
+    "horizontal": {
+        "low": (848, 480, 17),
+        "high": (1280, 720, 17),
+    },
+    "vertical": {
+        "low": (512, 768, 17),
+        "high": (768, 1024, 17),
+    },
+    "square": {
+        "low": (768, 768, 17),
+        "high": (1024, 1024, 17),
+    },
+}
+
+
+def _resolve_wan_dimensions(aspect_ratio: str, mp_size: str | float) -> tuple[int, int, int]:
+    """Map WAN aspect ratio & MP target to preset video dimensions."""
+
+    orientation = "horizontal"
+    try:
+        if isinstance(aspect_ratio, str) and ":" in aspect_ratio:
+            num, den = aspect_ratio.split(":", 1)
+            width_ratio = float(num)
+            height_ratio = float(den)
+            if height_ratio > 0:
+                ratio = width_ratio / height_ratio
+                if ratio < 0.9:
+                    orientation = "vertical"
+                elif ratio > 1.1:
+                    orientation = "horizontal"
+                else:
+                    orientation = "square"
+    except (ValueError, TypeError, ZeroDivisionError):
+        orientation = "horizontal"
+
+    try:
+        mp_value = float(mp_size)
+    except (TypeError, ValueError):
+        mp_value = 1.0
+
+    quality_key = "high" if mp_value >= 1.2 else "low"
+    width, height, length = WAN_DIMENSION_PRESETS.get(orientation, WAN_DIMENSION_PRESETS["horizontal"])[quality_key]
+    return int(width), int(height), int(length)
 
 
 def _extract_model_file_name(candidate: str | None) -> str | None:
@@ -115,6 +215,86 @@ def _update_model_loader_filename(modified_prompt: dict, node_id, *, file_name) 
         widgets[0] = file_name
 
 
+def _apply_ksampler_overrides(
+    ksampler_inputs: dict,
+    settings: dict,
+    override_keys: Optional[dict],
+    *,
+    allow_denoise_override: bool,
+) -> None:
+    if not isinstance(ksampler_inputs, dict) or not override_keys:
+        return
+
+    sampler_key = override_keys.get("sampler_key")
+    if sampler_key:
+        sampler_value = settings.get(sampler_key)
+        if isinstance(sampler_value, str) and sampler_value.strip():
+            ksampler_inputs["sampler_name"] = sampler_value.strip()
+
+    scheduler_key = override_keys.get("scheduler_key")
+    if scheduler_key:
+        scheduler_value = settings.get(scheduler_key)
+        if isinstance(scheduler_value, str) and scheduler_value.strip():
+            ksampler_inputs["scheduler"] = scheduler_value.strip()
+
+    cfg_key = override_keys.get("cfg_key")
+    if cfg_key:
+        cfg_value = settings.get(cfg_key)
+        try:
+            if cfg_value is not None:
+                ksampler_inputs["cfg"] = float(cfg_value)
+        except (TypeError, ValueError):
+            pass
+
+    if allow_denoise_override:
+        denoise_key = override_keys.get("denoise_key")
+        if denoise_key:
+            denoise_value = settings.get(denoise_key)
+            try:
+                if denoise_value is not None:
+                    coerced = float(denoise_value)
+                    ksampler_inputs["denoise"] = max(0.0, min(1.0, coerced))
+            except (TypeError, ValueError):
+                pass
+
+
+def _apply_wan_stage_overrides(prompt: dict, gen_spec, settings: dict) -> None:
+    stage_nodes = {
+        "initial": getattr(gen_spec, "initial_ksampler_node", None),
+        "refiner": getattr(gen_spec, "ksampler_node", None),
+    }
+
+    for stage_name, node_id in stage_nodes.items():
+        if not node_id or node_id not in prompt:
+            continue
+        stage_keys = WAN_STAGE_SETTING_OVERRIDES.get(stage_name)
+        if not stage_keys:
+            continue
+        stage_inputs = prompt[node_id].setdefault("inputs", {})
+        for field, setting_key in stage_keys.items():
+            value = settings.get(setting_key)
+            if value is None:
+                continue
+            if field in {"add_noise", "noise_mode", "return_with_leftover_noise", "sampler_name", "scheduler"}:
+                if isinstance(value, str) and value.strip():
+                    stage_inputs[field] = value.strip()
+            elif field in {"noise_seed", "seed", "steps", "start_at_step", "end_at_step"}:
+                try:
+                    stage_inputs[field] = int(value)
+                except (TypeError, ValueError):
+                    continue
+            elif field == "cfg":
+                try:
+                    stage_inputs[field] = float(value)
+                except (TypeError, ValueError):
+                    continue
+            elif field == "denoise":
+                try:
+                    stage_inputs[field] = max(0.0, min(1.0, float(value)))
+                except (TypeError, ValueError):
+                    continue
+
+
 def _apply_flux_generation_inputs(
     modified_prompt: dict,
     gen_spec,
@@ -129,6 +309,7 @@ def _apply_flux_generation_inputs(
     aspect_ratio: str,
     mp_size: str,
     batch_size: int,
+    settings: dict,
 ):
     prompt_node = gen_spec.prompt_node
     guidance_node = gen_spec.guidance_node
@@ -150,24 +331,64 @@ def _apply_flux_generation_inputs(
 
     modified_prompt[guidance_node]["inputs"]["guidance"] = guidance
 
+    source_latent_ref = None
+
     if is_img2img:
         if gen_spec.img2img_load_node:
             modified_prompt[gen_spec.img2img_load_node]["inputs"]["url_or_path"] = image_source
         if gen_spec.img2img_encode_node:
-            ksampler_inputs["latent_image"] = [gen_spec.img2img_encode_node, 0]
+            source_latent_ref = [gen_spec.img2img_encode_node, 0]
         ksampler_inputs["denoise"] = denoise
     else:
-        latent_inputs = modified_prompt[latent_node]["inputs"]
-        latent_inputs.update(
+        latent_node_data = modified_prompt.get(latent_node, {})
+        latent_inputs = latent_node_data.setdefault("inputs", {})
+        if latent_node_data.get("class_type") == "EmptyHunyuanLatentVideo":
+            width, height, length = _resolve_wan_dimensions(aspect_ratio, mp_size)
+            latent_inputs.update(
+                {
+                    "width": width,
+                    "height": height,
+                    "length": length,
+                    "batch_size": batch_size,
+                }
+            )
+        else:
+            latent_inputs.update(
+                {
+                    "aspect_ratio": aspect_ratio,
+                    "mp_size_float": mp_size,
+                    "model_type": gen_spec.latent_model_type,
+                    "batch_size": batch_size,
+                }
+            )
+        source_latent_ref = [latent_node, 0]
+        ksampler_inputs["denoise"] = 1.0
+
+    initial_node_id = getattr(gen_spec, "initial_ksampler_node", None)
+    if source_latent_ref is None:
+        source_latent_ref = [latent_node, 0]
+    if initial_node_id and initial_node_id in modified_prompt and source_latent_ref is not None:
+        initial_inputs = modified_prompt[initial_node_id].setdefault("inputs", {})
+        initial_inputs.update(
             {
-                "aspect_ratio": aspect_ratio,
-                "mp_size_float": mp_size,
-                "model_type": gen_spec.latent_model_type,
-                "batch_size": batch_size,
+                "seed": seed,
+                "model": [lora_node, 0],
+                "positive": [prompt_node, 0],
+                "negative": [prompt_node, 0],
+                "latent_image": source_latent_ref,
             }
         )
-        ksampler_inputs["denoise"] = 1.0
-        ksampler_inputs["latent_image"] = [latent_node, 0]
+        initial_inputs["denoise"] = denoise if is_img2img else 1.0
+        ksampler_inputs["latent_image"] = [initial_node_id, 0]
+    elif source_latent_ref is not None:
+        ksampler_inputs["latent_image"] = source_latent_ref
+
+    _apply_ksampler_overrides(
+        ksampler_inputs,
+        settings,
+        KSAMPLER_SETTING_OVERRIDES.get("flux"),
+        allow_denoise_override=not is_img2img,
+    )
 
 
 def _apply_sampling_shift_overrides(prompt: dict, shift_value: float | None) -> None:
@@ -206,6 +427,8 @@ def _apply_checkpoint_generation_inputs(
     aspect_ratio: str,
     mp_size: str,
     batch_size: int,
+    settings: dict,
+    model_type: str,
 ):
     clip_skip_node = gen_spec.clip_skip_node
     lora_node = gen_spec.lora_node
@@ -302,6 +525,16 @@ def _apply_checkpoint_generation_inputs(
         )
         ksampler_inputs["denoise"] = 1.0
         ksampler_inputs["latent_image"] = [latent_node, 0]
+
+    if model_type != "wan":
+        _apply_ksampler_overrides(
+            ksampler_inputs,
+            settings,
+            KSAMPLER_SETTING_OVERRIDES.get(model_type),
+            allow_denoise_override=not is_img2img,
+        )
+    else:
+        _apply_wan_stage_overrides(modified_prompt, gen_spec, settings)
 async def modify_prompt(
     original_prompt_text: str,
     params_dict: dict,
@@ -336,6 +569,7 @@ async def modify_prompt(
         settings = load_settings()
     except Exception as e:
         print(f"ERROR loading settings in modify_prompt: {e}"); settings = _get_default_settings()
+    default_settings = _get_default_settings()
 
     seed = explicit_seed
     if seed is None: 
@@ -518,6 +752,7 @@ async def modify_prompt(
                 aspect_ratio=aspect_ratio_str,
                 mp_size=mp_size_str,
                 batch_size=default_batch_size_from_settings,
+                settings=settings,
             )
         else:
             _apply_checkpoint_generation_inputs(
@@ -534,6 +769,8 @@ async def modify_prompt(
                 aspect_ratio=aspect_ratio_str,
                 mp_size=mp_size_str,
                 batch_size=default_batch_size_from_settings,
+                settings=settings,
+                model_type=model_type,
             )
     except KeyError as e_key:
         print(f"ERROR (KeyError) during core input application: {e_key}"); traceback.print_exc()
@@ -619,62 +856,82 @@ async def modify_prompt(
 
         shift_value = None
         if model_type in {"qwen", "wan"}:
-            shift_candidate = settings.get(f"default_{model_type}_shift", 0.0)
+            shift_key = f"default_{model_type}_shift"
+            default_shift = default_settings.get(shift_key, 0.0)
+            shift_candidate = settings.get(shift_key, default_shift)
             try:
                 shift_value = float(shift_candidate)
             except (TypeError, ValueError):
-                shift_value = 0.0
+                shift_value = float(default_shift)
         _apply_sampling_shift_overrides(modified_prompt, shift_value)
     except Exception as e_model_clip:
         print(f"ERROR during model/CLIP application: {e_model_clip}"); traceback.print_exc()
         return None, None, "Internal Error: Failed during model/CLIP setup.", None
     
     try:
-        lora_node_key_final = None
         gen_spec = spec.generation
+        lora_node_keys: list[str] = []
         if gen_spec.family == "flux":
-            lora_node_key_final = gen_spec.lora_node_img2img if is_img2img else gen_spec.lora_node
-        else:
-            lora_node_key_final = gen_spec.lora_node
+            primary_lora = gen_spec.lora_node_img2img if is_img2img else gen_spec.lora_node
+            if primary_lora:
+                lora_node_keys.append(primary_lora)
+        elif gen_spec.lora_node:
+            lora_node_keys.append(gen_spec.lora_node)
 
-        if lora_node_key_final and lora_node_key_final in modified_prompt:
-            if "inputs" not in modified_prompt[lora_node_key_final] or not isinstance(modified_prompt[lora_node_key_final]["inputs"], dict):
+        secondary_lora_node = getattr(gen_spec, "secondary_lora_node", None)
+        if secondary_lora_node:
+            lora_node_keys.append(secondary_lora_node)
+
+        for lora_node_key_final in dict.fromkeys(lora_node_keys):
+            if not lora_node_key_final or lora_node_key_final not in modified_prompt:
+                continue
+
+            lora_node_data = modified_prompt[lora_node_key_final]
+            if "inputs" not in lora_node_data or not isinstance(lora_node_data["inputs"], dict):
                 print(f"  ERROR: LoRA node '{lora_node_key_final}' is missing 'inputs' dictionary or it's not a dict.")
+                continue
+
+            lora_inputs_dict = lora_node_data["inputs"]
+
+            if style_to_apply != 'off':
+                current_style_config = styles_config.get(style_to_apply, {})
+                if not isinstance(current_style_config, dict):
+                    current_style_config = {}
+
+                for i in range(1, 6):
+                    lora_slot_key = f"lora_{i}"
+                    if lora_slot_key not in lora_inputs_dict:
+                        continue
+
+                    slot_data_from_style = current_style_config.get(lora_slot_key, {})
+                    on_val = slot_data_from_style.get("on", False)
+                    lora_name_val = slot_data_from_style.get("lora", "None")
+                    lora_strength_val = float(slot_data_from_style.get("strength", 0.0))
+
+                    if not isinstance(lora_inputs_dict.get(lora_slot_key), dict):
+                        lora_inputs_dict[lora_slot_key] = {}
+
+                    lora_inputs_dict[lora_slot_key].update(
+                        {
+                            "on": on_val,
+                            "lora": lora_name_val,
+                            "strength": lora_strength_val,
+                        }
+                    )
             else:
-                lora_inputs_dict = modified_prompt[lora_node_key_final]["inputs"]
-                
-                if style_to_apply != 'off':
-                    current_style_config = styles_config.get(style_to_apply, {})
-                    if not isinstance(current_style_config, dict): current_style_config = {}
-                    
-                    for i in range(1, 6):
-                        lora_slot_key = f"lora_{i}"
-                        if lora_slot_key in lora_inputs_dict:
-                            slot_data_from_style = current_style_config.get(lora_slot_key, {})
-                            
-                            on_val = slot_data_from_style.get("on", False)
-                            lora_name_val = slot_data_from_style.get("lora", "None")
-                            lora_strength_val = float(slot_data_from_style.get("strength", 0.0))
-                            
-                            if not isinstance(lora_inputs_dict.get(lora_slot_key), dict):
-                                lora_inputs_dict[lora_slot_key] = {}
-                            
-                            lora_inputs_dict[lora_slot_key].update({
-                                "on": on_val,
-                                "lora": lora_name_val,
-                                "strength": lora_strength_val
-                            })
-                else: 
-                    for i in range(1, 6):
-                        lora_slot_key = f"lora_{i}"
-                        if lora_slot_key in lora_inputs_dict:
-                            if not isinstance(lora_inputs_dict.get(lora_slot_key), dict):
-                                lora_inputs_dict[lora_slot_key] = {}
-                            lora_inputs_dict[lora_slot_key].update({
-                                "on": False,
-                                "lora": "None",
-                                "strength": 0.0
-                            })
+                for i in range(1, 6):
+                    lora_slot_key = f"lora_{i}"
+                    if lora_slot_key not in lora_inputs_dict:
+                        continue
+                    if not isinstance(lora_inputs_dict.get(lora_slot_key), dict):
+                        lora_inputs_dict[lora_slot_key] = {}
+                    lora_inputs_dict[lora_slot_key].update(
+                        {
+                            "on": False,
+                            "lora": "None",
+                            "strength": 0.0,
+                        }
+                    )
     except Exception as e_lora:
         print(f"ERROR applying style LoRAs: {e_lora}"); traceback.print_exc()
         return None, None, "Internal Error: Failed during LoRA application.", None

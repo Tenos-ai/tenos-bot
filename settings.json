@@ -3,7 +3,6 @@
   "steps": 32,
   "selected_t5_clip": "t5xxl_fp8_e4m3fn.safetensors",
   "selected_clip_l": "Long-ViT-L-14-GmP-SAE-full-model.safetensors",
-  "selected_upscale_model": "4x-UltraSharp.pth",
   "selected_vae": "ae.safetensors",
   "default_style": "off",
   "default_variation_mode": "strong",

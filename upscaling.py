@@ -43,6 +43,33 @@ def _sanitize_override(value: Optional[str]) -> Optional[str]:
 
 _UPSCALE_MODEL_EXTENSIONS = {'.pth', '.pt', '.onnx', '.safetensors', '.ckpt', '.bin'}
 
+UPSCALE_SETTING_OVERRIDES = {
+    "flux": {
+        "model_key": "flux_upscale_model",
+        "sampler_key": "flux_upscale_sampler",
+        "scheduler_key": "flux_upscale_scheduler",
+        "steps_key": "flux_upscale_steps",
+        "cfg_key": "flux_upscale_cfg",
+        "denoise_key": "flux_upscale_denoise",
+    },
+    "sdxl": {
+        "model_key": "sdxl_upscale_model",
+        "sampler_key": "sdxl_upscale_sampler",
+        "scheduler_key": "sdxl_upscale_scheduler",
+        "steps_key": "sdxl_upscale_steps",
+        "cfg_key": "sdxl_upscale_cfg",
+        "denoise_key": "sdxl_upscale_denoise",
+    },
+    "qwen": {
+        "model_key": "qwen_upscale_model",
+        "sampler_key": "qwen_upscale_sampler",
+        "scheduler_key": "qwen_upscale_scheduler",
+        "steps_key": "qwen_upscale_steps",
+        "cfg_key": "qwen_upscale_cfg",
+        "denoise_key": "qwen_upscale_denoise",
+    },
+}
+
 
 def _looks_like_upscale_model(name: Optional[str]) -> bool:
     if not name or not isinstance(name, str):
@@ -420,6 +447,62 @@ def _get_loader_default_name(
     return None
 
 
+def _apply_upscale_overrides(
+    ultimate_inputs: dict,
+    settings: dict,
+    override_keys: Optional[dict],
+    guidance_default: float,
+) -> None:
+    if not isinstance(ultimate_inputs, dict):
+        return
+    if not override_keys:
+        if "cfg" not in ultimate_inputs:
+            ultimate_inputs["cfg"] = guidance_default
+        return
+
+    sampler_key = override_keys.get("sampler_key") if override_keys else None
+    scheduler_key = override_keys.get("scheduler_key") if override_keys else None
+    steps_key = override_keys.get("steps_key") if override_keys else None
+    cfg_key = override_keys.get("cfg_key") if override_keys else None
+    denoise_key = override_keys.get("denoise_key") if override_keys else None
+
+    sampler_override = _sanitize_override(settings.get(sampler_key)) if sampler_key else None
+    if sampler_override:
+        ultimate_inputs["sampler_name"] = sampler_override
+
+    scheduler_override = _sanitize_override(settings.get(scheduler_key)) if scheduler_key else None
+    if scheduler_override:
+        ultimate_inputs["scheduler"] = scheduler_override
+
+    if steps_key:
+        steps_value = settings.get(steps_key)
+        try:
+            if steps_value is not None:
+                coerced_steps = int(steps_value)
+                if coerced_steps > 0:
+                    ultimate_inputs["steps"] = coerced_steps
+        except (TypeError, ValueError):
+            pass
+
+    cfg_value = settings.get(cfg_key) if cfg_key else None
+    try:
+        if cfg_value is not None:
+            ultimate_inputs["cfg"] = float(cfg_value)
+        else:
+            ultimate_inputs.setdefault("cfg", guidance_default)
+    except (TypeError, ValueError):
+        ultimate_inputs.setdefault("cfg", guidance_default)
+
+    if denoise_key:
+        denoise_value = settings.get(denoise_key)
+        try:
+            if denoise_value is not None:
+                coerced = float(denoise_value)
+                ultimate_inputs["denoise"] = max(0.0, min(1.0, coerced))
+        except (TypeError, ValueError):
+            pass
+
+
 def _apply_flux_upscale_inputs(
     modified_prompt: dict,
     upscale_spec,
@@ -432,6 +515,8 @@ def _apply_flux_upscale_inputs(
     guidance: float,
     default_steps: int,
     default_denoise: float,
+    settings: dict,
+    override_keys: Optional[dict],
 ):
     if upscale_spec.pos_prompt_node and upscale_spec.pos_prompt_node in modified_prompt:
         modified_prompt[upscale_spec.pos_prompt_node]["inputs"]["text"] = prompt_text
@@ -448,6 +533,8 @@ def _apply_flux_upscale_inputs(
     ultimate_inputs["seed"] = seed
     if "cfg" in ultimate_inputs:
         ultimate_inputs["cfg"] = guidance
+
+    _apply_upscale_overrides(ultimate_inputs, settings, override_keys, guidance)
 
     final_steps = ultimate_inputs.get("steps", default_steps)
     final_denoise = ultimate_inputs.get("denoise", default_denoise)
@@ -488,6 +575,8 @@ def _apply_checkpoint_upscale_inputs(
     guidance: float,
     default_steps: int,
     default_denoise: float,
+    settings: dict,
+    override_keys: Optional[dict],
 ):
     clip_reference = [upscale_spec.model_loader_node, 1]
     if upscale_spec.clip_skip_node and upscale_spec.clip_skip_node in modified_prompt:
@@ -515,6 +604,8 @@ def _apply_checkpoint_upscale_inputs(
     ultimate_inputs = modified_prompt[upscale_spec.upscale_node]["inputs"]
     ultimate_inputs["seed"] = seed
     ultimate_inputs["cfg"] = guidance
+
+    _apply_upscale_overrides(ultimate_inputs, settings, override_keys, guidance)
 
     final_steps = ultimate_inputs.get("steps", default_steps)
     final_denoise = ultimate_inputs.get("denoise", default_denoise)
@@ -593,7 +684,12 @@ def modify_upscale_prompt(
             current_base_model_type, actual_base_model_filename = resolve_model_type_from_prefix(fallback_model_setting)
 
     spec = get_model_spec(current_base_model_type)
+    override_keys = UPSCALE_SETTING_OVERRIDES.get(current_base_model_type)
     upscale_spec = spec.upscale
+
+    if not upscale_spec:
+        print(f"Upscaling: {current_base_model_type.upper()} does not define an upscale workflow.")
+        return None, "Upscaling is not available for this model family.", None
 
     available_models_for_type = (
         available_checkpoint_options if current_base_model_type == 'sdxl' else available_unet_options
@@ -744,7 +840,9 @@ def modify_upscale_prompt(
         upscale_spec.upscale_model_loader_node,
     )
 
-    requested_upscaler = _sanitize_override(settings.get('selected_upscale_model'))
+    requested_upscaler = None
+    if override_keys and override_keys.get("model_key"):
+        requested_upscaler = _sanitize_override(settings.get(override_keys["model_key"]))
     selected_upscaler_model_file = _select_preferred_option(
         [requested_upscaler, template_upscaler_default],
         available_upscaler_options,
@@ -788,6 +886,8 @@ def modify_upscale_prompt(
             guidance=original_guidance_from_source,
             default_steps=original_steps_src,
             default_denoise=0.25,
+            settings=settings,
+            override_keys=override_keys,
         )
     else:
         final_upscaler_denoise, upscale_job_steps, upscale_job_guidance = _apply_checkpoint_upscale_inputs(
@@ -802,6 +902,8 @@ def modify_upscale_prompt(
             guidance=original_guidance_from_source,
             default_steps=original_steps_src,
             default_denoise=0.25,
+            settings=settings,
+            override_keys=override_keys,
         )
 
     os.makedirs(UPSCALES_DIR, exist_ok=True)

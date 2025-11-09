@@ -12,7 +12,8 @@ from settings_manager import (
     get_remix_mode_choices, get_upscale_factor_choices,
     get_llm_enhancer_choices, get_llm_provider_choices, get_llm_model_choices,
     get_mp_size_choices, get_display_prompt_preference_choices,
-    get_editing_mode_choices, get_flux_vae_choices, get_qwen_vae_choices, get_qwen_edit_vae_choices, get_sdxl_vae_choices, get_wan_vae_choices, get_wan_low_noise_unet_choices,
+    get_editing_mode_choices, get_flux_vae_choices, get_qwen_vae_choices, get_qwen_edit_vae_choices, get_sdxl_vae_choices, get_wan_vae_choices,
+    get_wan_t2v_high_unet_choices, get_wan_t2v_low_unet_choices, get_wan_i2v_high_unet_choices, get_wan_i2v_low_unet_choices,
     get_default_flux_model_choices, get_default_sdxl_model_choices,
     get_default_qwen_model_choices, get_default_qwen_edit_model_choices, get_default_wan_model_choices,
     get_active_model_family_choices, get_wan_animation_resolution_choices,
@@ -46,7 +47,13 @@ class _ModelSettingSelect(discord.ui.Select):
         self._content_message = content_message
         self._post_save_hook = post_save_hook
         options = choices_func(self.settings)
+        self._empty_choices = False
+        if not options:
+            options = [discord.SelectOption(label="No options available", value="__none__", default=True)]
+            self._empty_choices = True
         super().__init__(options=options, placeholder=placeholder)
+        if self._empty_choices:
+            self.disabled = True
 
     async def _handle_error(self, interaction: discord.Interaction):
         if self._error_message:
@@ -59,7 +66,7 @@ class _ModelSettingSelect(discord.ui.Select):
                 pass
 
     async def callback(self, interaction: discord.Interaction):
-        if not self.values:
+        if self._empty_choices or not self.values:
             return
 
         raw_value = self.values[0]
@@ -173,8 +180,8 @@ class DefaultWANModelSelect(_ModelSettingSelect):
     def __init__(self, settings):
         super().__init__(
             settings,
-            placeholder="Select Default WAN Model",
-            setting_key='default_wan_checkpoint',
+            placeholder="Select Default WAN T2V High-Noise UNet",
+            setting_key='default_wan_t2v_high_noise_unet',
             choices_func=get_default_wan_model_choices,
             view_factory=lambda data: WANSettingsView(data),
             content_message="Configure WAN Model Settings:",
@@ -359,13 +366,49 @@ class WANGuidanceSelect(_ModelSettingSelect):
         )
 
 
-class WANLowNoiseUnetSelect(_ModelSettingSelect):
+class WANT2VHighUnetSelect(_ModelSettingSelect):
     def __init__(self, settings):
         super().__init__(
             settings,
-            placeholder="Select WAN Low-Noise UNet",
-            setting_key='default_wan_low_noise_unet',
-            choices_func=get_wan_low_noise_unet_choices,
+            placeholder="Select WAN T2V High-Noise UNet",
+            setting_key='default_wan_t2v_high_noise_unet',
+            choices_func=get_wan_t2v_high_unet_choices,
+            view_factory=lambda data: WANLoaderSettingsView(data),
+            content_message="Configure WAN Loader Settings:",
+        )
+
+
+class WANT2VLowUnetSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select WAN T2V Low-Noise UNet",
+            setting_key='default_wan_t2v_low_noise_unet',
+            choices_func=get_wan_t2v_low_unet_choices,
+            view_factory=lambda data: WANLoaderSettingsView(data),
+            content_message="Configure WAN Loader Settings:",
+        )
+
+
+class WANI2VHighUnetSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select WAN I2V High-Noise UNet",
+            setting_key='default_wan_i2v_high_noise_unet',
+            choices_func=get_wan_i2v_high_unet_choices,
+            view_factory=lambda data: WANLoaderSettingsView(data),
+            content_message="Configure WAN Loader Settings:",
+        )
+
+
+class WANI2VLowUnetSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select WAN I2V Low-Noise UNet",
+            setting_key='default_wan_i2v_low_noise_unet',
+            choices_func=get_wan_i2v_low_unet_choices,
             view_factory=lambda data: WANLoaderSettingsView(data),
             content_message="Configure WAN Loader Settings:",
         )
@@ -967,7 +1010,10 @@ class WANSettingsView(BaseSettingsView):
 class WANLoaderSettingsView(BaseSettingsView):
     def __init__(self, settings_ref):
         super().__init__(settings_ref)
-        self.add_item(WANLowNoiseUnetSelect(self.settings))
+        self.add_item(WANT2VHighUnetSelect(self.settings))
+        self.add_item(WANT2VLowUnetSelect(self.settings))
+        self.add_item(WANI2VHighUnetSelect(self.settings))
+        self.add_item(WANI2VLowUnetSelect(self.settings))
         self.add_item(WANClipSelect(self.settings))
         self.add_item(WANVisionClipSelect(self.settings))
         self.add_item(WANVAESelect(self.settings))
