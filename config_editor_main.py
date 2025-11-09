@@ -2155,6 +2155,7 @@ class ConfigEditor:
                 'upscale_factor',
                 'default_guidance_sdxl',
                 'default_guidance_qwen',
+                'default_guidance_qwen_edit',
                 'default_guidance_wan',
                 'default_mp_size',
                 'kontext_guidance',
@@ -2184,7 +2185,7 @@ class ConfigEditor:
             ]:
                 tk_var_instance = tk.DoubleVar()
             elif var_key_name in [
-                'steps', 'sdxl_steps', 'qwen_steps', 'wan_steps', 'default_batch_size',
+                'steps', 'sdxl_steps', 'qwen_steps', 'qwen_edit_steps', 'wan_steps', 'default_batch_size',
                 'kontext_steps', 'variation_batch_size', 'wan_animation_duration',
                 'wan_stage1_noise_seed', 'wan_stage1_seed', 'wan_stage1_steps', 'wan_stage1_start', 'wan_stage1_end',
                 'wan_stage2_noise_seed', 'wan_stage2_seed', 'wan_stage2_steps', 'wan_stage2_start', 'wan_stage2_end',
