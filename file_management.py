@@ -39,8 +39,9 @@ def extract_job_id(filename):
         return None
 
     match = re.search(
-        r'^(EDIT_|GEN_UP_|GEN_VAR_|GEN_I2I_|GEN_)([a-f0-9]{8})',
-        filename, re.IGNORECASE
+        r'^(QWEN_EDIT_|EDIT_|GEN_UP_|GEN_VAR_|GEN_I2I_|GEN_)([a-f0-9]{8})',
+        filename,
+        re.IGNORECASE,
     )
     
     if match:
