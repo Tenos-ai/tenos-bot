@@ -80,19 +80,23 @@ async def _ensure_ws_client_id():
         except Exception as ensure_err:
             print(f"Warning: Failed to ensure websocket connection before queueing: {ensure_err}")
 
-    if ws_client.client_id:
+    if getattr(ws_client, "client_id_confirmed", False) and ws_client.client_id:
         return
 
-    print("WebSocket client_id not yet available. Waiting up to 5 seconds...")
-    for _ in range(10):  # 10 * 0.5s = 5s
-        if ws_client.client_id:
-            print(f"WebSocket client_id acquired: {ws_client.client_id}")
-            return
-        await asyncio.sleep(0.5)
+    print("WebSocket client_id not confirmed yet. Waiting up to 5 seconds...")
+    try:
+        ready = await ws_client.wait_for_client_id(timeout=5.0)
+    except Exception as wait_err:
+        print(f"Warning: Exception while waiting for websocket client_id: {wait_err}")
+        ready = False
+
+    if ready:
+        print(f"WebSocket client_id confirmed: {ws_client.client_id}")
+        return
 
     print(
-        "Warning: WebSocket client_id still not available after waiting. "
-        "Progress updates may fail for this job."
+        "Warning: WebSocket client_id could not be confirmed. "
+        "Progress updates may fail and ComfyUI may execute jobs immediately."
     )
 
 

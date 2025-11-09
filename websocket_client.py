@@ -29,6 +29,13 @@ class WebsocketClient:
         if bot_ref:
             self.bot = weakref.ref(bot_ref)
 
+        if not hasattr(self, "_client_id_ready_event"):
+            self._client_id_ready_event = asyncio.Event()
+        else:
+            self._client_id_ready_event.clear()
+
+        self.client_id_confirmed = False
+
         self.ws_base_url = f"ws://{COMFYUI_HOST}:{COMFYUI_PORT}/ws"
         if not hasattr(self, "client_id") or self.client_id is None:
             self.client_id = uuid.uuid4().hex
@@ -37,7 +44,7 @@ class WebsocketClient:
         self.ws = None
         self.is_connected = False
         self.is_connecting = False
-        self.active_prompts = {} 
+        self.active_prompts = {}
         self._initialized = True
         self.connection_task = None
         self.listener_task = None
@@ -54,6 +61,9 @@ class WebsocketClient:
 
         self.is_connecting = True
         print("WebSocket: Attempting to connect...")
+        self.client_id_confirmed = False
+        if hasattr(self, "_client_id_ready_event"):
+            self._client_id_ready_event.clear()
         try:
             if self.session is None or self.session.closed:
                 connector = aiohttp.TCPConnector(limit_per_host=1)
@@ -142,6 +152,9 @@ class WebsocketClient:
                     print(f"WebSocket Warning: Client ID changed from {self.client_id} to {sid_from_msg}")
                     self.client_id = sid_from_msg
                     self.ws_url = f"{self.ws_base_url}?clientId={self.client_id}"
+                self.client_id_confirmed = True
+                if hasattr(self, "_client_id_ready_event"):
+                    self._client_id_ready_event.set()
 
         elif msg_type == 'execution_start': 
             prompt_id = msg_data_content.get('prompt_id')
@@ -265,21 +278,24 @@ class WebsocketClient:
             except Exception as e_ws_close:
                 print(f"WebSocket: Error closing ws connection: {e_ws_close}")
         
-        self.ws = None 
+        self.ws = None
         self.is_connected = False
-        self.is_connecting = False 
+        self.is_connecting = False
         print("WebSocket: Disconnected state set.")
+        self.client_id_confirmed = False
+        if hasattr(self, "_client_id_ready_event"):
+            self._client_id_ready_event.clear()
 
 
     async def ensure_connected(self):
         if self.is_connected: return
         if self.is_connecting:
             print("WebSocket: ensure_connected called while already connecting. Waiting for existing attempt.")
-            if self.connection_task: 
+            if self.connection_task:
                 try: await asyncio.wait_for(self.connection_task, timeout=15)
                 except asyncio.TimeoutError: print("WebSocket: Timeout waiting for ongoing connection task in ensure_connected.")
                 except Exception as e: print(f"WebSocket: Error waiting for ongoing connection task: {e}")
-            return 
+            return
 
         bot = self.bot()
         if not bot or bot.is_closed():
@@ -304,7 +320,23 @@ class WebsocketClient:
 
     async def reconnect(self):
         print("WebSocket: Reconnect sequence initiated.")
-        await self.disconnect(cancel_tasks=True) 
+        await self.disconnect(cancel_tasks=True)
         print("WebSocket: Delaying 5s before attempting reconnect...")
-        await asyncio.sleep(5) 
+        await asyncio.sleep(5)
         await self.ensure_connected()
+
+    async def wait_for_client_id(self, timeout: float = 5.0) -> bool:
+        if self.client_id and getattr(self, "client_id_confirmed", False):
+            return True
+
+        event = getattr(self, "_client_id_ready_event", None)
+        if event is None:
+            event = asyncio.Event()
+            self._client_id_ready_event = event
+
+        try:
+            await asyncio.wait_for(event.wait(), timeout)
+        except asyncio.TimeoutError:
+            return bool(self.client_id and getattr(self, "client_id_confirmed", False))
+
+        return bool(self.client_id and getattr(self, "client_id_confirmed", False))
