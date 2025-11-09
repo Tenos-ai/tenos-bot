@@ -77,6 +77,8 @@ def _update_model_loader_filename(modified_prompt: dict, node_id, *, file_name) 
             inputs["unet_name"] = file_name
         elif "model_name" in inputs:
             inputs["model_name"] = file_name
+        elif "ckpt_name" in inputs:
+            inputs["ckpt_name"] = file_name
 
     widgets = node_entry.get("widgets_values")
     if isinstance(widgets, list) and widgets:

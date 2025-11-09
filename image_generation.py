@@ -64,6 +64,33 @@ def normalize_path_for_comfyui(path):
     return normalized
 
 
+_CHECKPOINT_MODEL_SETTING_KEYS = {
+    "sdxl": "default_sdxl_checkpoint",
+    "qwen": "default_qwen_checkpoint",
+    "wan": "default_wan_checkpoint",
+}
+
+
+def _extract_model_file_name(candidate: str | None) -> str | None:
+    """Return the usable model filename from a user selection or setting value."""
+
+    if not isinstance(candidate, str):
+        return None
+
+    normalized = candidate.strip()
+    if not normalized:
+        return None
+
+    _, inferred_name = resolve_model_type_from_prefix(normalized)
+    if inferred_name:
+        cleaned = inferred_name.strip()
+        if cleaned.startswith(":"):
+            cleaned = cleaned.lstrip(":")
+        return cleaned or None
+
+    return normalized
+
+
 def _update_model_loader_filename(modified_prompt: dict, node_id, *, file_name) -> None:
     """Update a loader node's filename inputs/widgets when overriding selections."""
 
@@ -80,6 +107,8 @@ def _update_model_loader_filename(modified_prompt: dict, node_id, *, file_name) 
             inputs["unet_name"] = file_name
         elif "model_name" in inputs:
             inputs["model_name"] = file_name
+        elif "ckpt_name" in inputs:
+            inputs["ckpt_name"] = file_name
 
     widgets = node_entry.get("widgets_values")
     if isinstance(widgets, list) and widgets:
@@ -286,6 +315,7 @@ async def modify_prompt(
     styles_config = load_styles_config()
 
     model_type, actual_model_name = resolve_model_type_from_prefix(selected_model_name_with_prefix)
+    actual_model_name = _extract_model_file_name(actual_model_name)
     if selected_model_name_with_prefix and model_type not in ("flux", "sdxl", "qwen", "wan"):
         print(f"Warning: Selected model prefix '{selected_model_name_with_prefix}' not recognized. Defaulting to {model_type.upper()}.")
     if not selected_model_name_with_prefix:
@@ -455,6 +485,22 @@ async def modify_prompt(
     except Exception as template_error:
         print(f"ERROR copying template for model '{model_type}': {template_error}")
         return None, None, "Internal Error: Failed to prepare workflow template.", None
+
+    if spec.generation.family == "checkpoint":
+        preferred_model_name = _extract_model_file_name(actual_model_name)
+        if not preferred_model_name:
+            fallback_key = _CHECKPOINT_MODEL_SETTING_KEYS.get(model_type)
+            fallback_candidate = settings.get(fallback_key) if fallback_key else None
+            preferred_model_name = _extract_model_file_name(fallback_candidate)
+
+        if preferred_model_name:
+            target_loader_node = spec.generation.model_loader_node
+            if target_loader_node and target_loader_node in modified_prompt:
+                _update_model_loader_filename(
+                    modified_prompt,
+                    target_loader_node,
+                    file_name=preferred_model_name,
+                )
 
     try:
         gen_spec = spec.generation

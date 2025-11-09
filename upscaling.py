@@ -47,7 +47,12 @@ _UPSCALE_MODEL_EXTENSIONS = {'.pth', '.pt', '.onnx', '.safetensors', '.ckpt', '.
 def _looks_like_upscale_model(name: Optional[str]) -> bool:
     if not name or not isinstance(name, str):
         return False
-    base = os.path.basename(name.strip())
+
+    cleaned = name.strip()
+    if not cleaned:
+        return False
+
+    base = os.path.basename(cleaned)
     stem, ext = os.path.splitext(base)
     if not stem or not ext:
         return False
@@ -55,12 +60,87 @@ def _looks_like_upscale_model(name: Optional[str]) -> bool:
 
 
 def _upscale_model_exists(name: Optional[str]) -> bool:
-    if not _looks_like_upscale_model(name):
+    if not name or not isinstance(name, str):
         return False
+
+    cleaned = name.strip()
+    if not cleaned:
+        return False
+
+    candidate_names: set[str] = {cleaned}
+    basename = os.path.basename(cleaned)
+    if basename:
+        candidate_names.add(basename)
+
+    lowercase_candidates = {candidate.lower() for candidate in candidate_names}
+    stem_candidates = {
+        os.path.splitext(candidate)[0]
+        for candidate in lowercase_candidates
+    }
+
     if not UPSCALE_MODELS_ROOT or not os.path.isdir(UPSCALE_MODELS_ROOT):
+        # If we cannot inspect the configured directory, assume the caller
+        # knows what they are doing to avoid false warnings.
+        return any(_looks_like_upscale_model(candidate) for candidate in candidate_names)
+
+    candidate_path = os.path.join(UPSCALE_MODELS_ROOT, basename or cleaned)
+    if os.path.exists(candidate_path):
         return True
-    candidate_path = os.path.join(UPSCALE_MODELS_ROOT, os.path.basename(name.strip()))
-    return os.path.exists(candidate_path)
+
+    for local_entry in get_local_upscale_models():
+        normalized_local = local_entry.strip().lower()
+        if not normalized_local:
+            continue
+
+        if normalized_local in lowercase_candidates:
+            return True
+
+        local_stem, _ = os.path.splitext(normalized_local)
+        if local_stem and local_stem in stem_candidates:
+            return True
+
+    return False
+
+
+def get_local_upscale_models() -> list[str]:
+    """Return discovered upscale models from the configured directory."""
+
+    if not UPSCALE_MODELS_ROOT or not os.path.isdir(UPSCALE_MODELS_ROOT):
+        return []
+
+    discovered: list[str] = []
+    try:
+        for entry in os.listdir(UPSCALE_MODELS_ROOT):
+            if not _looks_like_upscale_model(entry):
+                continue
+            discovered.append(entry)
+    except OSError as os_error:
+        print(
+            "Upscaling: Unable to scan local upscale model directory "
+            f"'{UPSCALE_MODELS_ROOT}': {os_error}"
+        )
+        return []
+
+    normalized = {item.strip() for item in discovered if isinstance(item, str) and item.strip()}
+    return sorted(normalized, key=str.lower)
+
+
+def upscale_model_exists(name: Optional[str]) -> bool:
+    """Public helper to confirm whether an upscale model is available locally."""
+
+    if not name:
+        return False
+
+    if _upscale_model_exists(name):
+        return True
+
+    # Some ComfyUI installations report relative paths instead of just the
+    # filename. Check the basename as a final attempt before giving up.
+    basename = os.path.basename(name)
+    if basename and basename != name:
+        return _upscale_model_exists(basename)
+
+    return False
 
 
 def _resolve_upscale_model_choice(
@@ -297,6 +377,8 @@ def _update_model_loader_filename(modified_prompt: dict, node_id, *, file_name) 
             inputs["unet_name"] = file_name
         elif "model_name" in inputs:
             inputs["model_name"] = file_name
+        elif "ckpt_name" in inputs:
+            inputs["ckpt_name"] = file_name
 
     widgets = node_entry.get("widgets_values")
     if isinstance(widgets, list) and widgets:
