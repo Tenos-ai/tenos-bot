@@ -869,11 +869,9 @@ class ConfigEditor:
             "sdxl_ksampler_denoise": "Default denoise factor applied to SDXL KSampler outputs.",
             "qwen_ksampler_sampler": "Default sampler used by Qwen generations.",
             "qwen_ksampler_scheduler": "Default scheduler algorithm for Qwen sampling.",
-            "qwen_ksampler_cfg": "Base CFG value supplied to the Qwen KSampler.",
             "qwen_ksampler_denoise": "Default denoise factor applied to Qwen KSampler outputs.",
             "qwen_edit_ksampler_sampler": "Default sampler used by Qwen Edit generations.",
             "qwen_edit_ksampler_scheduler": "Default scheduler for the Qwen Edit sampler.",
-            "qwen_edit_ksampler_cfg": "Base CFG value for Qwen Edit sampling.",
             "qwen_edit_ksampler_denoise": "Default denoise strength for Qwen Edit sampling.",
             "qwen_edit_cfg_rescale": "CFG rescale multiplier applied to Qwen Edit sampling runs.",
             "wan_stage1_add_noise": "Controls whether WAN stage 1 injects fresh noise before sampling.",
@@ -2168,9 +2166,7 @@ class ConfigEditor:
                 'flux_ksampler_denoise',
                 'sdxl_ksampler_cfg',
                 'sdxl_ksampler_denoise',
-                'qwen_ksampler_cfg',
                 'qwen_ksampler_denoise',
-                'qwen_edit_ksampler_cfg',
                 'qwen_edit_ksampler_denoise',
                 'wan_stage1_cfg',
                 'wan_stage1_denoise',
@@ -2404,7 +2400,6 @@ class ConfigEditor:
         create_setting_row_ui(qwen_section.body(), "Default Qwen Shift", ttk.Spinbox, var_key_name='default_qwen_shift', section_key='qwen', from_=0.0, to=10.0, increment=0.1, format="%.2f")
         create_setting_row_ui(qwen_section.body(), "KSampler Sampler", ttk.Combobox, KSAMPLER_SAMPLER_OPTIONS, 'qwen_ksampler_sampler', section_key='qwen')
         create_setting_row_ui(qwen_section.body(), "KSampler Scheduler", ttk.Combobox, KSAMPLER_SCHEDULER_OPTIONS, 'qwen_ksampler_scheduler', section_key='qwen')
-        create_setting_row_ui(qwen_section.body(), "KSampler CFG", ttk.Spinbox, var_key_name='qwen_ksampler_cfg', section_key='qwen', from_=0.0, to=20.0, increment=0.1, format="%.1f")
         create_setting_row_ui(qwen_section.body(), "KSampler Denoise", ttk.Spinbox, var_key_name='qwen_ksampler_denoise', section_key='qwen', from_=0.0, to=1.0, increment=0.01, format="%.2f")
         create_setting_row_ui(qwen_section.body(), "Upscale Model", ttk.Combobox, self.available_upscale_models, 'qwen_upscale_model', section_key='qwen')
         create_setting_row_ui(qwen_section.body(), "Upscale Sampler", ttk.Combobox, KSAMPLER_SAMPLER_OPTIONS, 'qwen_upscale_sampler', section_key='qwen')
@@ -2427,7 +2422,6 @@ class ConfigEditor:
         create_setting_row_ui(qwen_edit_section.body(), "CFG Rescale", ttk.Spinbox, var_key_name='qwen_edit_cfg_rescale', section_key='qwen_edit', from_=0.0, to=2.0, increment=0.05, format="%.2f")
         create_setting_row_ui(qwen_edit_section.body(), "KSampler Sampler", ttk.Combobox, KSAMPLER_SAMPLER_OPTIONS, 'qwen_edit_ksampler_sampler', section_key='qwen_edit')
         create_setting_row_ui(qwen_edit_section.body(), "KSampler Scheduler", ttk.Combobox, KSAMPLER_SCHEDULER_OPTIONS, 'qwen_edit_ksampler_scheduler', section_key='qwen_edit')
-        create_setting_row_ui(qwen_edit_section.body(), "KSampler CFG", ttk.Spinbox, var_key_name='qwen_edit_ksampler_cfg', section_key='qwen_edit', from_=0.0, to=20.0, increment=0.1, format="%.1f")
         create_setting_row_ui(qwen_edit_section.body(), "KSampler Denoise", ttk.Spinbox, var_key_name='qwen_edit_ksampler_denoise', section_key='qwen_edit', from_=0.0, to=1.0, increment=0.01, format="%.2f")
 
         wan_styles = sorted([name for name, data in self.styles_config.items() if data.get('model_type', 'all') in ['all', 'wan']])

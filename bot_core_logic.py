@@ -1022,11 +1022,11 @@ async def process_kontext_edit_request(
             except (ValueError, TypeError):
                 pass
 
-        final_guidance = settings.get('default_guidance_qwen_edit', 5.5)
+        final_guidance = settings.get('default_guidance_qwen_edit', 2.5)
         try:
             final_guidance = float(final_guidance)
         except (ValueError, TypeError):
-            final_guidance = 5.5
+            final_guidance = 2.5
         if params_dict.get('g'):
             try:
                 final_guidance = float(params_dict['g'])

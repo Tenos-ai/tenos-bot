@@ -62,7 +62,7 @@ KSAMPLER_SETTING_OVERRIDES = {
     "qwen": {
         "sampler_key": "qwen_ksampler_sampler",
         "scheduler_key": "qwen_ksampler_scheduler",
-        "cfg_key": "qwen_ksampler_cfg",
+        "cfg_key": "default_guidance_qwen",
         "denoise_key": "qwen_ksampler_denoise",
     },
 }
