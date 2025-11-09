@@ -1472,12 +1472,13 @@ def get_qwen_edit_guidance_choices(settings):
     label_prefix = "Guidance (Qwen Edit)"
     choices: List[discord.SelectOption] = []
     for value in values:
+        value = float(value)
         value_str = f"{value:.1f}"
         choices.append(
             discord.SelectOption(
                 label=f"{label_prefix}: {value_str}",
                 value=value_str,
-                default=(abs(value - current_guidance) < 0.05),
+                default=bool(abs(value - current_guidance) < 0.05),
             )
         )
 
@@ -1506,6 +1507,7 @@ def get_qwen_edit_shift_choices(settings):
 
     choices: List[discord.SelectOption] = []
     for value in ordered_values:
+        value = float(value)
         if value.is_integer():
             display = f"{int(value)}"
         else:
@@ -1514,7 +1516,7 @@ def get_qwen_edit_shift_choices(settings):
             discord.SelectOption(
                 label=f"Shift: {display}",
                 value=str(value),
-                default=(abs(value - current_shift) < 0.05),
+                default=bool(abs(value - current_shift) < 0.05),
             )
         )
 
@@ -1537,12 +1539,13 @@ def get_qwen_edit_denoise_choices(settings):
 
     choices: List[discord.SelectOption] = []
     for value in base_values:
+        value = float(value)
         display = f"{value:.2f}".rstrip('0').rstrip('.') if value not in (0.0, 1.0) else f"{value:.1f}"
         choices.append(
             discord.SelectOption(
                 label=f"Denoise: {display}",
                 value=f"{value:.2f}",
-                default=(abs(value - current_denoise) < 0.05),
+                default=bool(abs(value - current_denoise) < 0.05),
             )
         )
 
