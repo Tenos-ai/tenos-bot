@@ -2747,16 +2747,40 @@ class ConfigEditor:
         if openai_key:
             try:
                 headers = {'Authorization': f'Bearer {openai_key}'}
-                response = requests.get("https://api.openai.com/v1/models", headers=headers, timeout=10)
-                response.raise_for_status()
-                models = response.json().get('data', [])
+                params = {'limit': 100}
+                next_after = None
+                chat_model_prefixes = ['gpt-4', 'gpt-3.5', 'o1', 'o3', 'o4', 'gpt-5']
+                collected_ids = set()
 
-                chat_model_prefixes = ['gpt-4', 'gpt-3.5', 'o1', 'o3', 'o4']
+                while True:
+                    if next_after:
+                        params['after'] = next_after
+                    elif 'after' in params:
+                        params.pop('after', None)
 
-                openai_model_ids = sorted([
-                    m['id'] for m in models
-                    if any(m['id'].startswith(p) for p in chat_model_prefixes)
-                ])
+                    response = requests.get(
+                        "https://api.openai.com/v1/models",
+                        headers=headers,
+                        params=params,
+                        timeout=10,
+                    )
+                    response.raise_for_status()
+                    payload = response.json()
+                    models = payload.get('data', [])
+
+                    for model in models:
+                        model_id = model.get('id')
+                        if isinstance(model_id, str) and any(model_id.startswith(p) for p in chat_model_prefixes):
+                            collected_ids.add(model_id)
+
+                    if not payload.get('has_more'):
+                        break
+
+                    next_after = payload.get('last_id')
+                    if not isinstance(next_after, str) or not next_after:
+                        break
+
+                openai_model_ids = sorted(collected_ids)
 
                 openai_entry = updated_models_data['providers'].setdefault('openai', {
                     'display_name': 'OpenAI API', 'models': [], 'favorites': []
