@@ -83,7 +83,7 @@ async def validate_models_against_comfyui(bot):
         unet_count = len(available_models.get('unet', [])); checkpoint_count = len(available_models.get('checkpoint', [])); clip_count = len(available_models.get('clip', [])); vae_count = len(available_models.get('vae', [])); upscaler_count = len(available_models.get('upscaler', []))
         print(f"\n=== Available Models (API Summary) ===\nUNET (Flux): {unet_count}, CHECKPOINT (SDXL): {checkpoint_count}, CLIP: {clip_count}, VAE: {vae_count}, UPSCALER: {upscaler_count}\n" + "="*36)
         if unet_count == 0 and checkpoint_count == 0 and clip_count == 0 : print("WARNING: ComfyUI API returned no Flux UNETs, SDXL Checkpoints, or CLIPs. Validation cannot proceed effectively."); return False
-        settings = load_settings(); selected_model_prefix = settings.get('selected_model'); sel_t5 = settings.get('selected_t5_clip'); sel_l = settings.get('selected_clip_l'); sel_upscaler = settings.get('selected_upscale_model'); issues = False
+        settings = load_settings(); selected_model_prefix = settings.get('selected_model'); sel_t5 = settings.get('selected_t5_clip'); sel_l = settings.get('selected_clip_l'); issues = False
         if selected_model_prefix:
             m_type, m_name = (selected_model_prefix.split(":",1)[0].strip().lower(), selected_model_prefix.split(":",1)[1].strip()) if ":" in selected_model_prefix else (None, selected_model_prefix.strip())
             if m_type == "flux" and not _option_matches(m_name, available_models.get("unet", [])):
@@ -97,17 +97,24 @@ async def validate_models_against_comfyui(bot):
         elif not sel_t5: print("❓ Info: No T5 CLIP selected.")
         if sel_l and not _option_matches(sel_l, available_clips): print(f"⚠️ WARNING: Selected CLIP-L '{sel_l}' not found!"); issues=True
         elif not sel_l: print("❓ Info: No CLIP-L selected.")
-        if sel_upscaler and sel_upscaler != "None":
-            api_upscalers = available_models.get("upscaler", [])
-            if not _option_matches(sel_upscaler, api_upscalers):
-                if upscale_model_exists(sel_upscaler):
-                    print(
-                        f"ℹ️ Info: Selected Upscaler '{sel_upscaler}' available locally "
-                        "but not reported by ComfyUI API."
-                    )
-                else:
-                    print(f"⚠️ WARNING: Selected Upscaler '{sel_upscaler}' not found!"); issues=True
-        elif not sel_upscaler or sel_upscaler == "None": print("❓ Info: No Upscaler selected.")
+        api_upscalers = available_models.get("upscaler", [])
+        upscaler_settings = [
+            ("Flux", settings.get('flux_upscale_model')),
+            ("SDXL", settings.get('sdxl_upscale_model')),
+            ("Qwen", settings.get('qwen_upscale_model')),
+        ]
+        for family_label, sel_upscaler in upscaler_settings:
+            if sel_upscaler and sel_upscaler != "None":
+                if not _option_matches(sel_upscaler, api_upscalers):
+                    if upscale_model_exists(sel_upscaler):
+                        print(
+                            f"ℹ️ Info: {family_label} upscaler '{sel_upscaler}' available locally "
+                            "but not reported by ComfyUI API."
+                        )
+                    else:
+                        print(f"⚠️ WARNING: {family_label} Upscaler '{sel_upscaler}' not found!"); issues=True
+            else:
+                print(f"❓ Info: No {family_label} Upscaler selected.")
         if issues: print("‼️-> Please update settings or check ComfyUI models.")
         else: print("✅ Configured models appear valid according to ComfyUI API.")
         return not issues

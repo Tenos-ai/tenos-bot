@@ -50,6 +50,7 @@ MODELS_LIST_FILE_NAME = "modelslist.json"
 CHECKPOINTS_LIST_FILE_NAME = "checkpointslist.json"
 CLIP_LIST_FILE_NAME = "cliplist.json"
 QWEN_MODELS_FILE_NAME = "qwenmodels.json"
+QWEN_EDIT_MODELS_FILE_NAME = "qweneditmodels.json"
 WAN_MODELS_FILE_NAME = "wanmodels.json"
 
 ICON_PATH_ICO = r"tenos-ai_icon.ico"

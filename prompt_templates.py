@@ -59,6 +59,32 @@ def build_bobs_latent_node(
             },
             "class_type": "BobsLatentNodeAdvanced",
             "_meta": {"title": title},
+    }
+}
+
+
+def build_hunyuan_latent_node(
+    node_id: str,
+    *,
+    width: int,
+    height: int,
+    length: int,
+    batch_size: int = 1,
+    title: str,
+) -> dict:
+    """Return an EmptyHunyuanLatentVideo node configuration."""
+
+    return {
+        str(node_id): {
+            "inputs": {
+                "width": width,
+                "height": height,
+                "length": length,
+                "batch_size": batch_size,
+            },
+            "class_type": "EmptyHunyuanLatentVideo",
+            "widgets_values": [width, height, length, batch_size],
+            "_meta": {"title": title},
         }
     }
 
@@ -183,16 +209,18 @@ WAN_SECOND_UNET_LOADER_NODE = "wan_unet_low"
 WAN_CLIP_LOADER_NODE = "wan_clip"
 WAN_VAE_LOADER_NODE = "wan_vae"
 WAN_LORA_NODE = "wan_lora"
+WAN_REFINER_LORA_NODE = "wan_lora_refiner"
 WAN_POS_PROMPT_NODE = "wan_pos_prompt"
 WAN_NEG_PROMPT_NODE = "wan_neg_prompt"
+WAN_INITIAL_KSAMPLER_NODE = "wan_ksampler_initial"
 WAN_KSAMPLER_NODE = "wan_ksampler"
 WAN_VAE_DECODE_NODE = "wan_vae_decode"
 WAN_SAVE_IMAGE_NODE = "wan_save"
 WAN_LATENT_NODE = "wan_latent"
 
 WAN_SAMPLING_NODE = "wan_sampling"
+WAN_SECOND_SAMPLING_NODE = "wan_sampling_refiner"
 WAN_VAR_SAMPLING_NODE = "wan_var_sampling"
-WAN_UPSCALE_SAMPLING_NODE = "wan_up_sampling"
 WAN_VAR_POS_PROMPT_NODE = "wan_var_pos_prompt"
 WAN_VAR_NEG_PROMPT_NODE = "wan_var_neg_prompt"
 
@@ -208,21 +236,14 @@ WAN_VAR_VAE_DECODE_NODE = "wan_var_vae_decode"
 WAN_VAR_SAVE_IMAGE_NODE = "wan_var_save"
 WAN_VAR_BATCH_NODE = "wan_var_batch"
 
-WAN_UPSCALE_LOAD_IMAGE_NODE = "wan_up_load"
-WAN_UPSCALE_MODEL_LOADER_NODE = "wan_up_model_loader"
-WAN_UPSCALE_ULTIMATE_NODE = "wan_up_ultimate"
-WAN_UPSCALE_HELPER_LATENT_NODE = "wan_up_helper_latent"
-WAN_UPSCALE_SAVE_IMAGE_NODE = "wan_up_save"
-WAN_UPSCALE_POS_PROMPT_NODE = "wan_up_pos_prompt"
-WAN_UPSCALE_NEG_PROMPT_NODE = "wan_up_neg_prompt"
-WAN_UPSCALE_CLIP_SKIP_NODE = "wan_up_clip_skip"
-
 WAN_I2V_LOAD_IMAGE_NODE = "wan_i2v_image"
 WAN_I2V_RESIZE_NODE = "wan_i2v_resize"
 WAN_I2V_VISION_CLIP_NODE = "wan_i2v_vision_clip"
 WAN_I2V_VISION_ENCODE_NODE = "wan_i2v_vision_encode"
 WAN_I2V_SAMPLING_NODE = "wan_i2v_sampling"
+WAN_I2V_SECOND_SAMPLING_NODE = "wan_i2v_sampling_refiner"
 WAN_I2V_KSAMPLER_NODE = "wan_i2v_ksampler"
+WAN_I2V_SECOND_KSAMPLER_NODE = "wan_i2v_ksampler_refiner"
 WAN_I2V_VAE_DECODE_NODE = "wan_i2v_vae_decode"
 WAN_I2V_CREATE_VIDEO_NODE = "wan_i2v_create"
 WAN_I2V_SAVE_VIDEO_NODE = "wan_i2v_save"
@@ -292,7 +313,7 @@ upscale_prompt = {
   "1": {"inputs": {"text": "PROMPT HERE", "clip": [str(UPSCALE_LORA_NODE),1]}, "class_type": "CLIPTextEncode", "_meta": {"title": "PROMPT"}},
   "58": {"inputs": {"filename_prefix": "fluxbot/UPSCALES/GEN_UP", "images": ["104",0]}, "class_type": "SaveImage", "_meta": {"title": "Save Upscaled Image"}},
   "103": {"inputs": {"model_name": "4x-UltraSharp.pth"}, "class_type": "UpscaleModelLoader", "_meta": {"title": "Load Upscale Model"}},
-  "104": {"inputs": {"seed": 763716328118238, "steps": 16, "cfg": 1, "sampler_name": "euler", "scheduler": "sgm_uniform", "denoise": 0.2, "mode_type": "Linear", "mask_blur": 16, "tile_padding": 32, "seam_fix_mode": "None", "seam_fix_denoise": 0.15, "seam_fix_width": 64, "seam_fix_mask_blur": 8, "seam_fix_padding": 16, "force_uniform_tiles": False, "tiled_decode": False, "image": ["115",0], "model": [str(UPSCALE_LORA_NODE),0], "positive": ["1",0], "negative": ["1",0], "vae": ["8:2",0], "upscale_model": ["103",0], "upscale_by": [str(UPSCALE_HELPER_LATENT_NODE),3], "tile_width": [str(UPSCALE_HELPER_LATENT_NODE),1], "tile_height": [str(UPSCALE_HELPER_LATENT_NODE),2]}, "class_type": "UltimateSDUpscale", "_meta": {"title": "Ultimate SD Upscale"}},
+  "104": {"inputs": {"seed": 763716328118238, "steps": 16, "cfg": 1, "sampler_name": "euler", "scheduler": "sgm_uniform", "denoise": 0.2, "mode_type": "linear", "mask_blur": 16, "tile_padding": 32, "seam_fix_mode": "None", "seam_fix_denoise": 0.15, "seam_fix_width": 64, "seam_fix_mask_blur": 8, "seam_fix_padding": 16, "force_uniform_tiles": False, "tiled_decode": False, "image": ["115",0], "model": [str(UPSCALE_LORA_NODE),0], "positive": ["1",0], "negative": ["1",0], "vae": ["8:2",0], "upscale_model": ["103",0], "upscale_by": [str(UPSCALE_HELPER_LATENT_NODE),3], "tile_width": [str(UPSCALE_HELPER_LATENT_NODE),1], "tile_height": [str(UPSCALE_HELPER_LATENT_NODE),2]}, "class_type": "UltimateSDUpscale", "_meta": {"title": "Ultimate SD Upscale"}},
   "115": {"inputs": {"url_or_path": "IMAGE URL HERE"}, "class_type": "LoadImageFromUrlOrPath", "_meta": {"title": "LoadImageFromUrlOrPath"}},
   "8:2": {"inputs": {"vae_name": "ae.safetensors"}, "class_type": "VAELoader", "_meta": {"title": "Load VAE"}},
   "8:0": {"inputs": {"unet_name": "flux1-dev-Q8_0.gguf"}, "class_type": "UnetLoaderGGUF", "_meta": {"title": "Unet Loader (GGUF)"}},
@@ -481,7 +502,7 @@ sdxl_upscale_prompt = {
   str(SDXL_UPSCALE_NEG_PROMPT_NODE): {"inputs": {"text": "UPSCALE NEGATIVE HERE", "clip": [str(SDXL_UPSCALE_CLIP_SKIP_NODE), 0]}, "class_type": "CLIPTextEncode", "_meta": {"title": "Upscale Negative Prompt (SDXL)"}},
   str(SDXL_UPSCALE_LOAD_IMAGE_NODE): {"inputs": {"url_or_path": "IMAGE_URL_HERE"}, "class_type": "LoadImageFromUrlOrPath", "_meta": {"title": "Load Image for Upscaling"}},
   str(SDXL_UPSCALE_MODEL_LOADER_NODE): {"inputs": {"model_name": "4x-UltraSharp.pth"}, "class_type": "UpscaleModelLoader", "_meta": {"title": "Load Upscale Model"}},
-  str(SDXL_UPSCALE_ULTIMATE_NODE): {"inputs": {"seed": 12345, "steps": 16, "cfg": 5.0, "sampler_name": "euler", "scheduler": "karras", "denoise": 0.15, "mode_type": "Linear", "mask_blur": 16, "tile_padding": 32, "seam_fix_mode": "Half Tile + Intersections", "seam_fix_denoise": 0.4, "seam_fix_width": 64, "seam_fix_mask_blur": 8, "seam_fix_padding": 32, "force_uniform_tiles": True, "tiled_decode": True, "image": [str(SDXL_UPSCALE_LOAD_IMAGE_NODE), 0], "model": [str(SDXL_UPSCALE_LORA_NODE), 0], "positive": [str(SDXL_UPSCALE_POS_PROMPT_NODE), 0], "negative": [str(SDXL_UPSCALE_NEG_PROMPT_NODE), 0], "vae": [str(SDXL_CHECKPOINT_LOADER_NODE), 2], "upscale_model": [str(SDXL_UPSCALE_MODEL_LOADER_NODE), 0], "upscale_by": [str(SDXL_UPSCALE_HELPER_LATENT_NODE),3], "tile_width": [str(SDXL_UPSCALE_HELPER_LATENT_NODE),1], "tile_height": [str(SDXL_UPSCALE_HELPER_LATENT_NODE),2]}, "class_type": "UltimateSDUpscale", "_meta": {"title": "Ultimate SD Upscale (SDXL)"}},
+  str(SDXL_UPSCALE_ULTIMATE_NODE): {"inputs": {"seed": 12345, "steps": 16, "cfg": 6.0, "sampler_name": "euler_ancestral", "scheduler": "normal", "denoise": 0.15, "mode_type": "linear", "mask_blur": 16, "tile_padding": 32, "seam_fix_mode": "Half Tile + Intersections", "seam_fix_denoise": 0.4, "seam_fix_width": 64, "seam_fix_mask_blur": 8, "seam_fix_padding": 32, "force_uniform_tiles": True, "tiled_decode": True, "image": [str(SDXL_UPSCALE_LOAD_IMAGE_NODE), 0], "model": [str(SDXL_UPSCALE_LORA_NODE), 0], "positive": [str(SDXL_UPSCALE_POS_PROMPT_NODE), 0], "negative": [str(SDXL_UPSCALE_NEG_PROMPT_NODE), 0], "vae": [str(SDXL_CHECKPOINT_LOADER_NODE), 2], "upscale_model": [str(SDXL_UPSCALE_MODEL_LOADER_NODE), 0], "upscale_by": [str(SDXL_UPSCALE_HELPER_LATENT_NODE),3], "tile_width": [str(SDXL_UPSCALE_HELPER_LATENT_NODE),1], "tile_height": [str(SDXL_UPSCALE_HELPER_LATENT_NODE),2]}, "class_type": "UltimateSDUpscale", "_meta": {"title": "Ultimate SD Upscale (SDXL)"}},
   str(SDXL_UPSCALE_SAVE_IMAGE_NODE): {"inputs": {"filename_prefix": "sdxlbot/UPSCALES", "images": [str(SDXL_UPSCALE_ULTIMATE_NODE), 0]}, "class_type": "SaveImage", "_meta": {"title": "Save Upscaled Image (SDXL)"}}
 }
 
@@ -840,12 +861,12 @@ qwen_upscale_prompt = {
   str(QWEN_UPSCALE_ULTIMATE_NODE): {
       "inputs": {
           "seed": 55555,
-          "steps": 12,
-          "cfg": 5.0,
+          "steps": 16,
+          "cfg": 5.5,
           "sampler_name": "euler",
           "scheduler": "normal",
           "denoise": 0.2,
-          "mode_type": "Linear",
+          "mode_type": "linear",
           "mask_blur": 16,
           "tile_padding": 32,
           "seam_fix_mode": "Half Tile + Intersections",
@@ -993,13 +1014,13 @@ wan_prompt = {
       "inputs": {"unet_name": "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors", "weight_dtype": "default"},
       "class_type": "UNETLoader",
       "widgets_values": ["wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors", "default"],
-      "_meta": {"title": "Load WAN High-Noise UNet"},
+      "_meta": {"title": "Load WAN T2V High-Noise UNet"},
   },
   str(WAN_SECOND_UNET_LOADER_NODE): {
       "inputs": {"unet_name": "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors", "weight_dtype": "default"},
       "class_type": "UNETLoader",
       "widgets_values": ["wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors", "default"],
-      "_meta": {"title": "Load WAN Low-Noise UNet"},
+      "_meta": {"title": "Load WAN T2V Low-Noise UNet"},
   },
   str(WAN_CLIP_LOADER_NODE): {
       "inputs": {"clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors", "type": "wan", "embedding_directory": "default"},
@@ -1026,27 +1047,36 @@ wan_prompt = {
   str(WAN_SAMPLING_NODE): {
       "inputs": {
           "model": [str(WAN_LORA_NODE), 0],
-          "shift": 0.0,
+          "shift": 8.0,
       },
       "class_type": "ModelSamplingSD3",
-      "widgets_values": [0.0],
+      "widgets_values": [8.0],
       "_meta": {"title": "WAN Model Sampling"},
   },
-  str(WAN_KSAMPLER_NODE): {
+  str(WAN_SECOND_SAMPLING_NODE): {
+      "inputs": {
+          "model": [str(WAN_REFINER_LORA_NODE), 0],
+          "shift": 8.0,
+      },
+      "class_type": "ModelSamplingSD3",
+      "widgets_values": [8.0],
+      "_meta": {"title": "WAN Refiner Model Sampling"},
+  },
+  str(WAN_INITIAL_KSAMPLER_NODE): {
       "inputs": {
           "add_noise": "enable",
-          "noise_seed": 77777,
-          "noise_mode": "fixed",
-          "return_with_leftover_noise": "enable",
-          "seed": 77777,
-          "steps": 30,
-          "cfg": 6.0,
-          "sampler_name": "uni_pc",
+          "noise_seed": 8640317771124281,
+          "noise_mode": "randomize",
+          "return_with_leftover_noise": "disable",
+          "seed": 8640317771124281,
+          "steps": 20,
+          "cfg": 3.5,
+          "sampler_name": "euler",
           "scheduler": "simple",
           "start_at_step": 0,
-          "end_at_step": 30,
+          "end_at_step": 10,
           "denoise": 1.0,
-          "model": [str(WAN_SAMPLING_NODE), 0],
+          "model": [str(WAN_SAMPLING_NODE), 1],
           "positive": [str(WAN_POS_PROMPT_NODE), 0],
           "negative": [str(WAN_NEG_PROMPT_NODE), 0],
           "latent_image": [str(WAN_LATENT_NODE), 0],
@@ -1054,17 +1084,51 @@ wan_prompt = {
       "class_type": "KSamplerAdvanced",
       "widgets_values": [
           "enable",
-          77777,
-          "fixed",
-          30,
-          6.0,
-          "uni_pc",
+          8640317771124281,
+          "randomize",
+          20,
+          3.5,
+          "euler",
           "simple",
           0,
-          30,
-          "enable",
+          10,
+          "disable",
       ],
-      "_meta": {"title": "KSampler Advanced (WAN)"},
+      "_meta": {"title": "KSampler Stage 1 (WAN)"},
+  },
+  str(WAN_KSAMPLER_NODE): {
+      "inputs": {
+          "add_noise": "disable",
+          "noise_seed": 0,
+          "noise_mode": "fixed",
+          "return_with_leftover_noise": "disable",
+          "seed": 0,
+          "steps": 20,
+          "cfg": 3.5,
+          "sampler_name": "euler",
+          "scheduler": "simple",
+          "start_at_step": 0,
+          "end_at_step": 100,
+          "denoise": 1.0,
+          "model": [str(WAN_SECOND_SAMPLING_NODE), 1],
+          "positive": [str(WAN_POS_PROMPT_NODE), 0],
+          "negative": [str(WAN_NEG_PROMPT_NODE), 0],
+          "latent_image": [str(WAN_INITIAL_KSAMPLER_NODE), 0],
+      },
+      "class_type": "KSamplerAdvanced",
+      "widgets_values": [
+          "disable",
+          0,
+          "fixed",
+          20,
+          3.5,
+          "euler",
+          "simple",
+          0,
+          100,
+          "disable",
+      ],
+      "_meta": {"title": "KSampler Stage 2 (WAN)"},
   },
   str(WAN_VAE_DECODE_NODE): {
       "inputs": {"samples": [str(WAN_KSAMPLER_NODE), 0], "vae": [str(WAN_VAE_LOADER_NODE), 0]},
@@ -1087,10 +1151,20 @@ wan_prompt.update(
     )
 )
 wan_prompt.update(
-    build_bobs_latent_node(
+    build_power_lora_node(
+        WAN_REFINER_LORA_NODE,
+        model_ref=[str(WAN_SECOND_UNET_LOADER_NODE), 0],
+        clip_ref=[str(WAN_CLIP_LOADER_NODE), 0],
+        title="Power Lora Loader (WAN Refiner)",
+    )
+)
+wan_prompt.update(
+    build_hunyuan_latent_node(
         WAN_LATENT_NODE,
-        model_type="WAN",
-        title="Bobs Latent Optimizer (WAN)",
+        width=512,
+        height=768,
+        length=17,
+        title="Empty WAN Video Latent",
     )
 )
 
@@ -1098,16 +1172,16 @@ wan_prompt.update(
 # --- WAN 2.2 Img2Img Template ---
 wan_img2img_prompt = {
   str(WAN_UNET_LOADER_NODE): {
-      "inputs": {"unet_name": "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors", "weight_dtype": "default"},
+      "inputs": {"unet_name": "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors", "weight_dtype": "default"},
       "class_type": "UNETLoader",
-      "widgets_values": ["wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors", "default"],
-      "_meta": {"title": "Load WAN High-Noise UNet"},
+      "widgets_values": ["wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors", "default"],
+      "_meta": {"title": "Load WAN I2V High-Noise UNet"},
   },
   str(WAN_SECOND_UNET_LOADER_NODE): {
-      "inputs": {"unet_name": "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors", "weight_dtype": "default"},
+      "inputs": {"unet_name": "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors", "weight_dtype": "default"},
       "class_type": "UNETLoader",
-      "widgets_values": ["wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors", "default"],
-      "_meta": {"title": "Load WAN Low-Noise UNet"},
+      "widgets_values": ["wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors", "default"],
+      "_meta": {"title": "Load WAN I2V Low-Noise UNet"},
   },
   str(WAN_CLIP_LOADER_NODE): {
       "inputs": {"clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors", "type": "wan", "embedding_directory": "default"},
@@ -1319,117 +1393,6 @@ wan_variation_prompt.update(
 )
 
 
-# --- WAN 2.2 Upscale Template ---
-wan_upscale_prompt = {
-  str(WAN_UNET_LOADER_NODE): {
-      "inputs": {"unet_name": "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors", "weight_dtype": "default"},
-      "class_type": "UNETLoader",
-      "widgets_values": ["wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors", "default"],
-      "_meta": {"title": "Load WAN High-Noise UNet"},
-  },
-  str(WAN_SECOND_UNET_LOADER_NODE): {
-      "inputs": {"unet_name": "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors", "weight_dtype": "default"},
-      "class_type": "UNETLoader",
-      "widgets_values": ["wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors", "default"],
-      "_meta": {"title": "Load WAN Low-Noise UNet"},
-  },
-  str(WAN_CLIP_LOADER_NODE): {
-      "inputs": {"clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors", "type": "wan", "embedding_directory": "default"},
-      "class_type": "CLIPLoader",
-      "widgets_values": ["umt5_xxl_fp8_e4m3fn_scaled.safetensors", "wan", "default"],
-      "_meta": {"title": "Load WAN CLIP"},
-  },
-  str(WAN_VAE_LOADER_NODE): {
-      "inputs": {"vae_name": "wan_2.1_vae.safetensors"},
-      "class_type": "VAELoader",
-      "widgets_values": ["wan_2.1_vae.safetensors"],
-      "_meta": {"title": "Load WAN VAE"},
-  },
-  str(WAN_UPSCALE_POS_PROMPT_NODE): {
-      "inputs": {"text": "UPSCALE PROMPT HERE", "clip": [str(WAN_LORA_NODE), 1]},
-      "class_type": "CLIPTextEncode",
-      "_meta": {"title": "WAN Upscale Positive"},
-  },
-  str(WAN_UPSCALE_NEG_PROMPT_NODE): {
-      "inputs": {"text": "UPSCALE NEGATIVE HERE", "clip": [str(WAN_LORA_NODE), 1]},
-      "class_type": "CLIPTextEncode",
-      "_meta": {"title": "WAN Upscale Negative"},
-  },
-  str(WAN_UPSCALE_SAMPLING_NODE): {
-      "inputs": {
-          "model": [str(WAN_LORA_NODE), 0],
-          "shift": 0.0,
-      },
-      "class_type": "ModelSamplingSD3",
-      "widgets_values": [0.0],
-      "_meta": {"title": "WAN Upscale Model Sampling"},
-  },
-  str(WAN_UPSCALE_LOAD_IMAGE_NODE): {
-      "inputs": {"url_or_path": "IMAGE_URL_HERE"},
-      "class_type": "LoadImageFromUrlOrPath",
-      "_meta": {"title": "Load WAN Upscale Image"},
-  },
-  str(WAN_UPSCALE_MODEL_LOADER_NODE): {
-      "inputs": {"model_name": "4x-UltraSharp.pth"},
-      "class_type": "UpscaleModelLoader",
-      "_meta": {"title": "Load Upscale Model"},
-  },
-  str(WAN_UPSCALE_ULTIMATE_NODE): {
-      "inputs": {
-          "seed": 424242,
-          "steps": 14,
-          "cfg": 6.0,
-          "sampler_name": "uni_pc",
-          "scheduler": "simple",
-          "denoise": 0.25,
-          "mode_type": "Linear",
-          "mask_blur": 16,
-          "tile_padding": 32,
-          "seam_fix_mode": "Half Tile + Intersections",
-          "seam_fix_denoise": 0.3,
-          "seam_fix_width": 64,
-          "seam_fix_mask_blur": 8,
-          "seam_fix_padding": 32,
-          "force_uniform_tiles": True,
-          "tiled_decode": True,
-          "image": [str(WAN_UPSCALE_LOAD_IMAGE_NODE), 0],
-          "model": [str(WAN_UPSCALE_SAMPLING_NODE), 0],
-          "positive": [str(WAN_UPSCALE_POS_PROMPT_NODE), 0],
-          "negative": [str(WAN_UPSCALE_NEG_PROMPT_NODE), 0],
-          "vae": [str(WAN_VAE_LOADER_NODE), 0],
-          "upscale_model": [str(WAN_UPSCALE_MODEL_LOADER_NODE), 0],
-          "upscale_by": [str(WAN_UPSCALE_HELPER_LATENT_NODE), 3],
-          "tile_width": [str(WAN_UPSCALE_HELPER_LATENT_NODE), 1],
-          "tile_height": [str(WAN_UPSCALE_HELPER_LATENT_NODE), 2],
-      },
-      "class_type": "UltimateSDUpscale",
-      "_meta": {"title": "Ultimate SD Upscale (WAN)"},
-  },
-  str(WAN_UPSCALE_SAVE_IMAGE_NODE): {
-      "inputs": {"filename_prefix": "wanbot/UPSCALE", "images": [str(WAN_UPSCALE_ULTIMATE_NODE), 0]},
-      "class_type": "SaveImage",
-      "_meta": {"title": "Save WAN Upscale"},
-  },
-}
-
-wan_upscale_prompt.update(
-    build_power_lora_node(
-        WAN_LORA_NODE,
-        model_ref=[str(WAN_UNET_LOADER_NODE), 0],
-        clip_ref=[str(WAN_CLIP_LOADER_NODE), 0],
-        title="Power Lora Loader (WAN)",
-    )
-)
-wan_upscale_prompt.update(
-    build_bobs_latent_node(
-        WAN_UPSCALE_HELPER_LATENT_NODE,
-        model_type="WAN",
-        upscale_by=1.85,
-        title="Bobs Upscale Param Calculator (WAN)",
-    )
-)
-
-
 # --- WAN Image-to-Video Template ---
 wan_image_to_video_prompt = {
   str(WAN_UNET_LOADER_NODE): {
@@ -1491,11 +1454,20 @@ wan_image_to_video_prompt = {
   str(WAN_I2V_SAMPLING_NODE): {
       "inputs": {
           "model": [str(WAN_LORA_NODE), 0],
-          "shift": 0.0,
+          "shift": 8.0,
       },
       "class_type": "ModelSamplingSD3",
-      "widgets_values": [0.0],
+      "widgets_values": [8.0],
       "_meta": {"title": "WAN Video Sampling"},
+  },
+  str(WAN_I2V_SECOND_SAMPLING_NODE): {
+      "inputs": {
+          "model": [str(WAN_REFINER_LORA_NODE), 0],
+          "shift": 8.0,
+      },
+      "class_type": "ModelSamplingSD3",
+      "widgets_values": [8.0],
+      "_meta": {"title": "WAN Video Refiner Sampling"},
   },
   str(WAN_IMAGE_TO_VIDEO_NODE): {
       "inputs": {
@@ -1515,23 +1487,74 @@ wan_image_to_video_prompt = {
   },
   str(WAN_I2V_KSAMPLER_NODE): {
       "inputs": {
-          "model": [str(WAN_I2V_SAMPLING_NODE), 0],
+          "add_noise": "enable",
+          "noise_seed": 8640317771124281,
+          "noise_mode": "randomize",
+          "return_with_leftover_noise": "disable",
+          "seed": 8640317771124281,
+          "steps": 20,
+          "cfg": 3.5,
+          "sampler_name": "euler",
+          "scheduler": "simple",
+          "start_at_step": 0,
+          "end_at_step": 10,
+          "denoise": 1.0,
+          "model": [str(WAN_I2V_SAMPLING_NODE), 1],
           "positive": [str(WAN_IMAGE_TO_VIDEO_NODE), 0],
           "negative": [str(WAN_IMAGE_TO_VIDEO_NODE), 1],
           "latent_image": [str(WAN_IMAGE_TO_VIDEO_NODE), 2],
-          "seed": 987948718394761,
-          "steps": 20,
-          "cfg": 6.0,
-          "sampler_name": "uni_pc",
-          "scheduler": "simple",
-          "denoise": 1.0,
       },
-      "class_type": "KSampler",
-      "widgets_values": [987948718394761, "randomize", 20, 6.0, "uni_pc", "simple", 1.0],
+      "class_type": "KSamplerAdvanced",
+      "widgets_values": [
+          "enable",
+          8640317771124281,
+          "randomize",
+          20,
+          3.5,
+          "euler",
+          "simple",
+          0,
+          10,
+          "disable",
+      ],
       "_meta": {"title": "KSampler (WAN Video)"},
   },
+  str(WAN_I2V_SECOND_KSAMPLER_NODE): {
+      "inputs": {
+          "add_noise": "disable",
+          "noise_seed": 0,
+          "noise_mode": "fixed",
+          "return_with_leftover_noise": "disable",
+          "seed": 0,
+          "steps": 20,
+          "cfg": 3.5,
+          "sampler_name": "euler",
+          "scheduler": "simple",
+          "start_at_step": 0,
+          "end_at_step": 100,
+          "denoise": 1.0,
+          "model": [str(WAN_I2V_SECOND_SAMPLING_NODE), 1],
+          "positive": [str(WAN_IMAGE_TO_VIDEO_NODE), 0],
+          "negative": [str(WAN_IMAGE_TO_VIDEO_NODE), 1],
+          "latent_image": [str(WAN_I2V_KSAMPLER_NODE), 0],
+      },
+      "class_type": "KSamplerAdvanced",
+      "widgets_values": [
+          "disable",
+          0,
+          "fixed",
+          20,
+          3.5,
+          "euler",
+          "simple",
+          0,
+          100,
+          "disable",
+      ],
+      "_meta": {"title": "KSampler Refiner (WAN Video)"},
+  },
   str(WAN_I2V_VAE_DECODE_NODE): {
-      "inputs": {"samples": [str(WAN_I2V_KSAMPLER_NODE), 0], "vae": [str(WAN_VAE_LOADER_NODE), 0]},
+      "inputs": {"samples": [str(WAN_I2V_SECOND_KSAMPLER_NODE), 0], "vae": [str(WAN_VAE_LOADER_NODE), 0]},
       "class_type": "VAEDecode",
       "_meta": {"title": "WAN Video Decode"},
   },
@@ -1560,6 +1583,14 @@ wan_image_to_video_prompt.update(
         model_ref=[str(WAN_UNET_LOADER_NODE), 0],
         clip_ref=[str(WAN_CLIP_LOADER_NODE), 0],
         title="Power Lora Loader (WAN)",
+    )
+)
+wan_image_to_video_prompt.update(
+    build_power_lora_node(
+        WAN_REFINER_LORA_NODE,
+        model_ref=[str(WAN_SECOND_UNET_LOADER_NODE), 0],
+        clip_ref=[str(WAN_CLIP_LOADER_NODE), 0],
+        title="Power Lora Loader (WAN Refiner)",
     )
 )
 

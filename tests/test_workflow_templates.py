@@ -63,14 +63,20 @@ def _contains_class(template: dict, class_name: str) -> bool:
 class WorkflowTemplateTests(unittest.TestCase):
     """Validate that shared workflow requirements stay present."""
 
-    def test_generation_templates_include_bobs_latent(self) -> None:
+    def test_generation_templates_include_latent_helper(self) -> None:
         for key, spec in MODEL_REGISTRY.items():
             with self.subTest(model=key, flow="text2img"):
                 template = copy_generation_template(spec.generation, is_img2img=False)
-                self.assertTrue(
-                    _contains_class(template, "BobsLatentNodeAdvanced"),
-                    msg=f"{key} generation template lost the Bob's latent helper",
-                )
+                if key == "wan":
+                    self.assertTrue(
+                        _contains_class(template, "EmptyHunyuanLatentVideo"),
+                        msg="WAN generation template must seed an EmptyHunyuanLatentVideo node",
+                    )
+                else:
+                    self.assertTrue(
+                        _contains_class(template, "BobsLatentNodeAdvanced"),
+                        msg=f"{key} generation template lost the Bob's latent helper",
+                    )
 
     def test_img2img_templates_include_tenos_resize(self) -> None:
         for key, spec in MODEL_REGISTRY.items():
@@ -95,11 +101,71 @@ class WorkflowTemplateTests(unittest.TestCase):
     def test_upscale_templates_include_bobs_helper(self) -> None:
         for key, spec in MODEL_REGISTRY.items():
             with self.subTest(model=key, flow="upscale"):
+                if spec.upscale is None:
+                    self.assertEqual(
+                        key,
+                        "wan",
+                        msg="Only WAN should omit an upscale template",
+                    )
+                    continue
                 template = copy_upscale_template(spec.upscale)
                 self.assertTrue(
                     _contains_class(template, "BobsLatentNodeAdvanced"),
                     msg=f"{key} upscale template missing Bob's latent helper",
                 )
+
+    def test_upscale_templates_wire_helper_outputs(self) -> None:
+        for key, spec in MODEL_REGISTRY.items():
+            with self.subTest(model=key, flow="upscale-helper-wiring"):
+                if spec.upscale is None:
+                    self.assertEqual(key, "wan")
+                    continue
+
+                template = copy_upscale_template(spec.upscale)
+                upscale_node_key = spec.upscale.upscale_node
+                helper_node_key = spec.upscale.helper_latent_node
+                upscale_node = template.get(upscale_node_key, {})
+                helper_refs = {
+                    "tile_width": [helper_node_key, 1],
+                    "tile_height": [helper_node_key, 2],
+                    "upscale_by": [helper_node_key, 3],
+                }
+
+                inputs = upscale_node.get("inputs", {})
+                for field, expected in helper_refs.items():
+                    self.assertEqual(
+                        inputs.get(field),
+                        expected,
+                        msg=f"{key} upscale '{field}' should reference {expected}",
+                    )
+
+                self.assertEqual(
+                    inputs.get("mode_type"),
+                    "linear",
+                    msg=f"{key} upscale should default to linear blending mode",
+                )
+
+    def test_upscale_templates_match_primary_sampler(self) -> None:
+        for key, spec in MODEL_REGISTRY.items():
+            with self.subTest(model=key, flow="upscale-sampler-sync"):
+                if spec.upscale is None:
+                    self.assertEqual(key, "wan")
+                    continue
+
+                upscale_template = copy_upscale_template(spec.upscale)
+                gen_template = copy_generation_template(spec.generation, is_img2img=False)
+                upscale_inputs = upscale_template[spec.upscale.upscale_node]["inputs"]
+                ksampler_inputs = gen_template[spec.generation.ksampler_node]["inputs"]
+
+                for field in ("sampler_name", "scheduler", "cfg"):
+                    self.assertEqual(
+                        upscale_inputs.get(field),
+                        ksampler_inputs.get(field),
+                        msg=(
+                            f"{key} upscale {field} ({upscale_inputs.get(field)}) "
+                            f"should match generation KSampler ({ksampler_inputs.get(field)})"
+                        ),
+                    )
 
     def test_qwen_edit_template_uses_tenos_resize(self) -> None:
         self.assertTrue(
@@ -174,6 +240,10 @@ class WorkflowTemplateTests(unittest.TestCase):
         self.assertTrue(_contains_class(gen_template, "UNETLoader"))
         self.assertTrue(_contains_class(gen_template, "CLIPLoader"))
         self.assertTrue(_contains_class(gen_template, "VAELoader"))
+        self.assertTrue(
+            _contains_class(gen_template, "EmptyHunyuanLatentVideo"),
+            msg="WAN generation template should seed EmptyHunyuanLatentVideo",
+        )
         sampling_inputs = gen_template[str(prompt_templates.WAN_SAMPLING_NODE)]["inputs"]
         self.assertNotIn(
             "model_b",
@@ -187,8 +257,59 @@ class WorkflowTemplateTests(unittest.TestCase):
         )
         self.assertEqual(
             sampling_inputs.get("shift"),
-            0.0,
-            msg="WAN sampling node should seed shift to 0.0",
+            8.0,
+            msg="WAN sampling node should seed shift to 8.0",
+        )
+        self.assertIn(
+            str(prompt_templates.WAN_SECOND_SAMPLING_NODE),
+            gen_template,
+            msg="WAN workflow should include a refiner sampling node",
+        )
+        refiner_sampling_inputs = gen_template[str(prompt_templates.WAN_SECOND_SAMPLING_NODE)]["inputs"]
+        self.assertNotIn(
+            "model_b",
+            refiner_sampling_inputs,
+            msg="WAN refiner sampling should rely on the combined model output",
+        )
+        self.assertNotIn(
+            "clip",
+            refiner_sampling_inputs,
+            msg="WAN refiner sampling node should not request a direct clip input",
+        )
+        self.assertEqual(
+            refiner_sampling_inputs.get("shift"),
+            8.0,
+            msg="WAN refiner sampling node should seed shift to 8.0",
+        )
+        initial_ksampler_node = gen_template.get(str(prompt_templates.WAN_INITIAL_KSAMPLER_NODE))
+        self.assertIsNotNone(initial_ksampler_node, "WAN workflow should include an initial KSampler stage")
+        if initial_ksampler_node:
+            self.assertEqual(
+                initial_ksampler_node.get("class_type"),
+                "KSamplerAdvanced",
+                msg="WAN initial stage should use KSamplerAdvanced",
+            )
+            initial_inputs = initial_ksampler_node.get("inputs", {})
+            self.assertEqual(
+                initial_inputs.get("model"),
+                [str(prompt_templates.WAN_SAMPLING_NODE), 1],
+                msg="WAN initial sampler must use the high-noise model shift output",
+            )
+            self.assertEqual(
+                initial_inputs.get("latent_image"),
+                [str(prompt_templates.WAN_LATENT_NODE), 0],
+                msg="WAN initial sampler must consume the latent generator output",
+            )
+        final_inputs = gen_template[str(prompt_templates.WAN_KSAMPLER_NODE)]["inputs"]
+        self.assertEqual(
+            final_inputs.get("model"),
+            [str(prompt_templates.WAN_SECOND_SAMPLING_NODE), 1],
+            msg="WAN refiner sampler must use the low-noise model shift output",
+        )
+        self.assertEqual(
+            final_inputs.get("latent_image"),
+            [str(prompt_templates.WAN_INITIAL_KSAMPLER_NODE), 0],
+            msg="WAN refiner should consume the first sampler output",
         )
 
         var_template = copy_variation_template(wan_spec.variation)
@@ -212,25 +333,9 @@ class WorkflowTemplateTests(unittest.TestCase):
             msg="WAN variation sampling should seed shift to 0.0",
         )
 
-        upscale_template = copy_upscale_template(wan_spec.upscale)
-        self.assertTrue(_contains_class(upscale_template, "UNETLoader"))
-        self.assertTrue(_contains_class(upscale_template, "CLIPLoader"))
-        self.assertTrue(_contains_class(upscale_template, "VAELoader"))
-        upscale_sampling_inputs = upscale_template[str(prompt_templates.WAN_UPSCALE_SAMPLING_NODE)]["inputs"]
-        self.assertNotIn(
-            "model_b",
-            upscale_sampling_inputs,
-            msg="WAN upscale sampling should only reference the upstream model",
-        )
-        self.assertNotIn(
-            "clip",
-            upscale_sampling_inputs,
-            msg="WAN upscale sampling should not include a clip input",
-        )
-        self.assertEqual(
-            upscale_sampling_inputs.get("shift"),
-            0.0,
-            msg="WAN upscale sampling should seed shift to 0.0",
+        self.assertIsNone(
+            wan_spec.upscale,
+            "WAN model should not expose a dedicated upscale workflow",
         )
 
     def test_wan_animation_template_contains_required_nodes(self) -> None:
@@ -252,8 +357,35 @@ class WorkflowTemplateTests(unittest.TestCase):
         )
         self.assertEqual(
             sampling_inputs.get("shift"),
-            0.0,
-            msg="WAN animation sampling should seed shift to 0.0",
+            8.0,
+            msg="WAN animation sampling should seed shift to 8.0",
+        )
+        ksampler_one_inputs = wan_template[str(prompt_templates.WAN_I2V_KSAMPLER_NODE)]["inputs"]
+        self.assertEqual(
+            ksampler_one_inputs.get("model"),
+            [str(prompt_templates.WAN_I2V_SAMPLING_NODE), 1],
+            msg="WAN animation stage one should use the high-noise model shift output",
+        )
+        self.assertIn(
+            str(prompt_templates.WAN_I2V_SECOND_KSAMPLER_NODE),
+            wan_template,
+            msg="WAN animation workflow should include a refiner sampler",
+        )
+        second_ksampler_inputs = wan_template[str(prompt_templates.WAN_I2V_SECOND_KSAMPLER_NODE)]["inputs"]
+        self.assertEqual(
+            second_ksampler_inputs.get("model"),
+            [str(prompt_templates.WAN_I2V_SECOND_SAMPLING_NODE), 1],
+            msg="WAN animation refiner should use the low-noise model shift output",
+        )
+        self.assertEqual(
+            second_ksampler_inputs.get("positive"),
+            [str(prompt_templates.WAN_IMAGE_TO_VIDEO_NODE), 0],
+            msg="WAN animation refiner should inherit the positive prompt from WanImageToVideo",
+        )
+        self.assertEqual(
+            second_ksampler_inputs.get("negative"),
+            [str(prompt_templates.WAN_IMAGE_TO_VIDEO_NODE), 1],
+            msg="WAN animation refiner should inherit the negative prompt from WanImageToVideo",
         )
 
     def test_qwen_edit_falls_back_when_lora_missing(self) -> None:

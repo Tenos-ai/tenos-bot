@@ -10,7 +10,7 @@ from typing import Any, Dict, Tuple
 
 from bot_config_loader import config
 from model_registry import get_model_spec, copy_animation_template
-from settings_manager import load_settings
+from settings_manager import load_settings, _get_default_settings
 from utils.llm_enhancer import (
     enhance_prompt as util_enhance_prompt,
     WAN_ENHANCER_SYSTEM_PROMPT,
@@ -199,11 +199,12 @@ async def prepare_wan_animation_prompt(
     )
 
     high_noise_unet = _pick_animation_asset(
-        source_job_data.get("model_used") if source_model_type == "wan" else None,
+        settings.get("default_wan_i2v_high_noise_unet"),
         settings.get("default_wan_checkpoint"),
         default_high_unet,
     )
     low_noise_unet = _pick_animation_asset(
+        settings.get("default_wan_i2v_low_noise_unet"),
         settings.get("default_wan_low_noise_unet"),
         default_low_unet,
     )
@@ -336,11 +337,13 @@ async def prepare_wan_animation_prompt(
                 if "codec" not in save_inputs or not save_inputs.get("codec"):
                     save_inputs["codec"] = save_video_node["widgets_values"][2] if len(save_video_node["widgets_values"]) > 2 else "auto"
 
-        shift_candidate_anim = settings.get("default_wan_shift", 0.0)
+        default_settings = _get_default_settings()
+        default_shift = default_settings.get("default_wan_shift", 8.0)
+        shift_candidate_anim = settings.get("default_wan_shift", default_shift)
         try:
             shift_value_anim = float(shift_candidate_anim)
         except (TypeError, ValueError):
-            shift_value_anim = 0.0
+            shift_value_anim = float(default_shift)
         _apply_sampling_shift_overrides(template, shift_value_anim)
     except Exception as template_error:
         print(f"Error while configuring WAN animation template: {template_error}")

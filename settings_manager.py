@@ -316,12 +316,39 @@ def load_settings():
             'default_wan_shift',
             'qwen_edit_denoise',
             'qwen_edit_shift',
+            'flux_ksampler_cfg',
+            'flux_ksampler_denoise',
+            'sdxl_ksampler_cfg',
+            'sdxl_ksampler_denoise',
+            'qwen_ksampler_cfg',
+            'qwen_ksampler_denoise',
+            'qwen_edit_ksampler_cfg',
+            'qwen_edit_ksampler_denoise',
+            'wan_stage1_cfg',
+            'wan_stage1_denoise',
+            'wan_stage2_cfg',
+            'wan_stage2_denoise',
+            'flux_upscale_cfg',
+            'flux_upscale_denoise',
+            'sdxl_upscale_cfg',
+            'sdxl_upscale_denoise',
+            'qwen_upscale_cfg',
+            'qwen_upscale_denoise',
         ]
         float_bounds = {
             'default_qwen_shift': (0.0, 10.0),
             'qwen_edit_shift': (0.0, 10.0),
             'default_wan_shift': (0.0, 10.0),
             'qwen_edit_denoise': (0.0, 1.0),
+            'flux_ksampler_denoise': (0.0, 1.0),
+            'sdxl_ksampler_denoise': (0.0, 1.0),
+            'qwen_ksampler_denoise': (0.0, 1.0),
+            'qwen_edit_ksampler_denoise': (0.0, 1.0),
+            'wan_stage1_denoise': (0.0, 1.0),
+            'wan_stage2_denoise': (0.0, 1.0),
+            'flux_upscale_denoise': (0.0, 1.0),
+            'sdxl_upscale_denoise': (0.0, 1.0),
+            'qwen_upscale_denoise': (0.0, 1.0),
         }
         numeric_keys_int = [
             'steps',
@@ -333,6 +360,19 @@ def load_settings():
             'kontext_steps',
             'variation_batch_size',
             'wan_animation_duration',
+            'wan_stage1_noise_seed',
+            'wan_stage1_seed',
+            'wan_stage1_steps',
+            'wan_stage1_start',
+            'wan_stage1_end',
+            'wan_stage2_noise_seed',
+            'wan_stage2_seed',
+            'wan_stage2_steps',
+            'wan_stage2_start',
+            'wan_stage2_end',
+            'flux_upscale_steps',
+            'sdxl_upscale_steps',
+            'qwen_upscale_steps',
         ]
         bool_keys = ['remix_mode', 'llm_enhancer_enabled']
         display_prompt_key = 'display_prompt_preference'
@@ -778,18 +818,80 @@ def _get_default_settings():
         "default_guidance_qwen_edit": 5.5,
         "qwen_edit_steps": 28,
         "default_wan_checkpoint": default_wan_checkpoint_raw,
+        "default_wan_t2v_high_noise_unet": default_wan_checkpoint_raw
+        or "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors",
+        "default_wan_t2v_low_noise_unet": "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
+        "default_wan_i2v_high_noise_unet": "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
+        "default_wan_i2v_low_noise_unet": "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
         "default_wan_low_noise_unet": "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
         "default_wan_clip": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
         "default_wan_vae": "wan_2.1_vae.safetensors",
         "default_wan_vision_clip": "clip_vision_h.safetensors",
-        "default_wan_shift": 0.0,
+        "default_wan_shift": 8.0,
         "steps": 32,
         "sdxl_steps": 26,
         "qwen_steps": 28,
         "wan_steps": 30,
         "selected_t5_clip": default_t5,
         "selected_clip_l": default_l,
-        "selected_upscale_model": None,
+        "flux_ksampler_sampler": "euler",
+        "flux_ksampler_scheduler": "sgm_uniform",
+        "flux_ksampler_cfg": 1.0,
+        "flux_ksampler_denoise": 1.0,
+        "sdxl_ksampler_sampler": "euler_ancestral",
+        "sdxl_ksampler_scheduler": "normal",
+        "sdxl_ksampler_cfg": 6.0,
+        "sdxl_ksampler_denoise": 1.0,
+        "qwen_ksampler_sampler": "euler",
+        "qwen_ksampler_scheduler": "normal",
+        "qwen_ksampler_cfg": 5.5,
+        "qwen_ksampler_denoise": 1.0,
+        "qwen_edit_ksampler_sampler": "euler",
+        "qwen_edit_ksampler_scheduler": "normal",
+        "qwen_edit_ksampler_cfg": 5.5,
+        "qwen_edit_ksampler_denoise": 0.6,
+        "wan_stage1_add_noise": "enable",
+        "wan_stage1_noise_mode": "randomize",
+        "wan_stage1_noise_seed": 8640317771124281,
+        "wan_stage1_seed": 8640317771124281,
+        "wan_stage1_steps": 20,
+        "wan_stage1_cfg": 3.5,
+        "wan_stage1_sampler": "euler",
+        "wan_stage1_scheduler": "simple",
+        "wan_stage1_start": 0,
+        "wan_stage1_end": 10,
+        "wan_stage1_return_with_leftover_noise": "disable",
+        "wan_stage1_denoise": 1.0,
+        "wan_stage2_add_noise": "disable",
+        "wan_stage2_noise_mode": "fixed",
+        "wan_stage2_noise_seed": 0,
+        "wan_stage2_seed": 0,
+        "wan_stage2_steps": 20,
+        "wan_stage2_cfg": 3.5,
+        "wan_stage2_sampler": "euler",
+        "wan_stage2_scheduler": "simple",
+        "wan_stage2_start": 0,
+        "wan_stage2_end": 100,
+        "wan_stage2_return_with_leftover_noise": "disable",
+        "wan_stage2_denoise": 1.0,
+        "flux_upscale_model": None,
+        "flux_upscale_sampler": "euler",
+        "flux_upscale_scheduler": "sgm_uniform",
+        "flux_upscale_steps": 16,
+        "flux_upscale_cfg": 1.0,
+        "flux_upscale_denoise": 0.2,
+        "sdxl_upscale_model": None,
+        "sdxl_upscale_sampler": "euler_ancestral",
+        "sdxl_upscale_scheduler": "normal",
+        "sdxl_upscale_steps": 16,
+        "sdxl_upscale_cfg": 6.0,
+        "sdxl_upscale_denoise": 0.15,
+        "qwen_upscale_model": None,
+        "qwen_upscale_sampler": "euler",
+        "qwen_upscale_scheduler": "normal",
+        "qwen_upscale_steps": 16,
+        "qwen_upscale_cfg": 5.5,
+        "qwen_upscale_denoise": 0.2,
         "selected_vae": None,
         "default_style_flux": "off",
         "default_style_sdxl": "off",
@@ -844,24 +946,70 @@ def save_settings(settings):
             'default_wan_shift',
             'qwen_edit_denoise',
             'qwen_edit_shift',
+            'flux_ksampler_cfg',
+            'flux_ksampler_denoise',
+            'sdxl_ksampler_cfg',
+            'sdxl_ksampler_denoise',
+            'qwen_ksampler_cfg',
+            'qwen_ksampler_denoise',
+            'qwen_edit_ksampler_cfg',
+            'qwen_edit_ksampler_denoise',
+            'wan_stage1_cfg',
+            'wan_stage1_denoise',
+            'wan_stage2_cfg',
+            'wan_stage2_denoise',
+            'flux_upscale_cfg',
+            'flux_upscale_denoise',
+            'sdxl_upscale_cfg',
+            'sdxl_upscale_denoise',
+            'qwen_upscale_cfg',
+            'qwen_upscale_denoise',
         ]
         float_bounds = {
             'default_qwen_shift': (0.0, 10.0),
             'qwen_edit_shift': (0.0, 10.0),
             'default_wan_shift': (0.0, 10.0),
             'qwen_edit_denoise': (0.0, 1.0),
+            'flux_ksampler_denoise': (0.0, 1.0),
+            'sdxl_ksampler_denoise': (0.0, 1.0),
+            'qwen_ksampler_denoise': (0.0, 1.0),
+            'qwen_edit_ksampler_denoise': (0.0, 1.0),
+            'wan_stage1_denoise': (0.0, 1.0),
+            'wan_stage2_denoise': (0.0, 1.0),
+            'flux_upscale_denoise': (0.0, 1.0),
+            'sdxl_upscale_denoise': (0.0, 1.0),
+            'qwen_upscale_denoise': (0.0, 1.0),
         }
-        numeric_keys_int = ['steps', 'sdxl_steps', 'qwen_steps', 'qwen_edit_steps', 'wan_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size', 'wan_animation_duration']
+        numeric_keys_int = [
+            'steps', 'sdxl_steps', 'qwen_steps', 'qwen_edit_steps', 'wan_steps', 'default_batch_size',
+            'kontext_steps', 'variation_batch_size', 'wan_animation_duration',
+            'wan_stage1_noise_seed', 'wan_stage1_seed', 'wan_stage1_steps', 'wan_stage1_start', 'wan_stage1_end',
+            'wan_stage2_noise_seed', 'wan_stage2_seed', 'wan_stage2_steps', 'wan_stage2_start', 'wan_stage2_end',
+            'flux_upscale_steps', 'sdxl_upscale_steps', 'qwen_upscale_steps'
+        ]
         bool_keys = ['remix_mode', 'llm_enhancer_enabled']
         string_keys_to_strip = [
             'llm_provider', 'llm_model_gemini', 'llm_model_groq', 'llm_model_openai',
-            'selected_model', 'selected_t5_clip', 'selected_clip_l', 'selected_upscale_model',
+            'selected_model', 'selected_t5_clip', 'selected_clip_l',
             'selected_vae', 'default_style_flux', 'default_style_sdxl', 'default_style_qwen', 'default_style_wan',
             'default_sdxl_negative_prompt', 'default_qwen_negative_prompt', 'default_qwen_edit_negative_prompt', 'default_wan_negative_prompt',
             'selected_kontext_model', 'default_flux_model', 'default_sdxl_checkpoint', 'default_qwen_checkpoint', 'default_qwen_edit_checkpoint', 'default_wan_checkpoint',
-            'default_flux_vae', 'default_sdxl_clip', 'default_sdxl_vae', 'default_qwen_clip', 'default_qwen_vae', 'default_qwen_edit_clip', 'default_qwen_edit_vae', 'default_wan_low_noise_unet', 'default_wan_clip', 'default_wan_vae', 'default_wan_vision_clip',
+            'default_flux_vae', 'default_sdxl_clip', 'default_sdxl_vae', 'default_qwen_clip', 'default_qwen_vae', 'default_qwen_edit_clip', 'default_qwen_edit_vae',
+            'default_wan_t2v_high_noise_unet', 'default_wan_t2v_low_noise_unet', 'default_wan_i2v_high_noise_unet', 'default_wan_i2v_low_noise_unet',
+            'default_wan_low_noise_unet', 'default_wan_clip', 'default_wan_vae', 'default_wan_vision_clip',
             'wan_animation_motion_profile', 'wan_animation_resolution', 'active_model_family', 'default_editing_mode'
         ]
+        string_keys_to_strip.extend([
+            'flux_ksampler_sampler', 'flux_ksampler_scheduler',
+            'sdxl_ksampler_sampler', 'sdxl_ksampler_scheduler',
+            'qwen_ksampler_sampler', 'qwen_ksampler_scheduler',
+            'qwen_edit_ksampler_sampler', 'qwen_edit_ksampler_scheduler',
+            'wan_stage1_add_noise', 'wan_stage1_noise_mode', 'wan_stage1_sampler', 'wan_stage1_scheduler', 'wan_stage1_return_with_leftover_noise',
+            'wan_stage2_add_noise', 'wan_stage2_noise_mode', 'wan_stage2_sampler', 'wan_stage2_scheduler', 'wan_stage2_return_with_leftover_noise',
+            'flux_upscale_model', 'flux_upscale_sampler', 'flux_upscale_scheduler',
+            'sdxl_upscale_model', 'sdxl_upscale_sampler', 'sdxl_upscale_scheduler',
+            'qwen_upscale_model', 'qwen_upscale_sampler', 'qwen_upscale_scheduler',
+        ])
         display_prompt_key = 'display_prompt_preference'
         allowed_display_prompt_options = ['enhanced', 'original']
 
@@ -903,7 +1051,11 @@ def save_settings(settings):
         for key in string_keys_to_strip:
             if key in valid_settings and isinstance(valid_settings[key], str):
                 valid_settings[key] = valid_settings[key].strip()
-            elif key in valid_settings and valid_settings[key] is None and key not in ['selected_model', 'selected_t5_clip', 'selected_clip_l', 'selected_upscale_model', 'selected_vae', 'selected_kontext_model']: # Allow None for model selections
+            elif key in valid_settings and valid_settings[key] is None and key not in [
+                'selected_model', 'selected_t5_clip', 'selected_clip_l',
+                'flux_upscale_model', 'sdxl_upscale_model', 'qwen_upscale_model',
+                'selected_vae', 'selected_kontext_model'
+            ]: # Allow None for model selections
                 if defaults[key] is not None: 
                     print(f"Warning: '{key}' is None but expects a string. Resetting to default.")
                     valid_settings[key] = defaults[key]
@@ -1122,7 +1274,7 @@ def get_default_qwen_edit_model_choices(settings):
 
 
 def get_default_wan_model_choices(settings):
-    return _build_model_choice_options(settings, "wan", "default_wan_checkpoint")
+    return _build_model_choice_options(settings, "wan", "default_wan_t2v_high_noise_unet")
 
 
 def get_active_model_family_choices(settings):
@@ -1555,8 +1707,24 @@ def get_qwen_edit_denoise_choices(settings):
     return choices[:20]
 
 
+def get_wan_t2v_high_unet_choices(settings):
+    return _build_model_choice_options(settings, "wan", "default_wan_t2v_high_noise_unet")
+
+
+def get_wan_t2v_low_unet_choices(settings):
+    return _build_model_choice_options(settings, "wan", "default_wan_t2v_low_noise_unet")
+
+
+def get_wan_i2v_high_unet_choices(settings):
+    return _build_model_choice_options(settings, "wan", "default_wan_i2v_high_noise_unet")
+
+
+def get_wan_i2v_low_unet_choices(settings):
+    return _build_model_choice_options(settings, "wan", "default_wan_i2v_low_noise_unet")
+
+
 def get_wan_low_noise_unet_choices(settings):
-    return _build_model_choice_options(settings, "wan", "default_wan_low_noise_unet")
+    return get_wan_t2v_low_unet_choices(settings)
 
 def get_variation_mode_choices(settings):
     current_mode = settings.get('default_variation_mode', 'weak')
@@ -1674,7 +1842,7 @@ def get_mp_size_choices(settings):
 
     return choices[:20]
 
-def get_upscale_model_choices(settings):
+def get_upscale_model_choices(settings, setting_key: str):
     choices = []; models_data = {}; # Changed var name to avoid conflict
     try:
         from comfyui_api import get_available_comfyui_models
@@ -1716,7 +1884,7 @@ def get_upscale_model_choices(settings):
         upscale_models_raw.extend(sorted(local_upscale_models))
 
     upscale_models = sorted(list(set(u.strip() for u in upscale_models_raw if isinstance(u, str) and u.strip())))
-    current_upscale_model_setting = settings.get('selected_upscale_model')
+    current_upscale_model_setting = settings.get(setting_key)
     current_upscale_model = current_upscale_model_setting.strip() if isinstance(current_upscale_model_setting, str) else None
 
     canonical_options = []

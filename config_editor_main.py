@@ -505,7 +505,7 @@ from editor_constants import (
     CONFIG_FILE_NAME, SETTINGS_FILE_NAME, STYLES_CONFIG_FILE_NAME,
     LLM_MODELS_FILE_NAME, LLM_PROMPTS_FILE_NAME,
     MODELS_LIST_FILE_NAME, CHECKPOINTS_LIST_FILE_NAME, CLIP_LIST_FILE_NAME,
-    QWEN_MODELS_FILE_NAME, WAN_MODELS_FILE_NAME,
+    QWEN_MODELS_FILE_NAME, QWEN_EDIT_MODELS_FILE_NAME, WAN_MODELS_FILE_NAME,
     ICON_PATH_ICO, ICON_PATH_PNG,
     BOT_SCRIPT_NAME
 )
@@ -706,6 +706,7 @@ class ConfigEditor:
         self.available_models = []
         self.available_checkpoints = []
         self.available_qwen_models = []
+        self.available_qwen_edit_models = []
         self.available_wan_models = []
         self.available_wan_video_models = []
         self.available_clips_t5 = []
@@ -764,13 +765,17 @@ class ConfigEditor:
             "selected_kontext_model": "Flux model dedicated to Kontext workflows.",
             "selected_t5_clip": "T5 text encoder paired with your primary model.",
             "selected_clip_l": "CLIP-L encoder providing textual guidance to Flux.",
-            "selected_upscale_model": "Upscaler used when enhancing image resolution.",
             "selected_vae": "VAE loaded for color-space decoding during SDXL generations.",
             "default_flux_model": "Default Flux checkpoint loaded for text-to-image runs.",
             "default_sdxl_checkpoint": "Default SDXL checkpoint loaded for text-to-image runs.",
             "default_qwen_checkpoint": "Default Qwen diffusion checkpoint for image workflows.",
-            "default_wan_checkpoint": "Default WAN diffusion checkpoint for still-image workflows.",
-            "default_wan_low_noise_unet": "WAN low-noise UNet used when launching 1-click animations.",
+            "default_qwen_edit_checkpoint": "Default Qwen Edit checkpoint used for image edit runs.",
+            "default_wan_checkpoint": "Legacy WAN checkpoint slot (mirrors the T2V high-noise UNet).",
+            "default_wan_t2v_high_noise_unet": "WAN T2V high-noise UNet used for standard /gen video runs.",
+            "default_wan_t2v_low_noise_unet": "WAN T2V low-noise UNet paired with high-noise model during generation.",
+            "default_wan_i2v_high_noise_unet": "WAN I2V high-noise UNet used for image-to-video conversions.",
+            "default_wan_i2v_low_noise_unet": "WAN I2V low-noise UNet used during image-to-video conversions.",
+            "default_wan_low_noise_unet": "Legacy WAN low-noise slot (mirrors the T2V low-noise UNet).",
             "default_style_flux": "Starting style applied to Flux prompts.",
             "default_style_sdxl": "Starting style applied to SDXL prompts.",
             "default_style_qwen": "Starting style applied to Qwen prompts.",
@@ -783,13 +788,74 @@ class ConfigEditor:
             "steps": "Number of inference steps Flux will run.",
             "sdxl_steps": "Number of inference steps for SDXL workflows.",
             "qwen_steps": "Number of inference steps for Qwen workflows.",
+            "qwen_edit_steps": "Number of inference steps for Qwen Edit workflows.",
             "wan_steps": "Number of inference steps for WAN workflows.",
             "default_guidance": "Flux guidance scale balancing prompt adherence.",
             "default_guidance_sdxl": "Guidance scale for SDXL prompts.",
             "default_guidance_qwen": "Guidance scale for Qwen prompts.",
+            "default_guidance_qwen_edit": "Guidance scale for Qwen Edit prompts.",
             "default_guidance_wan": "Guidance scale for WAN prompts.",
+            "flux_ksampler_sampler": "Default sampler used by Flux generations.",
+            "flux_ksampler_scheduler": "Default scheduler algorithm for Flux sampling.",
+            "flux_ksampler_cfg": "Base CFG value supplied to the Flux KSampler.",
+            "flux_ksampler_denoise": "Default denoise factor applied to Flux KSampler outputs.",
+            "sdxl_ksampler_sampler": "Default sampler used by SDXL generations.",
+            "sdxl_ksampler_scheduler": "Default scheduler algorithm for SDXL sampling.",
+            "sdxl_ksampler_cfg": "Base CFG value supplied to the SDXL KSampler.",
+            "sdxl_ksampler_denoise": "Default denoise factor applied to SDXL KSampler outputs.",
+            "qwen_ksampler_sampler": "Default sampler used by Qwen generations.",
+            "qwen_ksampler_scheduler": "Default scheduler algorithm for Qwen sampling.",
+            "qwen_ksampler_cfg": "Base CFG value supplied to the Qwen KSampler.",
+            "qwen_ksampler_denoise": "Default denoise factor applied to Qwen KSampler outputs.",
+            "qwen_edit_ksampler_sampler": "Default sampler used by Qwen Edit generations.",
+            "qwen_edit_ksampler_scheduler": "Default scheduler for the Qwen Edit sampler.",
+            "qwen_edit_ksampler_cfg": "Base CFG value for Qwen Edit sampling.",
+            "qwen_edit_ksampler_denoise": "Default denoise strength for Qwen Edit sampling.",
+            "wan_stage1_add_noise": "Controls whether WAN stage 1 injects fresh noise before sampling.",
+            "wan_stage1_noise_mode": "Noise selection mode for WAN stage 1.",
+            "wan_stage1_noise_seed": "Seed used to generate WAN stage 1 noise.",
+            "wan_stage1_seed": "Primary seed applied to WAN stage 1 sampling.",
+            "wan_stage1_steps": "Total steps executed by WAN stage 1.",
+            "wan_stage1_cfg": "CFG value for the high-noise WAN sampler.",
+            "wan_stage1_sampler": "Sampler algorithm for WAN stage 1.",
+            "wan_stage1_scheduler": "Scheduler used by WAN stage 1.",
+            "wan_stage1_start": "Start step offset for WAN stage 1.",
+            "wan_stage1_end": "End step target for WAN stage 1.",
+            "wan_stage1_return_with_leftover_noise": "Whether WAN stage 1 returns latent noise for chaining.",
+            "wan_stage1_denoise": "Denoise factor applied after WAN stage 1 sampling.",
+            "wan_stage2_add_noise": "Controls noise injection for WAN stage 2.",
+            "wan_stage2_noise_mode": "Noise selection mode for WAN stage 2.",
+            "wan_stage2_noise_seed": "Seed used to generate WAN stage 2 noise.",
+            "wan_stage2_seed": "Primary seed applied to WAN stage 2 sampling.",
+            "wan_stage2_steps": "Total steps executed by WAN stage 2.",
+            "wan_stage2_cfg": "CFG value for the low-noise WAN sampler.",
+            "wan_stage2_sampler": "Sampler algorithm for WAN stage 2.",
+            "wan_stage2_scheduler": "Scheduler used by WAN stage 2.",
+            "wan_stage2_start": "Start step offset for WAN stage 2.",
+            "wan_stage2_end": "End step target for WAN stage 2.",
+            "wan_stage2_return_with_leftover_noise": "Whether WAN stage 2 returns latent noise for chaining.",
+            "wan_stage2_denoise": "Denoise factor applied after WAN stage 2 sampling.",
+            "flux_upscale_model": "Preferred upscaler for Flux renders.",
+            "flux_upscale_sampler": "Sampler used by the Flux upscale workflow.",
+            "flux_upscale_scheduler": "Scheduler used by the Flux upscale workflow.",
+            "flux_upscale_steps": "Number of sampling steps for Flux upscales.",
+            "flux_upscale_cfg": "CFG value for Flux upscaling.",
+            "flux_upscale_denoise": "Denoise factor for Flux upscaling.",
+            "sdxl_upscale_model": "Preferred upscaler for SDXL renders.",
+            "sdxl_upscale_sampler": "Sampler used by the SDXL upscale workflow.",
+            "sdxl_upscale_scheduler": "Scheduler used by the SDXL upscale workflow.",
+            "sdxl_upscale_steps": "Number of sampling steps for SDXL upscales.",
+            "sdxl_upscale_cfg": "CFG value for SDXL upscaling.",
+            "sdxl_upscale_denoise": "Denoise factor for SDXL upscaling.",
+            "qwen_upscale_model": "Preferred upscaler for Qwen renders.",
+            "qwen_upscale_sampler": "Sampler used by the Qwen upscale workflow.",
+            "qwen_upscale_scheduler": "Scheduler used by the Qwen upscale workflow.",
+            "qwen_upscale_steps": "Number of sampling steps for Qwen upscales.",
+            "qwen_upscale_cfg": "CFG value for Qwen upscaling.",
+            "qwen_upscale_denoise": "Denoise factor for Qwen upscaling.",
             "default_sdxl_negative_prompt": "Baseline negative prompt applied to SDXL generations.",
             "default_qwen_negative_prompt": "Baseline negative prompt applied to Qwen generations.",
+            "default_qwen_edit_negative_prompt": "Baseline negative prompt applied to Qwen Edit generations.",
             "default_wan_negative_prompt": "Baseline negative prompt applied to WAN generations.",
             "kontext_guidance": "Guidance scale used in Kontext operations.",
             "kontext_steps": "Inference steps used for Kontext prompts.",
@@ -801,6 +867,10 @@ class ConfigEditor:
             "display_prompt_preference": "Choose whether to show enhanced or original prompts in the UI.",
             "default_qwen_clip": "Default CLIP encoder paired with Qwen checkpoints.",
             "default_qwen_vae": "Default VAE for decoding Qwen latents.",
+            "default_qwen_edit_clip": "Default CLIP encoder paired with Qwen Edit checkpoints.",
+            "default_qwen_edit_vae": "Default VAE for decoding Qwen Edit latents.",
+            "qwen_edit_denoise": "Denoise strength applied during Qwen Edit image blending.",
+            "qwen_edit_shift": "Seed shift applied to Qwen Edit sampling runs.",
             "default_wan_clip": "Default WAN text encoder for still-image runs.",
             "default_wan_vae": "Default VAE for decoding WAN latents.",
             "default_wan_vision_clip": "Default WAN vision encoder used during animation.",
@@ -1994,6 +2064,7 @@ class ConfigEditor:
             self.flux_settings_content_frame,
             self.sdxl_settings_content_frame,
             self.qwen_settings_content_frame,
+            self.qwen_edit_settings_content_frame,
             self.wan_settings_content_frame,
             self.kontext_settings_content_frame,
             self.llm_settings_content_frame,
@@ -2027,9 +2098,33 @@ class ConfigEditor:
                 'default_wan_shift',
                 'qwen_edit_denoise',
                 'qwen_edit_shift',
+                'flux_ksampler_cfg',
+                'flux_ksampler_denoise',
+                'sdxl_ksampler_cfg',
+                'sdxl_ksampler_denoise',
+                'qwen_ksampler_cfg',
+                'qwen_ksampler_denoise',
+                'qwen_edit_ksampler_cfg',
+                'qwen_edit_ksampler_denoise',
+                'wan_stage1_cfg',
+                'wan_stage1_denoise',
+                'wan_stage2_cfg',
+                'wan_stage2_denoise',
+                'flux_upscale_cfg',
+                'flux_upscale_denoise',
+                'sdxl_upscale_cfg',
+                'sdxl_upscale_denoise',
+                'qwen_upscale_cfg',
+                'qwen_upscale_denoise',
             ]:
                 tk_var_instance = tk.DoubleVar()
-            elif var_key_name in ['steps', 'sdxl_steps', 'qwen_steps', 'wan_steps', 'default_batch_size', 'kontext_steps', 'variation_batch_size', 'wan_animation_duration']:
+            elif var_key_name in [
+                'steps', 'sdxl_steps', 'qwen_steps', 'wan_steps', 'default_batch_size',
+                'kontext_steps', 'variation_batch_size', 'wan_animation_duration',
+                'wan_stage1_noise_seed', 'wan_stage1_seed', 'wan_stage1_steps', 'wan_stage1_start', 'wan_stage1_end',
+                'wan_stage2_noise_seed', 'wan_stage2_seed', 'wan_stage2_steps', 'wan_stage2_start', 'wan_stage2_end',
+                'flux_upscale_steps', 'sdxl_upscale_steps', 'qwen_upscale_steps'
+            ]:
                 tk_var_instance = tk.IntVar()
             elif var_key_name in ['remix_mode', 'llm_enhancer_enabled']:
                 tk_var_instance = tk.BooleanVar()
@@ -2176,15 +2271,6 @@ class ConfigEditor:
             'default_editing_mode',
             section_key='general'
         )
-        create_setting_row_ui(
-            general_models_section.body(),
-            "Selected Upscale Model",
-            ttk.Combobox,
-            self.available_upscale_models,
-            'selected_upscale_model',
-            section_key='general'
-        )
-
         general_defaults_section = CollapsibleSection(self.general_settings_content_frame, "Generation Defaults", self.color)
         general_defaults_section.pack(fill=tk.X, padx=4, pady=(0, 6))
         create_setting_row_ui(general_defaults_section.body(), "Default Variation Mode", ttk.Combobox, ['weak', 'strong'], 'default_variation_mode', section_key='general')
@@ -2205,6 +2291,16 @@ class ConfigEditor:
         create_setting_row_ui(flux_section.body(), "Default Style", ttk.Combobox, flux_styles, 'default_style_flux', section_key='flux')
         create_setting_row_ui(flux_section.body(), "Default Steps", ttk.Spinbox, var_key_name='steps', section_key='flux', from_=4, to=128, increment=4)
         create_setting_row_ui(flux_section.body(), "Default Guidance", ttk.Spinbox, var_key_name='default_guidance', section_key='flux', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+        create_setting_row_ui(flux_section.body(), "KSampler Sampler", ttk.Entry, var_key_name='flux_ksampler_sampler', section_key='flux')
+        create_setting_row_ui(flux_section.body(), "KSampler Scheduler", ttk.Entry, var_key_name='flux_ksampler_scheduler', section_key='flux')
+        create_setting_row_ui(flux_section.body(), "KSampler CFG", ttk.Spinbox, var_key_name='flux_ksampler_cfg', section_key='flux', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+        create_setting_row_ui(flux_section.body(), "KSampler Denoise", ttk.Spinbox, var_key_name='flux_ksampler_denoise', section_key='flux', from_=0.0, to=1.0, increment=0.01, format="%.2f")
+        create_setting_row_ui(flux_section.body(), "Upscale Model", ttk.Combobox, self.available_upscale_models, 'flux_upscale_model', section_key='flux')
+        create_setting_row_ui(flux_section.body(), "Upscale Sampler", ttk.Entry, var_key_name='flux_upscale_sampler', section_key='flux')
+        create_setting_row_ui(flux_section.body(), "Upscale Scheduler", ttk.Entry, var_key_name='flux_upscale_scheduler', section_key='flux')
+        create_setting_row_ui(flux_section.body(), "Upscale Steps", ttk.Spinbox, var_key_name='flux_upscale_steps', section_key='flux', from_=1, to=256, increment=1)
+        create_setting_row_ui(flux_section.body(), "Upscale CFG", ttk.Spinbox, var_key_name='flux_upscale_cfg', section_key='flux', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+        create_setting_row_ui(flux_section.body(), "Upscale Denoise", ttk.Spinbox, var_key_name='flux_upscale_denoise', section_key='flux', from_=0.0, to=1.0, increment=0.01, format="%.2f")
 
         # SDXL Section
         sdxl_styles = sorted([name for name, data in self.styles_config.items() if data.get('model_type', 'all') in ['all', 'sdxl']])
@@ -2216,6 +2312,16 @@ class ConfigEditor:
         create_setting_row_ui(sdxl_section.body(), "Default SDXL VAE", ttk.Combobox, self.available_vaes, 'default_sdxl_vae', section_key='sdxl')
         create_setting_row_ui(sdxl_section.body(), "Default Steps", ttk.Spinbox, var_key_name='sdxl_steps', section_key='sdxl', from_=4, to=128, increment=2)
         create_setting_row_ui(sdxl_section.body(), "Default Guidance", ttk.Spinbox, var_key_name='default_guidance_sdxl', section_key='sdxl', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+        create_setting_row_ui(sdxl_section.body(), "KSampler Sampler", ttk.Entry, var_key_name='sdxl_ksampler_sampler', section_key='sdxl')
+        create_setting_row_ui(sdxl_section.body(), "KSampler Scheduler", ttk.Entry, var_key_name='sdxl_ksampler_scheduler', section_key='sdxl')
+        create_setting_row_ui(sdxl_section.body(), "KSampler CFG", ttk.Spinbox, var_key_name='sdxl_ksampler_cfg', section_key='sdxl', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+        create_setting_row_ui(sdxl_section.body(), "KSampler Denoise", ttk.Spinbox, var_key_name='sdxl_ksampler_denoise', section_key='sdxl', from_=0.0, to=1.0, increment=0.01, format="%.2f")
+        create_setting_row_ui(sdxl_section.body(), "Upscale Model", ttk.Combobox, self.available_upscale_models, 'sdxl_upscale_model', section_key='sdxl')
+        create_setting_row_ui(sdxl_section.body(), "Upscale Sampler", ttk.Entry, var_key_name='sdxl_upscale_sampler', section_key='sdxl')
+        create_setting_row_ui(sdxl_section.body(), "Upscale Scheduler", ttk.Entry, var_key_name='sdxl_upscale_scheduler', section_key='sdxl')
+        create_setting_row_ui(sdxl_section.body(), "Upscale Steps", ttk.Spinbox, var_key_name='sdxl_upscale_steps', section_key='sdxl', from_=1, to=256, increment=1)
+        create_setting_row_ui(sdxl_section.body(), "Upscale CFG", ttk.Spinbox, var_key_name='sdxl_upscale_cfg', section_key='sdxl', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+        create_setting_row_ui(sdxl_section.body(), "Upscale Denoise", ttk.Spinbox, var_key_name='sdxl_upscale_denoise', section_key='sdxl', from_=0.0, to=1.0, increment=0.01, format="%.2f")
         create_setting_row_ui(sdxl_section.body(), "Default Negative Prompt", scrolledtext.ScrolledText, var_key_name='default_sdxl_negative_prompt', section_key='sdxl', is_text_area_field=True)
 
         qwen_styles = sorted([name for name, data in self.styles_config.items() if data.get('model_type', 'all') in ['all', 'qwen']])
@@ -2230,17 +2336,40 @@ class ConfigEditor:
         create_setting_row_ui(qwen_section.body(), "Default Qwen CLIP", ttk.Combobox, qwen_clip_options, 'default_qwen_clip', section_key='qwen')
         create_setting_row_ui(qwen_section.body(), "Default Qwen VAE", ttk.Combobox, self.available_qwen_vaes, 'default_qwen_vae', section_key='qwen')
         create_setting_row_ui(qwen_section.body(), "Default Qwen Shift", ttk.Spinbox, var_key_name='default_qwen_shift', section_key='qwen', from_=0.0, to=10.0, increment=0.1, format="%.2f")
+        create_setting_row_ui(qwen_section.body(), "KSampler Sampler", ttk.Entry, var_key_name='qwen_ksampler_sampler', section_key='qwen')
+        create_setting_row_ui(qwen_section.body(), "KSampler Scheduler", ttk.Entry, var_key_name='qwen_ksampler_scheduler', section_key='qwen')
+        create_setting_row_ui(qwen_section.body(), "KSampler CFG", ttk.Spinbox, var_key_name='qwen_ksampler_cfg', section_key='qwen', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+        create_setting_row_ui(qwen_section.body(), "KSampler Denoise", ttk.Spinbox, var_key_name='qwen_ksampler_denoise', section_key='qwen', from_=0.0, to=1.0, increment=0.01, format="%.2f")
+        create_setting_row_ui(qwen_section.body(), "Upscale Model", ttk.Combobox, self.available_upscale_models, 'qwen_upscale_model', section_key='qwen')
+        create_setting_row_ui(qwen_section.body(), "Upscale Sampler", ttk.Entry, var_key_name='qwen_upscale_sampler', section_key='qwen')
+        create_setting_row_ui(qwen_section.body(), "Upscale Scheduler", ttk.Entry, var_key_name='qwen_upscale_scheduler', section_key='qwen')
+        create_setting_row_ui(qwen_section.body(), "Upscale Steps", ttk.Spinbox, var_key_name='qwen_upscale_steps', section_key='qwen', from_=1, to=256, increment=1)
+        create_setting_row_ui(qwen_section.body(), "Upscale CFG", ttk.Spinbox, var_key_name='qwen_upscale_cfg', section_key='qwen', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+        create_setting_row_ui(qwen_section.body(), "Upscale Denoise", ttk.Spinbox, var_key_name='qwen_upscale_denoise', section_key='qwen', from_=0.0, to=1.0, increment=0.01, format="%.2f")
 
         qwen_edit_section = CollapsibleSection(self.qwen_edit_settings_content_frame, "Qwen Edit Defaults", self.color)
         qwen_edit_section.pack(fill=tk.X, padx=4, pady=(0, 6))
+        create_setting_row_ui(qwen_edit_section.body(), "Default Model", ttk.Combobox, self.available_qwen_edit_models, 'default_qwen_edit_checkpoint', section_key='qwen_edit')
+        create_setting_row_ui(qwen_edit_section.body(), "Default Steps", ttk.Spinbox, var_key_name='qwen_edit_steps', section_key='qwen_edit', from_=4, to=128, increment=2)
+        create_setting_row_ui(qwen_edit_section.body(), "Default Guidance", ttk.Spinbox, var_key_name='default_guidance_qwen_edit', section_key='qwen_edit', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+        create_setting_row_ui(qwen_edit_section.body(), "Default Negative Prompt", scrolledtext.ScrolledText, var_key_name='default_qwen_edit_negative_prompt', section_key='qwen_edit', is_text_area_field=True)
+        qwen_edit_clip_options = list(dict.fromkeys(['None'] + self.available_qwen_clips))
+        create_setting_row_ui(qwen_edit_section.body(), "Default Qwen Edit CLIP", ttk.Combobox, qwen_edit_clip_options, 'default_qwen_edit_clip', section_key='qwen_edit')
+        create_setting_row_ui(qwen_edit_section.body(), "Default Qwen Edit VAE", ttk.Combobox, self.available_qwen_vaes, 'default_qwen_edit_vae', section_key='qwen_edit')
         create_setting_row_ui(qwen_edit_section.body(), "Qwen Edit Denoise", ttk.Spinbox, var_key_name='qwen_edit_denoise', section_key='qwen_edit', from_=0.0, to=1.0, increment=0.01, format="%.2f")
         create_setting_row_ui(qwen_edit_section.body(), "Qwen Edit Shift", ttk.Spinbox, var_key_name='qwen_edit_shift', section_key='qwen_edit', from_=0.0, to=10.0, increment=0.1, format="%.2f")
+        create_setting_row_ui(qwen_edit_section.body(), "KSampler Sampler", ttk.Entry, var_key_name='qwen_edit_ksampler_sampler', section_key='qwen_edit')
+        create_setting_row_ui(qwen_edit_section.body(), "KSampler Scheduler", ttk.Entry, var_key_name='qwen_edit_ksampler_scheduler', section_key='qwen_edit')
+        create_setting_row_ui(qwen_edit_section.body(), "KSampler CFG", ttk.Spinbox, var_key_name='qwen_edit_ksampler_cfg', section_key='qwen_edit', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+        create_setting_row_ui(qwen_edit_section.body(), "KSampler Denoise", ttk.Spinbox, var_key_name='qwen_edit_ksampler_denoise', section_key='qwen_edit', from_=0.0, to=1.0, increment=0.01, format="%.2f")
 
         wan_styles = sorted([name for name, data in self.styles_config.items() if data.get('model_type', 'all') in ['all', 'wan']])
         wan_section = CollapsibleSection(self.wan_settings_content_frame, "WAN Defaults", self.color)
         wan_section.pack(fill=tk.X, padx=4, pady=(0, 6))
-        create_setting_row_ui(wan_section.body(), "Default Model", ttk.Combobox, self.available_wan_models, 'default_wan_checkpoint', section_key='wan')
-        create_setting_row_ui(wan_section.body(), "Low Noise UNet", ttk.Combobox, self.available_wan_video_models, 'default_wan_low_noise_unet', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "T2V High-Noise UNet", ttk.Combobox, self.available_wan_models, 'default_wan_t2v_high_noise_unet', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "T2V Low-Noise UNet", ttk.Combobox, self.available_wan_video_models, 'default_wan_t2v_low_noise_unet', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "I2V High-Noise UNet", ttk.Combobox, self.available_wan_video_models, 'default_wan_i2v_high_noise_unet', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "I2V Low-Noise UNet", ttk.Combobox, self.available_wan_video_models, 'default_wan_i2v_low_noise_unet', section_key='wan')
         create_setting_row_ui(wan_section.body(), "Default Style", ttk.Combobox, wan_styles, 'default_style_wan', section_key='wan')
         create_setting_row_ui(wan_section.body(), "Default Steps", ttk.Spinbox, var_key_name='wan_steps', section_key='wan', from_=4, to=128, increment=2)
         create_setting_row_ui(wan_section.body(), "Default Guidance", ttk.Spinbox, var_key_name='default_guidance_wan', section_key='wan', from_=0.0, to=20.0, increment=0.1, format="%.1f")
@@ -2251,6 +2380,30 @@ class ConfigEditor:
         create_setting_row_ui(wan_section.body(), "Default WAN VAE", ttk.Combobox, self.available_wan_vaes, 'default_wan_vae', section_key='wan')
         create_setting_row_ui(wan_section.body(), "Default Vision Encoder", ttk.Combobox, wan_vision_options, 'default_wan_vision_clip', section_key='wan')
         create_setting_row_ui(wan_section.body(), "Default WAN Shift", ttk.Spinbox, var_key_name='default_wan_shift', section_key='wan', from_=0.0, to=10.0, increment=0.1, format="%.2f")
+        create_setting_row_ui(wan_section.body(), "Stage 1 Add Noise", ttk.Combobox, ['enable', 'disable'], 'wan_stage1_add_noise', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Stage 1 Noise Mode", ttk.Combobox, ['randomize', 'fixed'], 'wan_stage1_noise_mode', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Stage 1 Noise Seed", ttk.Entry, var_key_name='wan_stage1_noise_seed', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Stage 1 Seed", ttk.Entry, var_key_name='wan_stage1_seed', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Stage 1 Steps", ttk.Spinbox, var_key_name='wan_stage1_steps', section_key='wan', from_=1, to=256, increment=1)
+        create_setting_row_ui(wan_section.body(), "Stage 1 CFG", ttk.Spinbox, var_key_name='wan_stage1_cfg', section_key='wan', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+        create_setting_row_ui(wan_section.body(), "Stage 1 Sampler", ttk.Entry, var_key_name='wan_stage1_sampler', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Stage 1 Scheduler", ttk.Entry, var_key_name='wan_stage1_scheduler', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Stage 1 Start Step", ttk.Spinbox, var_key_name='wan_stage1_start', section_key='wan', from_=0, to=1000, increment=1)
+        create_setting_row_ui(wan_section.body(), "Stage 1 End Step", ttk.Spinbox, var_key_name='wan_stage1_end', section_key='wan', from_=0, to=1000, increment=1)
+        create_setting_row_ui(wan_section.body(), "Stage 1 Return Leftover", ttk.Combobox, ['enable', 'disable'], 'wan_stage1_return_with_leftover_noise', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Stage 1 Denoise", ttk.Spinbox, var_key_name='wan_stage1_denoise', section_key='wan', from_=0.0, to=1.0, increment=0.01, format="%.2f")
+        create_setting_row_ui(wan_section.body(), "Stage 2 Add Noise", ttk.Combobox, ['enable', 'disable'], 'wan_stage2_add_noise', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Stage 2 Noise Mode", ttk.Combobox, ['randomize', 'fixed'], 'wan_stage2_noise_mode', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Stage 2 Noise Seed", ttk.Entry, var_key_name='wan_stage2_noise_seed', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Stage 2 Seed", ttk.Entry, var_key_name='wan_stage2_seed', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Stage 2 Steps", ttk.Spinbox, var_key_name='wan_stage2_steps', section_key='wan', from_=1, to=256, increment=1)
+        create_setting_row_ui(wan_section.body(), "Stage 2 CFG", ttk.Spinbox, var_key_name='wan_stage2_cfg', section_key='wan', from_=0.0, to=20.0, increment=0.1, format="%.1f")
+        create_setting_row_ui(wan_section.body(), "Stage 2 Sampler", ttk.Entry, var_key_name='wan_stage2_sampler', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Stage 2 Scheduler", ttk.Entry, var_key_name='wan_stage2_scheduler', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Stage 2 Start Step", ttk.Spinbox, var_key_name='wan_stage2_start', section_key='wan', from_=0, to=1000, increment=1)
+        create_setting_row_ui(wan_section.body(), "Stage 2 End Step", ttk.Spinbox, var_key_name='wan_stage2_end', section_key='wan', from_=0, to=1000, increment=1)
+        create_setting_row_ui(wan_section.body(), "Stage 2 Return Leftover", ttk.Combobox, ['enable', 'disable'], 'wan_stage2_return_with_leftover_noise', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "Stage 2 Denoise", ttk.Spinbox, var_key_name='wan_stage2_denoise', section_key='wan', from_=0.0, to=1.0, increment=0.01, format="%.2f")
         create_setting_row_ui(wan_section.body(), "Animation Resolution", ttk.Entry, var_key_name='wan_animation_resolution', section_key='wan')
         create_setting_row_ui(wan_section.body(), "Animation Duration (frames)", ttk.Spinbox, var_key_name='wan_animation_duration', section_key='wan', from_=8, to=480, increment=1)
         create_setting_row_ui(wan_section.body(), "Animation Motion Profile", ttk.Combobox, ['slowmo', 'low', 'medium', 'high'], 'wan_animation_motion_profile', section_key='wan')
@@ -2337,6 +2490,7 @@ class ConfigEditor:
         self.available_models = []
         self.available_checkpoints = []
         self.available_qwen_models = []
+        self.available_qwen_edit_models = []
         self.available_wan_models = []
         self.available_wan_video_models = []
         self.available_clips_t5 = []
@@ -2390,6 +2544,16 @@ class ConfigEditor:
                 if isinstance(qwen_data, dict):
                     qwen_models = qwen_data.get('checkpoints', []) if isinstance(qwen_data.get('checkpoints'), list) else []
                     self.available_qwen_models = sorted({m for m in qwen_models if isinstance(m, str)}, key=str.lower)
+        except Exception:
+            pass
+
+        try:
+            if os.path.exists(QWEN_EDIT_MODELS_FILE_NAME):
+                with open(QWEN_EDIT_MODELS_FILE_NAME, 'r') as f_qem:
+                    qwen_edit_data = json.load(f_qem)
+                if isinstance(qwen_edit_data, dict):
+                    edit_models = qwen_edit_data.get('checkpoints', []) if isinstance(qwen_edit_data.get('checkpoints'), list) else []
+                    self.available_qwen_edit_models = sorted({m for m in edit_models if isinstance(m, str)}, key=str.lower)
         except Exception:
             pass
 

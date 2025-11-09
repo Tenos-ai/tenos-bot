@@ -101,16 +101,18 @@ from prompt_templates import (
     wan_prompt,
     wan_img2img_prompt,
     wan_variation_prompt,
-    wan_upscale_prompt,
     wan_image_to_video_prompt,
     WAN_UNET_LOADER_NODE,
     WAN_SECOND_UNET_LOADER_NODE,
     WAN_CLIP_LOADER_NODE,
     WAN_VAE_LOADER_NODE,
     WAN_LORA_NODE,
+    WAN_REFINER_LORA_NODE,
     WAN_SAMPLING_NODE,
+    WAN_SECOND_SAMPLING_NODE,
     WAN_POS_PROMPT_NODE,
     WAN_NEG_PROMPT_NODE,
+    WAN_INITIAL_KSAMPLER_NODE,
     WAN_KSAMPLER_NODE,
     WAN_SAVE_IMAGE_NODE,
     WAN_LATENT_NODE,
@@ -126,20 +128,14 @@ from prompt_templates import (
     WAN_VAR_VAE_DECODE_NODE,
     WAN_VAR_SAVE_IMAGE_NODE,
     WAN_VAR_BATCH_NODE,
-    WAN_UPSCALE_LOAD_IMAGE_NODE,
-    WAN_UPSCALE_MODEL_LOADER_NODE,
-    WAN_UPSCALE_ULTIMATE_NODE,
-    WAN_UPSCALE_HELPER_LATENT_NODE,
-    WAN_UPSCALE_SAVE_IMAGE_NODE,
-    WAN_UPSCALE_POS_PROMPT_NODE,
-    WAN_UPSCALE_NEG_PROMPT_NODE,
-    WAN_UPSCALE_SAMPLING_NODE,
     WAN_I2V_LOAD_IMAGE_NODE,
     WAN_I2V_RESIZE_NODE,
     WAN_I2V_VISION_CLIP_NODE,
     WAN_I2V_VISION_ENCODE_NODE,
     WAN_I2V_SAMPLING_NODE,
+    WAN_I2V_SECOND_SAMPLING_NODE,
     WAN_I2V_KSAMPLER_NODE,
+    WAN_I2V_SECOND_KSAMPLER_NODE,
     WAN_I2V_VAE_DECODE_NODE,
     WAN_I2V_CREATE_VIDEO_NODE,
     WAN_I2V_SAVE_VIDEO_NODE,
@@ -163,6 +159,7 @@ class GenerationSpec:
     text2img_template: Mapping[str, dict]
     img2img_template: Mapping[str, dict]
     ksampler_node: str
+    initial_ksampler_node: Optional[str]
     latent_node: str
     latent_model_type: str
     save_node: str
@@ -183,6 +180,7 @@ class GenerationSpec:
     ksampler_model_ref: Optional[Tuple[str, int]] = None
     secondary_model_loader_node: Optional[str] = None
     secondary_model_setting_key: Optional[str] = None
+    secondary_lora_node: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -238,7 +236,7 @@ class ModelSpec:
     defaults: DefaultKeys
     generation: GenerationSpec
     variation: VariationSpec
-    upscale: UpscaleSpec
+    upscale: Optional[UpscaleSpec]
     enhancer_prompt_key: str
     supports_animation: bool = False
     animation_template: Optional[Mapping[str, dict]] = None
@@ -267,7 +265,9 @@ def copy_variation_template(spec: VariationSpec, *, strength: str = "default") -
     return _deepcopy_template(template)
 
 
-def copy_upscale_template(spec: UpscaleSpec) -> dict:
+def copy_upscale_template(spec: Optional[UpscaleSpec]) -> dict:
+    if spec is None:
+        raise ValueError("Requested model does not define an upscale template")
     return _deepcopy_template(spec.template)
 
 
@@ -293,6 +293,7 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
             text2img_template=flux_prompt_template,
             img2img_template=flux_img2img_template,
             ksampler_node=str(GENERATION_WORKFLOW_STEPS_NODE),
+            initial_ksampler_node=None,
             latent_node=str(GENERATION_LATENT_NODE),
             latent_model_type="FLUX",
             save_node="7",
@@ -360,6 +361,7 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
             text2img_template=sdxl_prompt_template,
             img2img_template=sdxl_img2img_prompt,
             ksampler_node=str(SDXL_KSAMPLER_NODE),
+            initial_ksampler_node=None,
             latent_node=str(SDXL_LATENT_NODE),
             latent_model_type="SDXL",
             save_node=str(SDXL_SAVE_IMAGE_NODE),
@@ -421,6 +423,7 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
             text2img_template=qwen_prompt,
             img2img_template=qwen_img2img_prompt,
             ksampler_node=str(QWEN_KSAMPLER_NODE),
+            initial_ksampler_node=None,
             latent_node=str(QWEN_LATENT_NODE),
             latent_model_type="QWEN",
             save_node=str(QWEN_SAVE_IMAGE_NODE),
@@ -487,6 +490,7 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
             text2img_template=wan_prompt,
             img2img_template=wan_img2img_prompt,
             ksampler_node=str(WAN_KSAMPLER_NODE),
+            initial_ksampler_node=str(WAN_INITIAL_KSAMPLER_NODE),
             latent_node=str(WAN_LATENT_NODE),
             latent_model_type="WAN",
             save_node=str(WAN_SAVE_IMAGE_NODE),
@@ -496,13 +500,14 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
             pos_prompt_node=str(WAN_POS_PROMPT_NODE),
             neg_prompt_node=str(WAN_NEG_PROMPT_NODE),
             lora_node=str(WAN_LORA_NODE),
+            secondary_lora_node=str(WAN_REFINER_LORA_NODE),
             img2img_load_node=str(WAN_IMG2IMG_LOAD_IMAGE_NODE),
             img2img_encode_node=str(WAN_IMG2IMG_VAE_ENCODE_NODE),
             clip_loader_node=str(WAN_CLIP_LOADER_NODE),
             vae_loader_node=str(WAN_VAE_LOADER_NODE),
-            ksampler_model_ref=(str(WAN_SAMPLING_NODE), 0),
+            ksampler_model_ref=(str(WAN_SAMPLING_NODE), 1),
             secondary_model_loader_node=str(WAN_SECOND_UNET_LOADER_NODE),
-            secondary_model_setting_key="default_wan_low_noise_unet",
+            secondary_model_setting_key="default_wan_t2v_low_noise_unet",
         ),
         variation=VariationSpec(
             family="checkpoint",
@@ -521,27 +526,9 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
             batch_node=str(WAN_VAR_BATCH_NODE),
             vae_loader_node=str(WAN_VAE_LOADER_NODE),
             secondary_model_loader_node=str(WAN_SECOND_UNET_LOADER_NODE),
-            secondary_model_setting_key="default_wan_low_noise_unet",
+            secondary_model_setting_key="default_wan_t2v_low_noise_unet",
         ),
-        upscale=UpscaleSpec(
-            family="checkpoint",
-            template=wan_upscale_prompt,
-            upscale_node=str(WAN_UPSCALE_ULTIMATE_NODE),
-            save_node=str(WAN_UPSCALE_SAVE_IMAGE_NODE),
-            model_loader_node=str(WAN_UNET_LOADER_NODE),
-            load_image_node=str(WAN_UPSCALE_LOAD_IMAGE_NODE),
-            lora_node=str(WAN_LORA_NODE),
-            helper_latent_node=str(WAN_UPSCALE_HELPER_LATENT_NODE),
-            latent_model_type="WAN",
-            pos_prompt_node=str(WAN_UPSCALE_POS_PROMPT_NODE),
-            neg_prompt_node=str(WAN_UPSCALE_NEG_PROMPT_NODE),
-            clip_skip_node=None,
-            upscale_model_loader_node=str(WAN_UPSCALE_MODEL_LOADER_NODE),
-            clip_loader_node=str(WAN_CLIP_LOADER_NODE),
-            vae_loader_node=str(WAN_VAE_LOADER_NODE),
-            secondary_model_loader_node=str(WAN_SECOND_UNET_LOADER_NODE),
-            secondary_model_setting_key="default_wan_low_noise_unet",
-        ),
+        upscale=None,
         enhancer_prompt_key="wan",
         supports_animation=True,
         animation_template=wan_image_to_video_prompt,
