@@ -27,6 +27,7 @@ from model_scanner import (
 )
 from comfyui_api import get_available_comfyui_models
 from settings_manager import load_settings, load_styles_config
+from upscaling import upscale_model_exists
 from bot_ui_components import QueuedJobView
 
 
@@ -96,8 +97,16 @@ async def validate_models_against_comfyui(bot):
         elif not sel_t5: print("❓ Info: No T5 CLIP selected.")
         if sel_l and not _option_matches(sel_l, available_clips): print(f"⚠️ WARNING: Selected CLIP-L '{sel_l}' not found!"); issues=True
         elif not sel_l: print("❓ Info: No CLIP-L selected.")
-        if sel_upscaler and sel_upscaler != "None" and not _option_matches(sel_upscaler, available_models.get("upscaler", [])):
-            print(f"⚠️ WARNING: Selected Upscaler '{sel_upscaler}' not found!"); issues=True
+        if sel_upscaler and sel_upscaler != "None":
+            api_upscalers = available_models.get("upscaler", [])
+            if not _option_matches(sel_upscaler, api_upscalers):
+                if upscale_model_exists(sel_upscaler):
+                    print(
+                        f"ℹ️ Info: Selected Upscaler '{sel_upscaler}' available locally "
+                        "but not reported by ComfyUI API."
+                    )
+                else:
+                    print(f"⚠️ WARNING: Selected Upscaler '{sel_upscaler}' not found!"); issues=True
         elif not sel_upscaler or sel_upscaler == "None": print("❓ Info: No Upscaler selected.")
         if issues: print("‼️-> Please update settings or check ComfyUI models.")
         else: print("✅ Configured models appear valid according to ComfyUI API.")

@@ -1684,10 +1684,41 @@ def get_upscale_model_choices(settings):
     if isinstance(models_data, dict):
         upscale_models_raw.extend(models_data.get('upscaler', []))
         if not upscale_models_raw: upscale_models_raw.extend(models_data.get('unet', [])) # Fallback
-    upscale_models = sorted(list(set(u.strip() for u in upscale_models_raw if isinstance(u, str))))
+    # Include locally available models from the configured directory as a
+    # fallback in case the ComfyUI API does not report any upscalers.
+    try:
+        with open('config.json', 'r') as cfg_file:
+            cfg_data = json.load(cfg_file)
+    except (FileNotFoundError, json.JSONDecodeError, TypeError):
+        cfg_data = {}
+
+    local_upscale_models = set()
+    upscale_root = None
+    if isinstance(cfg_data, dict):
+        upscale_root = cfg_data.get('MODELS', {}).get('UPSCALE_MODELS') if isinstance(cfg_data.get('MODELS', {}), dict) else None
+
+    if isinstance(upscale_root, str) and upscale_root.strip():
+        normalized_root = os.path.abspath(upscale_root.strip())
+        if os.path.isdir(normalized_root):
+            try:
+                allowed_exts = {'.pth', '.pt', '.onnx', '.safetensors', '.ckpt', '.bin'}
+                for entry in os.listdir(normalized_root):
+                    base = entry.strip()
+                    if not base:
+                        continue
+                    _, ext = os.path.splitext(base)
+                    if ext.lower() in allowed_exts:
+                        local_upscale_models.add(base)
+            except OSError as os_error:
+                print(f"SettingsManager: Unable to scan upscale model directory '{normalized_root}': {os_error}")
+
+    if local_upscale_models:
+        upscale_models_raw.extend(sorted(local_upscale_models))
+
+    upscale_models = sorted(list(set(u.strip() for u in upscale_models_raw if isinstance(u, str) and u.strip())))
     current_upscale_model_setting = settings.get('selected_upscale_model')
     current_upscale_model = current_upscale_model_setting.strip() if isinstance(current_upscale_model_setting, str) else None
-    
+
     canonical_options = []
     seen_values = set()
     for model in upscale_models:

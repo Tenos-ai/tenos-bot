@@ -65,6 +65,8 @@ from upscaling import (
     _resolve_upscale_model_choice,
     _sanitize_override,
     _select_preferred_option,
+    get_local_upscale_models,
+    upscale_model_exists,
 )
 
 
@@ -198,6 +200,43 @@ class UpscaleModelResolutionTests(unittest.TestCase):
             with mock.patch.object(upscaling, "UPSCALE_MODELS_ROOT", tmp_dir, create=True):
                 choice = _resolve_upscale_model_choice("COMBO", "COMBO", [])
                 self.assertEqual(choice, "4x-UltraSharp.pth")
+
+    def test_get_local_upscale_models_filters_supported_extensions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            valid_name = "4x-UltraSharp.pth"
+            other_valid = "another.safetensors"
+            invalid_name = "readme.txt"
+            for filename in (valid_name, other_valid, invalid_name):
+                with open(os.path.join(tmp_dir, filename), "w", encoding="utf-8"):
+                    pass
+
+            with mock.patch.object(upscaling, "UPSCALE_MODELS_ROOT", tmp_dir, create=True):
+                models = get_local_upscale_models()
+
+        self.assertEqual(models, [valid_name, other_valid])
+
+    def test_upscale_model_exists_accepts_paths_and_basenames(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            filename = "4x-UltraSharp.pth"
+            with open(os.path.join(tmp_dir, filename), "w", encoding="utf-8"):
+                pass
+
+            with mock.patch.object(upscaling, "UPSCALE_MODELS_ROOT", tmp_dir, create=True):
+                self.assertTrue(upscale_model_exists(filename))
+                windows_path = f"C:/fake/path/{filename}"
+                self.assertTrue(upscale_model_exists(windows_path))
+                self.assertFalse(upscale_model_exists("missing-model.pth"))
+
+    def test_upscale_model_exists_matches_case_and_missing_extension(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            filename = "4x-UltraSharp.PTH"
+            with open(os.path.join(tmp_dir, filename), "w", encoding="utf-8"):
+                pass
+
+            with mock.patch.object(upscaling, "UPSCALE_MODELS_ROOT", tmp_dir, create=True):
+                self.assertTrue(upscale_model_exists("4x-ultrasharp.pth"))
+                self.assertTrue(upscale_model_exists("4x-ultrasharp"))
+                self.assertFalse(upscale_model_exists("different-model"))
 
 
 if __name__ == "__main__":
