@@ -74,6 +74,7 @@ def modify_qwen_edit_prompt(
     steps_override: int,
     guidance_override: float,
     denoise_override: float,
+    cfg_rescale_override: float,
     source_job_id: str = "unknown",
 ) -> Tuple[str | None, Dict | None, str | None, Dict | None]:
     """Prepare a Qwen Image Edit workflow and metadata for queueing."""
@@ -129,6 +130,10 @@ def modify_qwen_edit_prompt(
             sampling_inputs["shift"] = float(edit_shift)
         except (TypeError, ValueError):
             sampling_inputs["shift"] = 0.0
+        try:
+            sampling_inputs["cfg_rescale"] = float(cfg_rescale_override)
+        except (TypeError, ValueError):
+            sampling_inputs["cfg_rescale"] = 1.0
 
     load_key = str(QWEN_IMG2IMG_LOAD_IMAGE_NODE)
     workflow.setdefault(load_key, {}).setdefault("inputs", {})["url_or_path"] = image_urls[0]
@@ -169,6 +174,12 @@ def modify_qwen_edit_prompt(
             "latent_image": [encode_key, 0],
         }
     )
+    sampler_name_override = user_settings.get("qwen_edit_ksampler_sampler")
+    if isinstance(sampler_name_override, str) and sampler_name_override.strip():
+        sampler_inputs["sampler_name"] = sampler_name_override.strip()
+    scheduler_override = user_settings.get("qwen_edit_ksampler_scheduler")
+    if isinstance(scheduler_override, str) and scheduler_override.strip():
+        sampler_inputs["scheduler"] = scheduler_override.strip()
 
     decode_key = str(QWEN_VAR_VAE_DECODE_NODE)
     if decode_key in workflow:

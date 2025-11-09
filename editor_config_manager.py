@@ -7,6 +7,14 @@ from tkinter import scrolledtext, BooleanVar
 
 from editor_utils import load_json_config, save_json_config, silent_showerror
 from editor_constants import CONFIG_FILE_NAME, SETTINGS_FILE_NAME
+from settings_shared import (
+    WAN_CHECKPOINT_KEY,
+    WAN_I2V_HIGH_NOISE_KEY,
+    WAN_I2V_LOW_NOISE_KEY,
+    WAN_T2V_HIGH_NOISE_KEY,
+    WAN_T2V_LOW_NOISE_KEY,
+    sync_wan_checkpoint_alias,
+)
 
 class EditorConfigManager:
     """
@@ -51,7 +59,8 @@ class EditorConfigManager:
                 "STATUS_NOTIFICATION_DURATION_MS": 2000,
             }
         }
-        self.settings_template_factory = lambda: {
+        def _build_settings_template():
+            template = {
              "selected_model": None,
              "active_model_family": "flux",
              "selected_kontext_model": None,
@@ -61,13 +70,17 @@ class EditorConfigManager:
             "default_sdxl_clip": None,
             "default_sdxl_vae": None,
             "default_qwen_checkpoint": None,
-            "default_wan_checkpoint": None,
+            WAN_CHECKPOINT_KEY: None,
+            WAN_T2V_HIGH_NOISE_KEY: "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors",
+            WAN_T2V_LOW_NOISE_KEY: "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
+            WAN_I2V_HIGH_NOISE_KEY: "wan2.2_i2v_high_noise_14B_fp16.safetensors",
+            WAN_I2V_LOW_NOISE_KEY: "wan2.2_i2v_low_noise_14B_fp16.safetensors",
             "default_wan_low_noise_unet": "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
             "default_qwen_clip": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
             "default_qwen_vae": "qwen_image_vae.safetensors",
              "default_qwen_shift": 0.0,
              "default_wan_clip": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
-             "default_wan_vae": "wan_2.1_vae.safetensors",
+             "default_wan_vae": "wan2.2_vae.safetensors",
              "default_wan_vision_clip": "clip_vision_h.safetensors",
              "default_wan_shift": 8.0,
              "steps": 32,
@@ -84,14 +97,15 @@ class EditorConfigManager:
              "sdxl_ksampler_scheduler": "normal",
              "sdxl_ksampler_cfg": 6.0,
              "sdxl_ksampler_denoise": 1.0,
-             "qwen_ksampler_sampler": "euler",
-             "qwen_ksampler_scheduler": "normal",
+            "qwen_ksampler_sampler": "euler",
+            "qwen_ksampler_scheduler": "normal",
              "qwen_ksampler_cfg": 5.5,
              "qwen_ksampler_denoise": 1.0,
-             "qwen_edit_ksampler_sampler": "euler",
-             "qwen_edit_ksampler_scheduler": "normal",
+            "qwen_edit_ksampler_sampler": "euler",
+            "qwen_edit_ksampler_scheduler": "normal",
              "qwen_edit_ksampler_cfg": 5.5,
              "qwen_edit_ksampler_denoise": 0.6,
+             "qwen_edit_cfg_rescale": 1.0,
              "wan_stage1_add_noise": "enable",
              "wan_stage1_noise_mode": "randomize",
              "wan_stage1_noise_seed": 8640317771124281,
@@ -129,8 +143,8 @@ class EditorConfigManager:
              "sdxl_upscale_cfg": 6.0,
              "sdxl_upscale_denoise": 0.15,
              "qwen_upscale_model": None,
-             "qwen_upscale_sampler": "euler",
-             "qwen_upscale_scheduler": "normal",
+            "qwen_upscale_sampler": "euler",
+            "qwen_upscale_scheduler": "normal",
              "qwen_upscale_steps": 16,
              "qwen_upscale_cfg": 5.5,
              "qwen_upscale_denoise": 0.2,
@@ -167,7 +181,12 @@ class EditorConfigManager:
              "wan_animation_resolution": "512x512",
              "wan_animation_duration": 33,
              "wan_animation_motion_profile": "medium"
-        }
+            }
+
+            sync_wan_checkpoint_alias(template)
+            return template
+
+        self.settings_template_factory = _build_settings_template
 
     def _get_default_llm_model_for_provider(self, provider_key, fallback_model_name):
         if not self.llm_models_data_for_settings_template:
@@ -353,6 +372,7 @@ class EditorConfigManager:
                 new_default_model = valid_models_for_this_provider[0] if valid_models_for_this_provider else current_settings_template.get(model_setting_key_to_check)
                 merged_settings_result[model_setting_key_to_check] = new_default_model
                 was_settings_updated_during_load = True
+        sync_wan_checkpoint_alias(merged_settings_result)
         self.settings = merged_settings_result
         if was_settings_updated_during_load:
             self.save_bot_settings_data(show_success_message=False)
@@ -411,6 +431,7 @@ class EditorConfigManager:
                 model_for_current_provider = self.editor_app.settings_vars['llm_model'].get()
                 settings_to_write[f"llm_model_{saved_provider}"] = model_for_current_provider
             settings_to_write.pop('llm_model', None)
+            sync_wan_checkpoint_alias(settings_to_write)
             if save_json_config(SETTINGS_FILE_NAME, settings_to_write, "bot settings"):
                 self.settings = settings_to_write
                 try: self.settings_last_mtime = os.path.getmtime(SETTINGS_FILE_NAME)

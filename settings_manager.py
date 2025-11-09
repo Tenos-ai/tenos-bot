@@ -8,7 +8,69 @@ import numpy as np
 import traceback
 from typing import Dict, Iterable, List, Optional, Tuple
 
+from settings_shared import (
+    WAN_CHECKPOINT_KEY,
+    WAN_I2V_HIGH_NOISE_KEY,
+    WAN_I2V_LOW_NOISE_KEY,
+    WAN_T2V_HIGH_NOISE_KEY,
+    WAN_T2V_LOW_NOISE_KEY,
+    sync_wan_checkpoint_alias,
+)
+
 from model_registry import get_model_spec, resolve_model_type_from_prefix
+
+
+KSAMPLER_SAMPLER_OPTIONS = [
+    "euler",
+    "euler_ancestral",
+    "heun",
+    "heunpp2",
+    "dpm_2",
+    "dpm_2_ancestral",
+    "lms",
+    "dpm_fast",
+    "dpm_adaptive",
+    "dpmpp_2s_ancestral",
+    "dpmpp_2s_ancestral_cfg_pp",
+    "dpmpp_sde",
+    "dpmpp_sde_gpu",
+    "dpmpp_2m",
+    "dpmpp_2m_cfg_pp",
+    "dpmpp_2m_sde",
+    "dpmpp_2m_sde_gpu",
+    "dpmpp_2m_sde_heun",
+    "dpmpp_2m_sde_heun_gpu",
+    "dpmpp_3m_sde",
+    "dpmpp_3m_sde_gpu",
+    "ddpm",
+    "lcm",
+    "ipndm",
+    "ipndm_v",
+    "deis",
+    "res_multistep",
+    "res_multistep_cfg_pp",
+    "res_multistep_ancestral",
+    "res_multistep_ancestral_cfg_pp",
+    "gradient_estimation",
+    "gradient_estimation_cfg_pp",
+    "er_sde",
+    "seeds_2",
+    "seeds_3",
+    "sa_solver",
+    "sa_solver_pece",
+]
+
+KSAMPLER_SCHEDULER_OPTIONS = [
+    "simple",
+    "sgm_uniform",
+    "karras",
+    "exponential",
+    "ddim_uniform",
+    "beta",
+    "normal",
+    "linear_quadratic",
+    "kl_optimal",
+]
 
 
 MODEL_SELECTION_PREFIX = {
@@ -51,7 +113,7 @@ def sync_active_model_selection(settings: dict, *, active_family: Optional[str] 
         "sdxl": "default_sdxl_checkpoint",
         "qwen": "default_qwen_checkpoint",
         "qwen_edit": "default_qwen_edit_checkpoint",
-        "wan": "default_wan_checkpoint",
+        "wan": WAN_T2V_HIGH_NOISE_KEY,
     }
 
     default_key = default_map.get(family_key)
@@ -324,6 +386,7 @@ def load_settings():
             'qwen_ksampler_denoise',
             'qwen_edit_ksampler_cfg',
             'qwen_edit_ksampler_denoise',
+            'qwen_edit_cfg_rescale',
             'wan_stage1_cfg',
             'wan_stage1_denoise',
             'wan_stage2_cfg',
@@ -344,6 +407,7 @@ def load_settings():
             'sdxl_ksampler_denoise': (0.0, 1.0),
             'qwen_ksampler_denoise': (0.0, 1.0),
             'qwen_edit_ksampler_denoise': (0.0, 1.0),
+            'qwen_edit_cfg_rescale': (0.0, 2.0),
             'wan_stage1_denoise': (0.0, 1.0),
             'wan_stage2_denoise': (0.0, 1.0),
             'flux_upscale_denoise': (0.0, 1.0),
@@ -601,7 +665,7 @@ def load_settings():
             'sdxl': 'default_sdxl_checkpoint',
             'qwen': 'default_qwen_checkpoint',
             'qwen_edit': 'default_qwen_edit_checkpoint',
-            'wan': 'default_wan_checkpoint',
+            'wan': WAN_T2V_HIGH_NOISE_KEY,
         }
 
         for family_key, default_key in fallback_key_map.items():
@@ -754,6 +818,17 @@ def load_settings():
                 settings[neg_key] = default_settings[neg_key]
                 updated = True
 
+        previous_alias_state = (
+            settings.get(WAN_T2V_HIGH_NOISE_KEY),
+            settings.get(WAN_CHECKPOINT_KEY),
+        )
+        sync_wan_checkpoint_alias(settings)
+        if previous_alias_state != (
+            settings.get(WAN_T2V_HIGH_NOISE_KEY),
+            settings.get(WAN_CHECKPOINT_KEY),
+        ):
+            updated = True
+
 
         if updated:
              print(f"Updating {settings_file} with defaults/corrections.")
@@ -800,7 +875,7 @@ def _get_default_settings():
     default_groq_model_raw = llm_models_config.get('providers', {}).get('groq', {}).get('models', ["llama3-8b-8192"])[0]
     default_openai_model_raw = llm_models_config.get('providers', {}).get('openai', {}).get('models', ["gpt-3.5-turbo"])[0]
 
-    return {
+    defaults = {
         "selected_model": default_model_setting,
         "selected_kontext_model": default_flux_model_raw,
         "default_flux_model": default_flux_model_raw,
@@ -817,15 +892,15 @@ def _get_default_settings():
         "default_qwen_edit_vae": "qwen_image_vae.safetensors",
         "default_guidance_qwen_edit": 5.5,
         "qwen_edit_steps": 28,
-        "default_wan_checkpoint": default_wan_checkpoint_raw,
-        "default_wan_t2v_high_noise_unet": default_wan_checkpoint_raw
+        WAN_CHECKPOINT_KEY: default_wan_checkpoint_raw,
+        WAN_T2V_HIGH_NOISE_KEY: default_wan_checkpoint_raw
         or "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors",
         "default_wan_t2v_low_noise_unet": "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
-        "default_wan_i2v_high_noise_unet": "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
-        "default_wan_i2v_low_noise_unet": "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
+        "default_wan_i2v_high_noise_unet": "wan2.2_i2v_high_noise_14B_fp16.safetensors",
+        "default_wan_i2v_low_noise_unet": "wan2.2_i2v_low_noise_14B_fp16.safetensors",
         "default_wan_low_noise_unet": "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
         "default_wan_clip": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
-        "default_wan_vae": "wan_2.1_vae.safetensors",
+        "default_wan_vae": "wan2.2_vae.safetensors",
         "default_wan_vision_clip": "clip_vision_h.safetensors",
         "default_wan_shift": 8.0,
         "steps": 32,
@@ -911,6 +986,7 @@ def _get_default_settings():
         "default_mp_size": 1.0,
         "qwen_edit_denoise": 0.6,
         "qwen_edit_shift": 0.0,
+        "qwen_edit_cfg_rescale": 1.0,
         "kontext_guidance": 3.0,
         "kontext_steps": 32,
         "kontext_mp_size": 1.15,
@@ -928,6 +1004,9 @@ def _get_default_settings():
         "wan_animation_motion_profile": "medium",
         "active_model_family": "flux",
     }
+
+    sync_wan_checkpoint_alias(defaults)
+    return defaults
 
 def save_settings(settings):
     settings_file = 'settings.json'
@@ -1213,6 +1292,12 @@ def _build_model_choice_options(settings, model_type: str, setting_key: str) -> 
     else:
         current_value = None
 
+    if setting_key == WAN_T2V_HIGH_NOISE_KEY and not current_value:
+        alias_value = settings.get(WAN_CHECKPOINT_KEY)
+        if isinstance(alias_value, str) and alias_value.strip():
+            current_value = alias_value.strip()
+            settings[setting_key] = current_value
+
     display_tag = MODEL_SELECTION_PREFIX.get(model_type, model_type.upper())
     canonical_options: List[Dict[str, str]] = []
     seen: set[str] = set()
@@ -1274,7 +1359,7 @@ def get_default_qwen_edit_model_choices(settings):
 
 
 def get_default_wan_model_choices(settings):
-    return _build_model_choice_options(settings, "wan", "default_wan_t2v_high_noise_unet")
+    return _build_model_choice_options(settings, "wan", WAN_T2V_HIGH_NOISE_KEY)
 
 
 def get_active_model_family_choices(settings):
@@ -1285,7 +1370,7 @@ def get_active_model_family_choices(settings):
         'sdxl': 'default_sdxl_checkpoint',
         'qwen': 'default_qwen_checkpoint',
         'qwen_edit': 'default_qwen_edit_checkpoint',
-        'wan': 'default_wan_checkpoint',
+        'wan': WAN_T2V_HIGH_NOISE_KEY,
     }
     for family_key in GENERATION_MODEL_FAMILIES:
         prefix_label = MODEL_SELECTION_PREFIX.get(family_key, family_key)
@@ -1367,6 +1452,57 @@ def get_wan_animation_motion_profile_choices(settings):
     if options and not any(opt.default for opt in options):
         options[0].default = True
     return options[:20]
+
+
+def _build_enum_choice_options(
+    settings: dict,
+    setting_key: str,
+    options: List[str],
+    label_prefix: str,
+) -> List[discord.SelectOption]:
+    fallback = options[0] if options else ""
+    current_value_raw = settings.get(setting_key, fallback)
+    current_value = str(current_value_raw or fallback).strip() or fallback
+
+    ordered: List[str] = []
+    if current_value:
+        ordered.append(current_value)
+    for option in options:
+        if option not in ordered:
+            ordered.append(option)
+
+    ordered = ordered[:25]
+    choices: List[discord.SelectOption] = []
+    for option in ordered:
+        label = f"{label_prefix}: {option}"
+        choices.append(
+            discord.SelectOption(
+                label=label[:100],
+                value=option,
+                default=(option == current_value),
+            )
+        )
+
+    if choices and not any(choice.default for choice in choices):
+        choices[0].default = True
+
+    return choices
+
+
+def get_qwen_ksampler_sampler_choices(settings):
+    return _build_enum_choice_options(settings, 'qwen_ksampler_sampler', KSAMPLER_SAMPLER_OPTIONS, 'Sampler (Qwen)')
+
+
+def get_qwen_ksampler_scheduler_choices(settings):
+    return _build_enum_choice_options(settings, 'qwen_ksampler_scheduler', KSAMPLER_SCHEDULER_OPTIONS, 'Scheduler (Qwen)')
+
+
+def get_qwen_edit_ksampler_sampler_choices(settings):
+    return _build_enum_choice_options(settings, 'qwen_edit_ksampler_sampler', KSAMPLER_SAMPLER_OPTIONS, 'Sampler (Qwen Edit)')
+
+
+def get_qwen_edit_ksampler_scheduler_choices(settings):
+    return _build_enum_choice_options(settings, 'qwen_edit_ksampler_scheduler', KSAMPLER_SCHEDULER_OPTIONS, 'Scheduler (Qwen Edit)')
 
 
 def get_clip_choices(settings, clip_type_key, setting_key):
@@ -1707,20 +1843,49 @@ def get_qwen_edit_denoise_choices(settings):
     return choices[:20]
 
 
+def get_qwen_edit_cfg_rescale_choices(settings):
+    try:
+        current_rescale = float(settings.get('qwen_edit_cfg_rescale', 1.0))
+    except (ValueError, TypeError):
+        current_rescale = 1.0
+
+    base_values = [0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+    rounded_current = round(current_rescale, 2)
+    rounded_values = {round(value, 2) for value in base_values}
+    rounded_values.add(rounded_current)
+    ordered_values = sorted(rounded_values)
+
+    choices: List[discord.SelectOption] = []
+    for value in ordered_values:
+        value_str = f"{value:.2f}"
+        choices.append(
+            discord.SelectOption(
+                label=f"CFG Rescale: {value_str}",
+                value=value_str,
+                default=bool(abs(value - rounded_current) < 0.01),
+            )
+        )
+
+    if choices and not any(option.default for option in choices):
+        choices[0].default = True
+
+    return choices[:20]
+
+
 def get_wan_t2v_high_unet_choices(settings):
-    return _build_model_choice_options(settings, "wan", "default_wan_t2v_high_noise_unet")
+    return _build_model_choice_options(settings, "wan", WAN_T2V_HIGH_NOISE_KEY)
 
 
 def get_wan_t2v_low_unet_choices(settings):
-    return _build_model_choice_options(settings, "wan", "default_wan_t2v_low_noise_unet")
+    return _build_model_choice_options(settings, "wan", WAN_T2V_LOW_NOISE_KEY)
 
 
 def get_wan_i2v_high_unet_choices(settings):
-    return _build_model_choice_options(settings, "wan", "default_wan_i2v_high_noise_unet")
+    return _build_model_choice_options(settings, "wan", WAN_I2V_HIGH_NOISE_KEY)
 
 
 def get_wan_i2v_low_unet_choices(settings):
-    return _build_model_choice_options(settings, "wan", "default_wan_i2v_low_noise_unet")
+    return _build_model_choice_options(settings, "wan", WAN_I2V_LOW_NOISE_KEY)
 
 
 def get_wan_low_noise_unet_choices(settings):
@@ -2059,7 +2224,7 @@ def resolve_model_for_type(settings: Dict[str, object], desired_type: str) -> Op
         'sdxl': 'default_sdxl_checkpoint',
         'qwen': 'default_qwen_checkpoint',
         'qwen_edit': 'default_qwen_edit_checkpoint',
-        'wan': 'default_wan_checkpoint',
+        'wan': WAN_T2V_HIGH_NOISE_KEY,
     }
 
     fallback_model = None

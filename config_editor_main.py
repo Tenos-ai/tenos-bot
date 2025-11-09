@@ -18,6 +18,15 @@ import tempfile
 import difflib
 import shutil
 
+from settings_shared import (
+    WAN_CHECKPOINT_KEY,
+    WAN_I2V_HIGH_NOISE_KEY,
+    WAN_I2V_LOW_NOISE_KEY,
+    WAN_T2V_HIGH_NOISE_KEY,
+    WAN_T2V_LOW_NOISE_KEY,
+    sync_wan_checkpoint_alias,
+)
+
 
 KSAMPLER_SAMPLER_OPTIONS = [
     "euler",
@@ -826,10 +835,10 @@ class ConfigEditor:
             "default_qwen_checkpoint": "Default Qwen diffusion checkpoint for image workflows.",
             "default_qwen_edit_checkpoint": "Default Qwen Edit checkpoint used for image edit runs.",
             "default_wan_checkpoint": "Legacy WAN checkpoint slot (mirrors the T2V high-noise UNet).",
-            "default_wan_t2v_high_noise_unet": "WAN T2V high-noise UNet used for standard /gen video runs.",
-            "default_wan_t2v_low_noise_unet": "WAN T2V low-noise UNet paired with high-noise model during generation.",
-            "default_wan_i2v_high_noise_unet": "WAN I2V high-noise UNet used for image-to-video conversions.",
-            "default_wan_i2v_low_noise_unet": "WAN I2V low-noise UNet used during image-to-video conversions.",
+            WAN_T2V_HIGH_NOISE_KEY: "WAN T2V high-noise UNet used for standard /gen video runs.",
+            WAN_T2V_LOW_NOISE_KEY: "WAN T2V low-noise UNet paired with high-noise model during generation.",
+            WAN_I2V_HIGH_NOISE_KEY: "WAN I2V high-noise UNet used for image-to-video conversions.",
+            WAN_I2V_LOW_NOISE_KEY: "WAN I2V low-noise UNet used during image-to-video conversions.",
             "default_wan_low_noise_unet": "Legacy WAN low-noise slot (mirrors the T2V low-noise UNet).",
             "default_style_flux": "Starting style applied to Flux prompts.",
             "default_style_sdxl": "Starting style applied to SDXL prompts.",
@@ -866,6 +875,7 @@ class ConfigEditor:
             "qwen_edit_ksampler_scheduler": "Default scheduler for the Qwen Edit sampler.",
             "qwen_edit_ksampler_cfg": "Base CFG value for Qwen Edit sampling.",
             "qwen_edit_ksampler_denoise": "Default denoise strength for Qwen Edit sampling.",
+            "qwen_edit_cfg_rescale": "CFG rescale multiplier applied to Qwen Edit sampling runs.",
             "wan_stage1_add_noise": "Controls whether WAN stage 1 injects fresh noise before sampling.",
             "wan_stage1_noise_mode": "Noise selection mode for WAN stage 1.",
             "wan_stage1_noise_seed": "Seed used to generate WAN stage 1 noise.",
@@ -2413,6 +2423,7 @@ class ConfigEditor:
         create_setting_row_ui(qwen_edit_section.body(), "Default Qwen Edit VAE", ttk.Combobox, self.available_qwen_vaes, 'default_qwen_edit_vae', section_key='qwen_edit')
         create_setting_row_ui(qwen_edit_section.body(), "Qwen Edit Denoise", ttk.Spinbox, var_key_name='qwen_edit_denoise', section_key='qwen_edit', from_=0.0, to=1.0, increment=0.01, format="%.2f")
         create_setting_row_ui(qwen_edit_section.body(), "Qwen Edit Shift", ttk.Spinbox, var_key_name='qwen_edit_shift', section_key='qwen_edit', from_=0.0, to=10.0, increment=0.1, format="%.2f")
+        create_setting_row_ui(qwen_edit_section.body(), "CFG Rescale", ttk.Spinbox, var_key_name='qwen_edit_cfg_rescale', section_key='qwen_edit', from_=0.0, to=2.0, increment=0.05, format="%.2f")
         create_setting_row_ui(qwen_edit_section.body(), "KSampler Sampler", ttk.Combobox, KSAMPLER_SAMPLER_OPTIONS, 'qwen_edit_ksampler_sampler', section_key='qwen_edit')
         create_setting_row_ui(qwen_edit_section.body(), "KSampler Scheduler", ttk.Combobox, KSAMPLER_SCHEDULER_OPTIONS, 'qwen_edit_ksampler_scheduler', section_key='qwen_edit')
         create_setting_row_ui(qwen_edit_section.body(), "KSampler CFG", ttk.Spinbox, var_key_name='qwen_edit_ksampler_cfg', section_key='qwen_edit', from_=0.0, to=20.0, increment=0.1, format="%.1f")
@@ -2421,10 +2432,10 @@ class ConfigEditor:
         wan_styles = sorted([name for name, data in self.styles_config.items() if data.get('model_type', 'all') in ['all', 'wan']])
         wan_section = CollapsibleSection(self.wan_settings_content_frame, "WAN Defaults", self.color)
         wan_section.pack(fill=tk.X, padx=4, pady=(0, 6))
-        create_setting_row_ui(wan_section.body(), "T2V High-Noise UNet", ttk.Combobox, self.available_wan_models, 'default_wan_t2v_high_noise_unet', section_key='wan')
-        create_setting_row_ui(wan_section.body(), "T2V Low-Noise UNet", ttk.Combobox, self.available_wan_video_models, 'default_wan_t2v_low_noise_unet', section_key='wan')
-        create_setting_row_ui(wan_section.body(), "I2V High-Noise UNet", ttk.Combobox, self.available_wan_video_models, 'default_wan_i2v_high_noise_unet', section_key='wan')
-        create_setting_row_ui(wan_section.body(), "I2V Low-Noise UNet", ttk.Combobox, self.available_wan_video_models, 'default_wan_i2v_low_noise_unet', section_key='wan')
+        create_setting_row_ui(wan_section.body(), "T2V High-Noise UNet", ttk.Combobox, self.available_wan_models, WAN_T2V_HIGH_NOISE_KEY, section_key='wan')
+        create_setting_row_ui(wan_section.body(), "T2V Low-Noise UNet", ttk.Combobox, self.available_wan_video_models, WAN_T2V_LOW_NOISE_KEY, section_key='wan')
+        create_setting_row_ui(wan_section.body(), "I2V High-Noise UNet", ttk.Combobox, self.available_wan_video_models, WAN_I2V_HIGH_NOISE_KEY, section_key='wan')
+        create_setting_row_ui(wan_section.body(), "I2V Low-Noise UNet", ttk.Combobox, self.available_wan_video_models, WAN_I2V_LOW_NOISE_KEY, section_key='wan')
         create_setting_row_ui(wan_section.body(), "Default Style", ttk.Combobox, wan_styles, 'default_style_wan', section_key='wan')
         create_setting_row_ui(wan_section.body(), "Default Steps", ttk.Spinbox, var_key_name='wan_steps', section_key='wan', from_=4, to=128, increment=2)
         create_setting_row_ui(wan_section.body(), "Default Guidance", ttk.Spinbox, var_key_name='default_guidance_wan', section_key='wan', from_=0.0, to=20.0, increment=0.1, format="%.1f")

@@ -19,7 +19,17 @@ from settings_manager import (
     get_active_model_family_choices, get_wan_animation_resolution_choices,
     get_wan_animation_duration_choices, get_wan_animation_motion_profile_choices,
     get_qwen_edit_shift_choices, get_qwen_edit_denoise_choices,
+    get_qwen_ksampler_sampler_choices, get_qwen_ksampler_scheduler_choices,
+    get_qwen_edit_ksampler_sampler_choices, get_qwen_edit_ksampler_scheduler_choices,
+    get_qwen_edit_cfg_rescale_choices,
     sync_active_model_selection
+)
+from settings_shared import (
+    WAN_I2V_HIGH_NOISE_KEY,
+    WAN_I2V_LOW_NOISE_KEY,
+    WAN_T2V_HIGH_NOISE_KEY,
+    WAN_T2V_LOW_NOISE_KEY,
+    sync_wan_checkpoint_alias,
 )
 
 # --- UI Select Components for /settings ---
@@ -95,6 +105,14 @@ def _sync_if_active_family(target_family: str) -> Callable[[dict, object], None]
             sync_active_model_selection(settings, active_family=target_family)
 
     return _hook
+
+
+_WAN_FAMILY_SYNC_HOOK = _sync_if_active_family('wan')
+
+
+def _sync_wan_defaults(settings: dict, _value: object) -> None:
+    sync_wan_checkpoint_alias(settings)
+    _WAN_FAMILY_SYNC_HOOK(settings, _value)
 
 
 class ActiveModelFamilySelect(_ModelSettingSelect):
@@ -176,16 +194,78 @@ class DefaultQwenEditModelSelect(_ModelSettingSelect):
         )
 
 
+class QwenSamplerSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Qwen Sampler",
+            setting_key='qwen_ksampler_sampler',
+            choices_func=get_qwen_ksampler_sampler_choices,
+            view_factory=lambda data: QwenSettingsView(data),
+            content_message="Configure Qwen Image Model Settings:",
+        )
+
+
+class QwenSchedulerSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Qwen Scheduler",
+            setting_key='qwen_ksampler_scheduler',
+            choices_func=get_qwen_ksampler_scheduler_choices,
+            view_factory=lambda data: QwenSettingsView(data),
+            content_message="Configure Qwen Image Model Settings:",
+        )
+
+
+class QwenEditSamplerSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Qwen Edit Sampler",
+            setting_key='qwen_edit_ksampler_sampler',
+            choices_func=get_qwen_edit_ksampler_sampler_choices,
+            view_factory=lambda data: QwenEditSettingsView(data),
+            content_message="Configure Qwen Edit Settings:",
+        )
+
+
+class QwenEditSchedulerSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Qwen Edit Scheduler",
+            setting_key='qwen_edit_ksampler_scheduler',
+            choices_func=get_qwen_edit_ksampler_scheduler_choices,
+            view_factory=lambda data: QwenEditSettingsView(data),
+            content_message="Configure Qwen Edit Settings:",
+        )
+
+
+class QwenEditCfgRescaleSelect(_ModelSettingSelect):
+    def __init__(self, settings):
+        super().__init__(
+            settings,
+            placeholder="Select Qwen Edit CFG Rescale",
+            setting_key='qwen_edit_cfg_rescale',
+            choices_func=get_qwen_edit_cfg_rescale_choices,
+            view_factory=lambda data: QwenEditAdvancedSettingsView(data),
+            convert_func=float,
+            error_message="Invalid CFG rescale selected.",
+            content_message="Configure Qwen Edit Loader Settings:",
+        )
+
+
 class DefaultWANModelSelect(_ModelSettingSelect):
     def __init__(self, settings):
         super().__init__(
             settings,
             placeholder="Select Default WAN T2V High-Noise UNet",
-            setting_key='default_wan_t2v_high_noise_unet',
+            setting_key=WAN_T2V_HIGH_NOISE_KEY,
             choices_func=get_default_wan_model_choices,
             view_factory=lambda data: WANSettingsView(data),
             content_message="Configure WAN Model Settings:",
-            post_save_hook=_sync_if_active_family('wan'),
+            post_save_hook=_sync_wan_defaults,
         )
 
 class StepsSelect(_ModelSettingSelect):
@@ -371,10 +451,11 @@ class WANT2VHighUnetSelect(_ModelSettingSelect):
         super().__init__(
             settings,
             placeholder="Select WAN T2V High-Noise UNet",
-            setting_key='default_wan_t2v_high_noise_unet',
+            setting_key=WAN_T2V_HIGH_NOISE_KEY,
             choices_func=get_wan_t2v_high_unet_choices,
             view_factory=lambda data: WANLoaderSettingsView(data),
             content_message="Configure WAN Loader Settings:",
+            post_save_hook=_sync_wan_defaults,
         )
 
 
@@ -383,7 +464,7 @@ class WANT2VLowUnetSelect(_ModelSettingSelect):
         super().__init__(
             settings,
             placeholder="Select WAN T2V Low-Noise UNet",
-            setting_key='default_wan_t2v_low_noise_unet',
+            setting_key=WAN_T2V_LOW_NOISE_KEY,
             choices_func=get_wan_t2v_low_unet_choices,
             view_factory=lambda data: WANLoaderSettingsView(data),
             content_message="Configure WAN Loader Settings:",
@@ -395,7 +476,7 @@ class WANI2VHighUnetSelect(_ModelSettingSelect):
         super().__init__(
             settings,
             placeholder="Select WAN I2V High-Noise UNet",
-            setting_key='default_wan_i2v_high_noise_unet',
+            setting_key=WAN_I2V_HIGH_NOISE_KEY,
             choices_func=get_wan_i2v_high_unet_choices,
             view_factory=lambda data: WANLoaderSettingsView(data),
             content_message="Configure WAN Loader Settings:",
@@ -407,7 +488,7 @@ class WANI2VLowUnetSelect(_ModelSettingSelect):
         super().__init__(
             settings,
             placeholder="Select WAN I2V Low-Noise UNet",
-            setting_key='default_wan_i2v_low_noise_unet',
+            setting_key=WAN_I2V_LOW_NOISE_KEY,
             choices_func=get_wan_i2v_low_unet_choices,
             view_factory=lambda data: WANLoaderSettingsView(data),
             content_message="Configure WAN Loader Settings:",
@@ -946,6 +1027,12 @@ class QwenSettingsView(BaseSettingsView):
         guidance_select = QwenGuidanceSelect(self.settings)
         self.add_item(guidance_select)
 
+        sampler_select = QwenSamplerSelect(self.settings)
+        self.add_item(sampler_select)
+
+        scheduler_select = QwenSchedulerSelect(self.settings)
+        self.add_item(scheduler_select)
+
     @discord.ui.button(label="Qwen Loaders", style=discord.ButtonStyle.secondary, row=4)
     async def qwen_loaders_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = QwenAdvancedSettingsView(self.settings)
@@ -965,6 +1052,8 @@ class QwenEditSettingsView(BaseSettingsView):
         self.add_item(DefaultQwenEditModelSelect(self.settings))
         self.add_item(QwenEditGuidanceSelect(self.settings))
         self.add_item(QwenEditStepsSelect(self.settings))
+        self.add_item(QwenEditSamplerSelect(self.settings))
+        self.add_item(QwenEditSchedulerSelect(self.settings))
         self.add_item(QwenEditShiftSelect(self.settings))
 
     @discord.ui.button(label="Qwen Edit Loaders", style=discord.ButtonStyle.secondary, row=4)
@@ -978,6 +1067,7 @@ class QwenEditAdvancedSettingsView(BaseSettingsView):
         super().__init__(settings_ref)
         self.add_item(QwenEditClipSelect(self.settings))
         self.add_item(QwenEditVAESelect(self.settings))
+        self.add_item(QwenEditCfgRescaleSelect(self.settings))
         self.add_item(QwenEditDenoiseSelect(self.settings))
 
 

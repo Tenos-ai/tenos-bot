@@ -533,8 +533,125 @@ def _apply_checkpoint_generation_inputs(
             KSAMPLER_SETTING_OVERRIDES.get(model_type),
             allow_denoise_override=not is_img2img,
         )
+
+
+def _apply_wan_generation_inputs(
+    modified_prompt: dict,
+    gen_spec,
+    *,
+    text: str,
+    negative_prompt: str,
+    seed: int,
+    steps: float,
+    guidance: float,
+    is_img2img: bool,
+    denoise: float,
+    image_source: str | None,
+    aspect_ratio: str,
+    mp_size: str,
+    batch_size: int,
+    settings: dict,
+) -> None:
+    text_encoder_node = getattr(gen_spec, "text_encoder_node", None)
+    if text_encoder_node and text_encoder_node in modified_prompt:
+        encoder_inputs = modified_prompt[text_encoder_node].setdefault("inputs", {})
+        encoder_inputs["positive_prompt"] = text
+        encoder_inputs["negative_prompt"] = negative_prompt or ""
+
+    sampler_node = gen_spec.ksampler_node
+    sampler_entry = modified_prompt.get(sampler_node)
+    if not isinstance(sampler_entry, dict):
+        return
+
+    shift_default = settings.get("default_wan_shift", 8.0)
+    try:
+        shift_value = float(shift_default)
+    except (TypeError, ValueError):
+        shift_value = 8.0
+
+    denoise_strength = 1.0 if not is_img2img else max(0.0, min(1.0, float(denoise)))
+
+    sampler_inputs = sampler_entry.setdefault("inputs", {})
+    sampler_inputs.update(
+        {
+            "steps": int(steps),
+            "cfg": float(guidance),
+            "shift": float(shift_value),
+            "seed": int(seed),
+            "denoise_strength": float(denoise_strength),
+        }
+    )
+    if is_img2img:
+        encode_node = getattr(gen_spec, "image_encode_node", None)
+        if encode_node:
+            sampler_inputs["samples"] = [str(encode_node), 0]
     else:
-        _apply_wan_stage_overrides(modified_prompt, gen_spec, settings)
+        sampler_inputs.pop("samples", None)
+
+    if denoise_strength < 1.0:
+        sampler_inputs["add_noise_to_samples"] = True
+    else:
+        sampler_inputs.pop("add_noise_to_samples", None)
+
+    default_widgets = [
+        30,
+        6.0,
+        8.0,
+        seed,
+        "fixed",
+        True,
+        "unipc",
+        0,
+        1.0,
+        False,
+        "comfy",
+        0,
+        -1,
+        False,
+        "",
+    ]
+    widgets = sampler_entry.setdefault("widgets_values", default_widgets[:])
+    while len(widgets) < len(default_widgets):
+        widgets.append(None)
+    widgets[0] = int(steps)
+    widgets[1] = float(guidance)
+    widgets[2] = float(shift_value)
+    widgets[3] = int(seed)
+    if len(widgets) > 8:
+        widgets[8] = float(denoise_strength)
+    if len(widgets) > 13:
+        widgets[13] = bool(denoise_strength < 1.0)
+
+    embed_node = gen_spec.latent_node
+    embed_entry = modified_prompt.get(embed_node)
+    if isinstance(embed_entry, dict):
+        width, height, length = _resolve_wan_dimensions(aspect_ratio, mp_size)
+        embed_inputs = embed_entry.setdefault("inputs", {})
+        embed_inputs.update({"width": width, "height": height, "num_frames": length})
+        embed_entry["widgets_values"] = [width, height, length]
+
+    if is_img2img:
+        image_loader_node = getattr(gen_spec, "image_loader_node", None)
+        if image_loader_node and image_loader_node in modified_prompt:
+            loader_inputs = modified_prompt[image_loader_node].setdefault("inputs", {})
+            loader_inputs["url_or_path"] = image_source or ""
+
+        image_encode_node = getattr(gen_spec, "image_encode_node", None)
+        if image_encode_node and image_encode_node in modified_prompt:
+            encode_inputs = modified_prompt[image_encode_node].setdefault("inputs", {})
+            encode_inputs.setdefault("enable_vae_tiling", False)
+            encode_inputs.setdefault("tile_x", 272)
+            encode_inputs.setdefault("tile_y", 272)
+            encode_inputs.setdefault("tile_stride_x", 144)
+            encode_inputs.setdefault("tile_stride_y", 128)
+
+        if embed_entry and isinstance(embed_entry.get("inputs"), dict):
+            encode_node = getattr(gen_spec, "image_encode_node", None)
+            if encode_node:
+                embed_entry["inputs"]["extra_latents"] = [str(encode_node), 0]
+    else:
+        if embed_entry and isinstance(embed_entry.get("inputs"), dict):
+            embed_entry["inputs"].pop("extra_latents", None)
 async def modify_prompt(
     original_prompt_text: str,
     params_dict: dict,
@@ -754,6 +871,23 @@ async def modify_prompt(
                 batch_size=default_batch_size_from_settings,
                 settings=settings,
             )
+        elif model_type == "wan":
+            _apply_wan_generation_inputs(
+                modified_prompt,
+                gen_spec,
+                text=text_for_generation,
+                negative_prompt=final_negative_prompt,
+                seed=seed,
+                steps=steps_for_ksampler,
+                guidance=guidance_to_use,
+                is_img2img=is_img2img,
+                denoise=denoise_for_ksampler,
+                image_source=image_source_for_node,
+                aspect_ratio=aspect_ratio_str,
+                mp_size=mp_size_str,
+                batch_size=default_batch_size_from_settings,
+                settings=settings,
+            )
         else:
             _apply_checkpoint_generation_inputs(
                 modified_prompt,
@@ -800,9 +934,13 @@ async def modify_prompt(
 
     try:
         comfy_models_data = check_available_models_api(suppress_summary_print=True)
+        category_keys = {"unet", "checkpoint", "clip"}
+        generation_category = spec.generation.comfy_category
+        if generation_category:
+            category_keys.add(generation_category)
         comfy_category_list = {
             key: {m.lower() for m in comfy_models_data.get(key, []) if isinstance(m, str)}
-            for key in ("unet", "checkpoint", "clip")
+            for key in category_keys
         }
 
         model_applied_successfully = False
@@ -832,14 +970,20 @@ async def modify_prompt(
             clip_loader_node_id = spec.generation.clip_loader_node
             if clip_name_override and clip_loader_node_id in modified_prompt:
                 clip_inputs = modified_prompt[clip_loader_node_id].setdefault("inputs", {})
-                clip_inputs["clip_name"] = clip_name_override
+                if "clip_name" in clip_inputs:
+                    clip_inputs["clip_name"] = clip_name_override
+                elif "model_name" in clip_inputs:
+                    clip_inputs["model_name"] = clip_name_override
 
         vae_setting_key = f"default_{model_type}_vae"
         vae_name_override = settings.get(vae_setting_key)
         vae_loader_node_id = getattr(spec.generation, "vae_loader_node", None)
         if vae_name_override and vae_loader_node_id and vae_loader_node_id in modified_prompt:
             vae_inputs = modified_prompt[vae_loader_node_id].setdefault("inputs", {})
-            vae_inputs["vae_name"] = vae_name_override
+            if "vae_name" in vae_inputs:
+                vae_inputs["vae_name"] = vae_name_override
+            elif "model_name" in vae_inputs:
+                vae_inputs["model_name"] = vae_name_override
 
         secondary_node_id = getattr(spec.generation, "secondary_model_loader_node", None)
         secondary_setting_key = getattr(spec.generation, "secondary_model_setting_key", None)
@@ -855,7 +999,7 @@ async def modify_prompt(
             )
 
         shift_value = None
-        if model_type in {"qwen", "wan"}:
+        if model_type == "qwen":
             shift_key = f"default_{model_type}_shift"
             default_shift = default_settings.get(shift_key, 0.0)
             shift_candidate = settings.get(shift_key, default_shift)

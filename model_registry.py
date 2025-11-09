@@ -102,44 +102,20 @@ from prompt_templates import (
     wan_img2img_prompt,
     wan_variation_prompt,
     wan_image_to_video_prompt,
-    WAN_UNET_LOADER_NODE,
-    WAN_SECOND_UNET_LOADER_NODE,
-    WAN_CLIP_LOADER_NODE,
+    WAN_MODEL_LOADER_NODE,
+    WAN_T5_LOADER_NODE,
+    WAN_TEXT_ENCODER_NODE,
     WAN_VAE_LOADER_NODE,
-    WAN_LORA_NODE,
-    WAN_REFINER_LORA_NODE,
-    WAN_SAMPLING_NODE,
-    WAN_SECOND_SAMPLING_NODE,
-    WAN_POS_PROMPT_NODE,
-    WAN_NEG_PROMPT_NODE,
-    WAN_INITIAL_KSAMPLER_NODE,
-    WAN_KSAMPLER_NODE,
-    WAN_SAVE_IMAGE_NODE,
-    WAN_LATENT_NODE,
-    WAN_IMG2IMG_LOAD_IMAGE_NODE,
-    WAN_IMG2IMG_VAE_ENCODE_NODE,
-    WAN_VAR_LOAD_IMAGE_NODE,
-    WAN_VAR_RESIZE_NODE,
-    WAN_VAR_VAE_ENCODE_NODE,
-    WAN_VAR_SAMPLING_NODE,
-    WAN_VAR_POS_PROMPT_NODE,
-    WAN_VAR_NEG_PROMPT_NODE,
-    WAN_VAR_KSAMPLER_NODE,
-    WAN_VAR_VAE_DECODE_NODE,
-    WAN_VAR_SAVE_IMAGE_NODE,
-    WAN_VAR_BATCH_NODE,
-    WAN_I2V_LOAD_IMAGE_NODE,
-    WAN_I2V_RESIZE_NODE,
-    WAN_I2V_VISION_CLIP_NODE,
-    WAN_I2V_VISION_ENCODE_NODE,
-    WAN_I2V_SAMPLING_NODE,
-    WAN_I2V_SECOND_SAMPLING_NODE,
-    WAN_I2V_KSAMPLER_NODE,
-    WAN_I2V_SECOND_KSAMPLER_NODE,
-    WAN_I2V_VAE_DECODE_NODE,
-    WAN_I2V_CREATE_VIDEO_NODE,
-    WAN_I2V_SAVE_VIDEO_NODE,
-    WAN_IMAGE_TO_VIDEO_NODE,
+    WAN_IMAGE_EMBEDS_NODE,
+    WAN_CACHE_ARGS_NODE,
+    WAN_SLG_ARGS_NODE,
+    WAN_EXPERIMENTAL_ARGS_NODE,
+    WAN_SAMPLER_NODE,
+    WAN_DECODE_NODE,
+    WAN_VIDEO_SAVE_NODE,
+    WAN_IMAGE_LOADER_NODE,
+    WAN_IMAGE_RESIZE_NODE,
+    WAN_IMAGE_ENCODE_NODE,
 )
 from utils.llm_enhancer import get_model_type_enhancer_prompt
 
@@ -181,6 +157,15 @@ class GenerationSpec:
     secondary_model_loader_node: Optional[str] = None
     secondary_model_setting_key: Optional[str] = None
     secondary_lora_node: Optional[str] = None
+    t5_loader_node: Optional[str] = None
+    text_encoder_node: Optional[str] = None
+    cache_args_node: Optional[str] = None
+    slg_args_node: Optional[str] = None
+    experimental_args_node: Optional[str] = None
+    video_decode_node: Optional[str] = None
+    image_loader_node: Optional[str] = None
+    image_resize_node: Optional[str] = None
+    image_encode_node: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -194,10 +179,17 @@ class VariationSpec:
     resize_node: str
     vae_encode_node: str
     vae_decode_node: str
-    lora_node: str
+    lora_node: Optional[str] = None
     clip_node: Optional[str] = None
     clip_loader_node: Optional[str] = None
     clip_skip_node: Optional[str] = None
+    latent_node: Optional[str] = None
+    cache_args_node: Optional[str] = None
+    slg_args_node: Optional[str] = None
+    experimental_args_node: Optional[str] = None
+    text_encoder_node: Optional[str] = None
+    t5_loader_node: Optional[str] = None
+    video_decode_node: Optional[str] = None
     pos_prompt_node: Optional[str] = None
     neg_prompt_node: Optional[str] = None
     prompt_node: Optional[str] = None
@@ -489,44 +481,48 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
             family="checkpoint",
             text2img_template=wan_prompt,
             img2img_template=wan_img2img_prompt,
-            ksampler_node=str(WAN_KSAMPLER_NODE),
-            initial_ksampler_node=str(WAN_INITIAL_KSAMPLER_NODE),
-            latent_node=str(WAN_LATENT_NODE),
+            ksampler_node=str(WAN_SAMPLER_NODE),
+            initial_ksampler_node=None,
+            latent_node=str(WAN_IMAGE_EMBEDS_NODE),
             latent_model_type="WAN",
-            save_node=str(WAN_SAVE_IMAGE_NODE),
-            model_loader_node=str(WAN_UNET_LOADER_NODE),
-            comfy_category="unet",
+            save_node=str(WAN_VIDEO_SAVE_NODE),
+            model_loader_node=str(WAN_MODEL_LOADER_NODE),
+            comfy_category="diffusion_models",
             supports_negative_prompt=True,
-            pos_prompt_node=str(WAN_POS_PROMPT_NODE),
-            neg_prompt_node=str(WAN_NEG_PROMPT_NODE),
-            lora_node=str(WAN_LORA_NODE),
-            secondary_lora_node=str(WAN_REFINER_LORA_NODE),
-            img2img_load_node=str(WAN_IMG2IMG_LOAD_IMAGE_NODE),
-            img2img_encode_node=str(WAN_IMG2IMG_VAE_ENCODE_NODE),
-            clip_loader_node=str(WAN_CLIP_LOADER_NODE),
+            pos_prompt_node=str(WAN_TEXT_ENCODER_NODE),
+            neg_prompt_node=str(WAN_TEXT_ENCODER_NODE),
+            img2img_load_node=str(WAN_IMAGE_LOADER_NODE),
+            img2img_encode_node=str(WAN_IMAGE_ENCODE_NODE),
+            clip_loader_node=str(WAN_T5_LOADER_NODE),
             vae_loader_node=str(WAN_VAE_LOADER_NODE),
-            ksampler_model_ref=(str(WAN_SAMPLING_NODE), 1),
-            secondary_model_loader_node=str(WAN_SECOND_UNET_LOADER_NODE),
-            secondary_model_setting_key="default_wan_t2v_low_noise_unet",
+            t5_loader_node=str(WAN_T5_LOADER_NODE),
+            text_encoder_node=str(WAN_TEXT_ENCODER_NODE),
+            cache_args_node=str(WAN_CACHE_ARGS_NODE),
+            slg_args_node=str(WAN_SLG_ARGS_NODE),
+            experimental_args_node=str(WAN_EXPERIMENTAL_ARGS_NODE),
+            video_decode_node=str(WAN_DECODE_NODE),
+            image_loader_node=str(WAN_IMAGE_LOADER_NODE),
+            image_resize_node=str(WAN_IMAGE_RESIZE_NODE),
+            image_encode_node=str(WAN_IMAGE_ENCODE_NODE),
         ),
         variation=VariationSpec(
             family="checkpoint",
             templates={"default": wan_variation_prompt},
-            ksampler_node=str(WAN_VAR_KSAMPLER_NODE),
-            save_node=str(WAN_VAR_SAVE_IMAGE_NODE),
-            model_loader_node=str(WAN_UNET_LOADER_NODE),
-            load_image_node=str(WAN_VAR_LOAD_IMAGE_NODE),
-            resize_node=str(WAN_VAR_RESIZE_NODE),
-            vae_encode_node=str(WAN_VAR_VAE_ENCODE_NODE),
-            vae_decode_node=str(WAN_VAR_VAE_DECODE_NODE),
-            lora_node=str(WAN_LORA_NODE),
-            clip_loader_node=str(WAN_CLIP_LOADER_NODE),
-            pos_prompt_node=str(WAN_VAR_POS_PROMPT_NODE),
-            neg_prompt_node=str(WAN_VAR_NEG_PROMPT_NODE),
-            batch_node=str(WAN_VAR_BATCH_NODE),
-            vae_loader_node=str(WAN_VAE_LOADER_NODE),
-            secondary_model_loader_node=str(WAN_SECOND_UNET_LOADER_NODE),
-            secondary_model_setting_key="default_wan_t2v_low_noise_unet",
+            ksampler_node=str(WAN_SAMPLER_NODE),
+            save_node=str(WAN_VIDEO_SAVE_NODE),
+            model_loader_node=str(WAN_MODEL_LOADER_NODE),
+            load_image_node=str(WAN_IMAGE_LOADER_NODE),
+            resize_node=str(WAN_IMAGE_RESIZE_NODE),
+            vae_encode_node=str(WAN_IMAGE_ENCODE_NODE),
+            vae_decode_node=str(WAN_DECODE_NODE),
+            clip_loader_node=str(WAN_T5_LOADER_NODE),
+            text_encoder_node=str(WAN_TEXT_ENCODER_NODE),
+            t5_loader_node=str(WAN_T5_LOADER_NODE),
+            cache_args_node=str(WAN_CACHE_ARGS_NODE),
+            slg_args_node=str(WAN_SLG_ARGS_NODE),
+            experimental_args_node=str(WAN_EXPERIMENTAL_ARGS_NODE),
+            latent_node=str(WAN_IMAGE_EMBEDS_NODE),
+            video_decode_node=str(WAN_DECODE_NODE),
         ),
         upscale=None,
         enhancer_prompt_key="wan",
